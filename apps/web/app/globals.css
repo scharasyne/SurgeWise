@@ -417,3 +417,6 @@ button:not(.text-button, .map-marker, .movie-hotspot-icon, .movie-hospital-icon,
 .dashboard-simulation-launch a:hover { background: var(--sw-button-hover); }
 /* Wordmark with the SurgeWise logo mark beside it. */
 .brand { display: flex; align-items: center; gap: 10px; }
+/* Light tile behind the logo mark on navy bars (the mark's navy "S" needs a light ground). */
+.sw-mark-tile { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--sw-card, #f9fdf8); box-shadow: 0 1px 2px rgb(11 28 30 / 0.18); }
+.sw-mark-tile img { display: block; }

@@ -1,5 +1,18 @@
 # User-requested extensions
 
+## 2026-11-15 18:15:02 +08:00 — new SurgeWise logo
+
+User supplied a new logo (navy "S" and teal "W" ribbon, red line from a hotspot
+dot to a medical cross, "SurgeWise" wordmark) and asked for a transparent PNG
+to replace the previous SVG mark. The white background and letter counters were
+removed; the artwork stays fully opaque with anti-aliased edges. New assets:
+`public/brand/surgewise-mark.png` (mark), `public/brand/surgewise-logo.png`
+(mark + wordmark) and `app/icon.png` (browser tab icon). The previous
+`app/icon.svg` and `public/brand/*.svg` files were removed.
+`components/surgewise-mark.tsx` keeps its props: `on-light` draws the mark
+directly; `on-dark`/`badge` place it on a honeydew tile so the navy "S" stays
+visible on navy header bars. No data, models or engine behaviour changed.
+
 ## 2026-11-15 00:38:57 +08:00 — public landing page
 
 User requested a landing page inspired by a supplied isometric hospital-on-map

@@ -20,7 +20,7 @@ export default function Landing() {
     <nav className="lp-nav" aria-label="Main">
       <div className="lp-wrap lp-nav-inner">
         <Link href="/" className="lp-logo" aria-label="SurgeWise home">
-          <SurgeWiseMark size={36} variant="badge" />
+          <SurgeWiseMark size={34} variant="on-light" />
           <span className="lp-logo-text">SurgeWise</span>
         </Link>
         <div className="lp-nav-links">
