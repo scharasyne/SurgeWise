@@ -710,7 +710,7 @@ export default function QCSimulationWorkspace() {
         <div className="qc-title">
           <a href="/dashboard">
             <ArrowLeft size={13} />
-            <SurgeWiseMark size={34} /> SurgeWise
+            <SurgeWiseMark size={34} variant="on-light" /> SurgeWise
           </a>
         </div>
         <nav>

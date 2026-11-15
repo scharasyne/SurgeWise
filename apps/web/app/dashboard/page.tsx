@@ -94,7 +94,7 @@ export default function Dashboard() {
       <header className="header dashboard-header">
         <div>
           <div className="brand">
-            <SurgeWiseMark size={38} />
+            <SurgeWiseMark size={38} variant="on-light" />
             SurgeWise
           </div>
           <div className="subtle">NCR Preparedness Research Prototype</div>

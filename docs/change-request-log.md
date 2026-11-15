@@ -9,9 +9,17 @@ removed; the artwork stays fully opaque with anti-aliased edges. New assets:
 `public/brand/surgewise-mark.png` (mark), `public/brand/surgewise-logo.png`
 (mark + wordmark) and `app/icon.png` (browser tab icon). The previous
 `app/icon.svg` and `public/brand/*.svg` files were removed.
-`components/surgewise-mark.tsx` keeps its props: `on-light` draws the mark
-directly; `on-dark`/`badge` place it on a honeydew tile so the navy "S" stays
-visible on navy header bars. No data, models or engine behaviour changed.
+`components/surgewise-mark.tsx` keeps its props: `on-light` draws the original
+colours; `on-dark`/`badge` use `public/brand/surgewise-mark-on-dark.png`, where
+the navy "S" is recoloured to a light ribbon (teal "W" and red cross unchanged)
+for dark backgrounds, with no background tile. No data, models or engine
+behaviour changed.
+
+Revision (same day, user request): every header uses one colour for
+uniformity. The landing, dashboard and QC workspace headers are now powder blue
+(`#a8dadc`) with navy text and honeydew header pills, replacing the navy bars;
+all three show the logo in its original colours (`on-light`, now the default).
+The `on-dark` variant remains available for dark surfaces.
 
 ## 2026-11-15 00:38:57 +08:00 — public landing page
 

@@ -341,16 +341,17 @@ a { color: var(--accent); }
    - red #e63946: danger and attention only (hotspots, deficit, alerts, assumed surge).
    Containers below re-point the shared variables, so everything inside follows. */
 
-/* Header: navy bar with honeydew text and powder-blue links. */
+/* Header: one powder-blue bar on every page (landing, dashboard, workspace) with navy text;
+   header pills sit on honeydew. */
 .qc-header,
 .header {
-  --sw-panel: #1d3557;
-  --sw-text-strong: #f1faee;
-  --sw-text: #f1faee;
-  --sw-muted: #a8dadc;
-  --sw-link: #a8dadc;
-  --sw-hover: #2b4e70;
-  --sw-selected: #2b4e70;
+  --sw-panel: #a8dadc;
+  --sw-text-strong: #1d3557;
+  --sw-text: #1d3557;
+  --sw-muted: #254365;
+  --sw-link: #1d3557;
+  --sw-hover: #f1faee;
+  --sw-selected: #f1faee;
   --sw-border: transparent;
   --sw-border-strong: transparent;
   --border: transparent;
@@ -417,6 +418,3 @@ button:not(.text-button, .map-marker, .movie-hotspot-icon, .movie-hospital-icon,
 .dashboard-simulation-launch a:hover { background: var(--sw-button-hover); }
 /* Wordmark with the SurgeWise logo mark beside it. */
 .brand { display: flex; align-items: center; gap: 10px; }
-/* Light tile behind the logo mark on navy bars (the mark's navy "S" needs a light ground). */
-.sw-mark-tile { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--sw-card, #f9fdf8); box-shadow: 0 1px 2px rgb(11 28 30 / 0.18); }
-.sw-mark-tile img { display: block; }
