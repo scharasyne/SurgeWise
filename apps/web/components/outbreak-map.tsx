@@ -8,7 +8,7 @@ import { caseColor, interpolateCaseValues } from '@/lib/case-bands';
 import { mapSelection } from '@/lib/map-selection';
 import { simulationConnections, drawSimulationFlow, SIMULATION_LINES, type ConnectionFocus } from '@/lib/simulation-connections';
 import { layoutMapMarkers } from '@/lib/marker-layout';
-import { dashboardLayerPaint } from '@/lib/dashboard-map-style';
+import { dashboardLayerPaint, hiddenOverImagery, imageryLayerPaint, SATELLITE_IMAGERY } from '@/lib/dashboard-map-style';
 import { areaBounds } from '@/lib/dashboard-map';
 import { hospitalMarker } from '@/lib/hospital-marker';
 import WorkspaceLoader from '@/components/workspace-loader';
@@ -20,13 +20,25 @@ type Props = { context: MovieContext | null; snapshot: MovieDay | null; maximum:
   caseMetric?: 'daily' | 'cumulative';
   caseColorMaximum?: number; animationDurationMs?: number;
   connectionFocus?: ConnectionFocus; inspectionVersion?: number;
-  buildings3d?: boolean; showHospitals?: boolean;
+  buildings3d?: boolean; showHospitals?: boolean; satellite?: boolean;
   onReady?: (controller: SimulationMapController | null) => void;
   onStatus?: (status: SimulationMapStatus) => void;
   view?: 'qc' | 'philippines' };
 // Fill for barangays that are not high-burden candidates (and before values are shown).
 // Keep in sync with the literal in the 'barangays' layer (layer objects are validated as plain literals).
 const NEUTRAL_FILL = '#edf1ee';
+// Switches the provider's base layers between street context and imagery; app layers are untouched.
+function applyBaseMap(instance: maplibregl.Map, satellite: boolean, buildings3d: boolean) {
+  for (const layer of instance.getStyle().layers) {
+    if (!('source' in layer) || layer.source !== 'openmaptiles') continue;
+    for (const [property, value] of Object.entries(satellite ? imageryLayerPaint(layer) : dashboardLayerPaint(layer))) instance.setPaintProperty(layer.id, property, value);
+    if (hiddenOverImagery(layer)) instance.setLayoutProperty(layer.id, 'visibility', satellite ? 'none' : 'visible');
+  }
+  if (instance.getLayer(SATELLITE_IMAGERY.layerId)) instance.setLayoutProperty(SATELLITE_IMAGERY.layerId, 'visibility', satellite ? 'visible' : 'none');
+  if (instance.getLayer('building-3d')) instance.setLayoutProperty('building-3d', 'visibility', buildings3d ? 'visible' : 'none');
+  // Flat footprints are redundant over imagery.
+  if (instance.getLayer('building')) instance.setLayoutProperty('building', 'visibility', buildings3d || satellite ? 'none' : 'visible');
+}
 const empty = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] });
 // Floating page panels drawn over the map (marked data-map-overlay) are kept free of map icons.
 const overlayElements = (mapRoot: HTMLElement | null) => {
@@ -41,7 +53,7 @@ const overlayRects = (mapRoot: HTMLElement | null) => {
     .map(rect => ({ left: rect.left - origin.left - 4, top: rect.top - origin.top - 4, width: rect.width + 8, height: rect.height + 8 }));
 };
 
-export default function OutbreakMap({ context, snapshot, selected, selectedHospital = '', hotspotIds, rankedHotspotIds, hospitalHotspot, onSelect, onHospital, reducedMotion, showLinks, connectionFocus = null, inspectionVersion = 0, view = 'qc', caseMetric = 'cumulative', caseColorMaximum = 50, animationDurationMs = 500, buildings3d = false, showHospitals = true, onReady, onStatus }: Props) {
+export default function OutbreakMap({ context, snapshot, selected, selectedHospital = '', hotspotIds, rankedHotspotIds, hospitalHotspot, onSelect, onHospital, reducedMotion, showLinks, connectionFocus = null, inspectionVersion = 0, view = 'qc', caseMetric = 'cumulative', caseColorMaximum = 50, animationDurationMs = 500, buildings3d = false, showHospitals = true, satellite = false, onReady, onStatus }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const onSelectRef = useRef(onSelect), onHospitalRef = useRef(onHospital);
@@ -55,8 +67,8 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   selectionCameraInput.current = { context, snapshot, selected, selectedHospital, connectionFocus, hotspotIds, rankedHotspotIds, hospitalHotspot };
   const displayedCases = useRef(new Map<string, number>());
   const previousMetric = useRef(caseMetric);
-  const options = useRef({ view, reducedMotion, buildings3d, showHospitals, onReady, onStatus });
-  options.current = { view, reducedMotion, buildings3d, showHospitals, onReady, onStatus };
+  const options = useRef({ view, reducedMotion, buildings3d, showHospitals, satellite, onReady, onStatus });
+  options.current = { view, reducedMotion, buildings3d, showHospitals, satellite, onReady, onStatus };
   const resetCamera = useRef<(() => void) | null>(null);
   const initialCameraReady = useRef(false);
   const initialBounds = useRef<SimulationBounds>([[121.0, 14.585], [121.153, 14.782]]);
@@ -91,8 +103,12 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
         if ('source-layer' in layer && layer['source-layer'] === 'poi') instance.setLayoutProperty(layer.id, 'visibility', 'none');
       }
       if (instance.getLayer('building')) instance.setLayerZoomRange('building', 13, 24);
-      if (instance.getLayer('building-3d')) instance.setLayoutProperty('building-3d', 'visibility', options.current.buildings3d ? 'visible' : 'none');
-      if (instance.getLayer('building')) instance.setLayoutProperty('building', 'visibility', options.current.buildings3d ? 'none' : 'visible');
+      // Optional imagery sits under roads and labels (a hybrid view); hidden until chosen.
+      const { layerId, sourceId, ...imagery } = SATELLITE_IMAGERY;
+      if (!instance.getSource(sourceId)) instance.addSource(sourceId, { type: 'raster', ...imagery, tiles: [...imagery.tiles] });
+      const firstRoad = instance.getStyle().layers.find(layer => 'source-layer' in layer && layer['source-layer'] === 'transportation')?.id;
+      if (!instance.getLayer(layerId)) instance.addLayer({ id: SATELLITE_IMAGERY.layerId, type: 'raster', source: SATELLITE_IMAGERY.sourceId, layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 150 } }, firstRoad);
+      applyBaseMap(instance, options.current.satellite, options.current.buildings3d);
     });
     instance.on('load', async () => {
       loaded = true; window.clearTimeout(timeout);
@@ -161,7 +177,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     const values = new Map(snapshot?.barangays.map(b => [b.barangayId, caseMetric === 'daily' ? b.expectedCases : b.cumulativeCases]) ?? []);
     for (const id of ['selected-shadow', 'selected-raised', 'selected-outline']) instance.setFilter(id, ['==', 'ADM4_PCODE', selected]);
     instance.setPaintProperty('boundaries', 'line-width', ['case', ['==', ['get', 'ADM4_PCODE'], selected], 1.2, .65]);
-    instance.setPaintProperty('boundaries', 'line-color', ['case', ['==', ['get', 'ADM4_PCODE'], selected], '#225d61', '#a3bcb0']);
+    instance.setPaintProperty('boundaries', 'line-color', ['case', ['==', ['get', 'ADM4_PCODE'], selected], satellite ? '#ffffff' : '#225d61', satellite ? '#e6efe9' : '#a3bcb0']);
     const barangayMap = new Map(context.barangays.map(b => [b.id, b]));
     const facilityStats = new Map(snapshot?.facilities.map(h => [h.facilityId, h]) ?? []);
     set('hospitals', { type: 'FeatureCollection', features: context.hospitals.map(h => {
@@ -175,7 +191,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     const front: FeatureCollection<Polygon> = { type: 'FeatureCollection', features: snapshot?.expansionRing.length ? [{ type: 'Feature',
       geometry: { type: 'Polygon', coordinates: [snapshot.expansionRing] }, properties: {} }] : [] };
     set('front', front);
-  }, [ready, context, snapshot, selected, selectedHospital, hotspotIds, rankedHotspotIds, hospitalHotspot, showLinks, connectionFocus, showHospitals, reducedMotion, caseMetric]);
+  }, [ready, context, snapshot, selected, selectedHospital, hotspotIds, rankedHotspotIds, hospitalHotspot, showLinks, connectionFocus, showHospitals, reducedMotion, caseMetric, satellite]);
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance?.getLayer('barangays')) return;
@@ -216,12 +232,20 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   }, [ready, context, snapshot, selected, caseMetric, caseColorMaximum, rankedHotspotIds, hotspotIds, reducedMotion, animationDurationMs]);
   useEffect(() => {
     const instance = map.current;
+    if (!ready || !instance?.getLayer('barangays')) return;
+    // Over imagery only case-colored barangays stay tinted; neutral ones become a faint veil.
+    const colored = snapshot ? [...new Set(rankedHotspotIds ?? hotspotIds ?? snapshot.hotspotIds ?? [])] : [];
+    instance.setPaintProperty('barangays', 'fill-opacity', !satellite ? .63 : colored.length ? ['match', ['get', 'ADM4_PCODE'], colored, .62, .06] : .06);
+    instance.setPaintProperty('boundaries', 'line-opacity', satellite ? .75 : .65);
+    instance.setPaintProperty('selected-outline', 'line-color', satellite ? '#ffffff' : '#225d61');
+  }, [ready, satellite, snapshot, rankedHotspotIds, hotspotIds]);
+  useEffect(() => {
+    const instance = map.current;
     if (!ready || !instance) return;
-    if (instance.getLayer('building-3d')) instance.setLayoutProperty('building-3d', 'visibility', buildings3d ? 'visible' : 'none');
-    if (instance.getLayer('building')) instance.setLayoutProperty('building', 'visibility', buildings3d ? 'none' : 'visible');
+    applyBaseMap(instance, satellite, buildings3d);
     for (const id of ['hospital-halo', 'hospital-dot']) instance.setLayoutProperty(id, 'visibility', showHospitals ? 'visible' : 'none');
     instance.easeTo({ pitch: view === 'philippines' ? 0 : buildings3d ? 50 : 0, bearing: 0, duration: reducedMotion ? 0 : 450 });
-  }, [ready, buildings3d, showHospitals, reducedMotion, view]);
+  }, [ready, buildings3d, satellite, showHospitals, reducedMotion, view]);
   useEffect(() => {
     if (!ready || !map.current) return;
     const fit = (immediate = false) => {

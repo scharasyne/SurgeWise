@@ -30,3 +30,39 @@ export function dashboardLayerPaint(layer: LayerSpecification): Record<string, s
   };
   return {};
 }
+
+/**
+ * Optional Simulation satellite basemap (Esri World Imagery). Capture dates vary
+ * by place; it is visual context only, never current conditions or verified
+ * hospital entrances.
+ */
+export const SATELLITE_IMAGERY = {
+  layerId: 'satellite-imagery',
+  sourceId: 'satellite-imagery',
+  tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+  tileSize: 256,
+  maxzoom: 19,
+  attribution: 'Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+} as const;
+
+/** Base-map lines that clutter imagery: minor roads, paths, rails, casings, tunnels and arrows. */
+export function hiddenOverImagery(layer: LayerSpecification): boolean {
+  const sourceLayer = 'source-layer' in layer ? layer['source-layer'] : '';
+  if (sourceLayer === 'transportation')
+    return /casing|minor|service|path|street|rail|hatching|arrow|area_pattern|^tunnel_/.test(layer.id);
+  return sourceLayer === 'aeroway' || layer.id === 'park_outline';
+}
+
+/** Hybrid styling over imagery: light labels with dark halos, major roads highlighted. */
+export function imageryLayerPaint(layer: LayerSpecification): Record<string, string | number> {
+  const sourceLayer = 'source-layer' in layer ? layer['source-layer'] : '';
+  if (layer.type === 'symbol' && layer.layout?.['text-field']) return {
+    'text-color': sourceLayer === 'water_name' || sourceLayer === 'waterway' ? '#d4eff0' : '#ffffff',
+    'text-halo-color': '#132b2a', 'text-halo-width': 1.4,
+  };
+  if (layer.type === 'line' && sourceLayer === 'transportation') {
+    if (/motorway|trunk|primary/.test(layer.id)) return { 'line-color': '#f2c45a' };
+    if (/secondary|tertiary/.test(layer.id)) return { 'line-color': '#f4f1e8' };
+  }
+  return dashboardLayerPaint(layer);
+}

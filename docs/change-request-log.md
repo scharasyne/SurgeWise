@@ -1,5 +1,37 @@
 # User-requested extensions
 
+## 2026-11-19 02:10 +08:00 — Hide/show the Simulation timeline (presentation only)
+
+The user asked for a button to hide the bottom timeline panel. A small tab with
+a down chevron now sits at the centre of the timeline's top edge ("Hide
+timeline"). Clicking it hides the timeline, playback controls, readouts and
+Help, and the map grows to fill the space. A "Show timeline · Day N / total" tab
+(with "· Playing" while playing) stays at the bottom of the map to restore it.
+Playback state is unchanged by hiding. Below 1100px the map attribution and map
+tools moved up slightly, and on phones the map key too, so the tab does not
+cover them. No data, models, engine behaviour or values changed.
+
+## 2026-11-19 02:02 +08:00 — Optional satellite imagery on the Simulation map (presentation only)
+
+On `feat/simulation-page-improvements`, the user shared a satellite-with-labels
+map and asked for that view as an option. They chose Esri World Imagery (no key;
+Esri's terms expect an ArcGIS account for commercial deployment) and the
+Simulation map only. This reverses, for Simulation only, the 2026-11-16 imagery
+removal; Dashboard stays without imagery.
+
+Layers now has a "Satellite imagery" toggle, off by default. When on, imagery
+draws under roads and labels: minor roads, rails, casings, aeroways and flat
+building footprints are hidden, major roads turn yellow, secondary roads white,
+and labels white with dark halos. Neutral barangays drop to a faint veil while
+case-colored barangays keep their colors; boundaries and the selected outline
+turn white. 3D view still works on top. Esri is credited in the attribution
+while the layer is visible. The Layers note says the imagery is dated background,
+not current conditions; it does not verify hospital entrances.
+
+Helpers are in `lib/dashboard-map-style.ts` with tests in
+`lib/satellite-imagery.test.mjs`; the map-style contract test also validates the
+raster layer. No data, models, engine behaviour or values changed.
+
 ## 2026-11-18 18:05 +08:00 — Research page redesign (presentation only)
 
 User asked for a well-structured, clean and easy-to-follow Research page that

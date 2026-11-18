@@ -30,10 +30,12 @@ import {
   Plus,
   Minus,
   ChevronDown,
+  ChevronUp,
   Expand,
   Shrink,
   Flag,
   ChartNoAxesCombined,
+  Satellite,
 } from 'lucide-react';
 import type {
   BedForecast,
@@ -212,6 +214,9 @@ export default function QCSimulationWorkspace() {
   const [buildings3d, setBuildings3d] = useState(false);
   const [showHospitals, setShowHospitals] = useState(true);
   const [locatorOpen, setLocatorOpen] = useState(false);
+  // Appended last so the existing hook order (relied on by tests) is unchanged.
+  const [satellite, setSatellite] = useState(false);
+  const [timelineHidden, setTimelineHidden] = useState(false);
   const workspace = useRef<HTMLElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const panelTrigger = useRef<HTMLElement | null>(null);
@@ -2257,7 +2262,7 @@ export default function QCSimulationWorkspace() {
               connectionFocus={hospital ? 'hospital' : showHotspotDetails ? 'barangay' : null} inspectionVersion={hospitalInspection}
               animationDurationMs={Math.min(650, 800 / speed)} onSelect={inspectHotspot} onHospital={inspectHospital}
               playing={playing} reducedMotion={reduced} showLinks={links} view={view} buildings3d={buildings3d}
-              showHospitals={showHospitals} onReady={setMapController} onStatus={setMapStatus} />
+              showHospitals={showHospitals} satellite={satellite} onReady={setMapController} onStatus={setMapStatus} />
             <div className="qs-topbar">
               <button ref={scenarioTrigger} type="button" className="text-button qs-scenario-trigger" data-map-overlay aria-label="Edit simulation scenario" aria-controls="qs-context-panel" aria-expanded={panelView === 'scenario'} onClick={() => panelView === 'scenario' ? closePanel() : openPanel('scenario')}>
                 <SlidersHorizontal size={17} aria-hidden="true" /><span><strong>{tab === 'historical' ? 'Historical replay' : 'Future surge forecast'}</strong><small>Quezon City · {Number.isFinite(selectedDays) ? `${selectedDays} days` : 'Choose dates'}</small></span><ChevronDown size={13} aria-hidden="true" />
@@ -2279,6 +2284,10 @@ export default function QCSimulationWorkspace() {
               <button type="button" className="text-button qs-map-button qs-zoom" aria-label="Zoom in" disabled={mapControlsDisabled} onClick={() => mapController.current?.zoomIn()}><Plus size={18} /><span className="qs-control-tooltip">Zoom in</span></button>
               <button type="button" className="text-button qs-map-button qs-zoom" aria-label="Zoom out" disabled={mapControlsDisabled} onClick={() => mapController.current?.zoomOut()}><Minus size={18} /><span className="qs-control-tooltip">Zoom out</span></button>
             </div>
+            <button type="button" className="text-button qs-timeline-toggle" data-map-overlay aria-controls="qs-timeline" aria-expanded={!timelineHidden} aria-label={timelineHidden ? 'Show timeline and playback' : 'Hide timeline and playback'} onClick={() => setTimelineHidden(v => !v)}>
+              {timelineHidden ? <><ChevronUp size={15} aria-hidden="true" /><span>Show timeline</span><small>Day {day} / {data?.durationDays ?? '—'}{playing ? ' · Playing' : ''}</small></> : <ChevronDown size={15} aria-hidden="true" />}
+              {!timelineHidden && <span className="qs-control-tooltip">Hide timeline</span>}
+            </button>
             <details className="qs-map-key" data-map-overlay><summary><span className="qs-rank-swatch">1</span> Map key <ChevronDown size={12} aria-hidden="true" /></summary><div className="qc-map-legend qs-map-key-content">
                 <strong>
                   {scenario
@@ -2364,7 +2373,7 @@ export default function QCSimulationWorkspace() {
                 </details>
               </div></details>
           </div>
-          <section className="qs-timeline" role="group" aria-label="Simulation timeline and playback">
+          <section id="qs-timeline" className="qs-timeline" role="group" aria-label="Simulation timeline and playback" hidden={timelineHidden}>
             <div className="qs-timeline-heading"><span className="qs-research-status">Research scenario · Assumed capacity</span><button ref={guideTrigger} type="button" className="text-button qs-help" aria-label="How to use this page" aria-expanded={showGuide} onClick={openGuide}><CircleHelp size={15} />Help</button></div>
             <div className="qs-transport">
               <button type="button" className="text-button qs-play" aria-label={playing ? 'Pause simulation' : 'Play simulation'} disabled={!data} onClick={() => { if (data && day === data.durationDays) setDay(0); setPlaying(v => !v); }}>{playing ? <Pause size={17} /> : <Play size={17} />}{playing ? 'Pause' : 'Play'}</button>
@@ -2538,9 +2547,10 @@ export default function QCSimulationWorkspace() {
             <label className="qs-field-label">Color barangays by<WorkspaceSelect label="Map case measure" value={caseMetric} onChange={value => setCaseMetric(value as 'daily' | 'cumulative')} options={[{value:'cumulative',label:'Accumulated projected cases'},{value:'daily',label:'Daily projected cases'}]} /></label>
             <label className="qs-layer"><span><MapPin size={17} /><span>Hospital pins<small>PhilHealth inventory · provisional points</small></span></span><input type="checkbox" checked={showHospitals} onChange={event => setShowHospitals(event.target.checked)} /></label>
             <label className="qs-layer"><span><Layers size={17} /><span>3D view<small>Generalized buildings where mapped</small></span></span><input type="checkbox" checked={buildings3d} onChange={event => setBuildings3d(event.target.checked)} /></label>
+            <label className="qs-layer"><span><Satellite size={17} /><span>Satellite imagery<small>Esri World Imagery · capture dates vary</small></span></span><input type="checkbox" checked={satellite} onChange={event => setSatellite(event.target.checked)} /></label>
             <label className="qs-layer"><span><Activity size={17} /><span>All hospital connections<small>Show beyond the selected place or hospital</small></span></span><input type="checkbox" checked={links} onChange={event => setLinks(event.target.checked)} /></label>
             <label className="qs-layer"><span><Pause size={17} /><span>Reduced motion<small>Static colors and manual playback</small></span></span><input type="checkbox" checked={reduced} onChange={event => { setReduced(event.target.checked); if(event.target.checked) setPlaying(false); }} /></label>
-            <p className="qs-layer-note">Colors show projected case counts, not official outbreak thresholds. Uncolored barangays may still have cases. Building geometry and hospital entrances are unverified context.</p>
+            <p className="qs-layer-note">Colors show projected case counts, not official outbreak thresholds. Uncolored barangays may still have cases. Building geometry and hospital entrances are unverified context. Satellite imagery is dated background, not current conditions.</p>
             <details className="qs-national-context" onToggle={event => setLocatorOpen(event.currentTarget.open)}><summary>Philippines locator</summary>{locatorOpen && <PhilippinesOverview />}</details>
             <button type="button" className="text-button qs-source-link" onClick={() => openDetail('methods')}>Run assumptions & sources <ChevronRight size={14} /></button>
           </div>
