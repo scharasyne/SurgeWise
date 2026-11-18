@@ -1,7 +1,11 @@
 # Simulation session handoff
 
-Updated 2026-11-16 02:39:53 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-19 03:05 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## QC hospital allocation decision record
+
+The [allocation decision record](hospital-allocation-decisions.md) describes the research design for first admissions and distinguishes the working-tree distance-only export from the proposed Figure 4 preference multiplier. The live workspace currently uses nearest or nearest-three arrival policies. The multiplier and final sensitivity settings await selection. The offline exporter, its outputs and companion notes were already present as untracked work on `feat/ui-changes`.
 
 ## Current continuation — shared loading, stable opening and no extra lines
 

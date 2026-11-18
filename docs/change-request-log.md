@@ -1,5 +1,9 @@
 # User-requested extensions
 
+## 2026-11-19 03:05 +08:00 — QC first-admission allocation decisions
+
+Recorded the agreed all-hospital proximity model, Figure 4 preference adjustment, treatment of unknown preferences, and paired bed-demand comparison. The record identifies the illustrative distance and preference parameters and the evidence for each. [Allocation decision record](hospital-allocation-decisions.md)
+
 ## 2026-11-19 02:10 +08:00 — Hide/show the Simulation timeline (presentation only)
 
 The user asked for a button to hide the bottom timeline panel. A small tab with
