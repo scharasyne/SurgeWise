@@ -1,5 +1,9 @@
 # User-requested extensions
 
+## 2026-11-19 03:30 +08:00 — Generate QC first-admission chains
+
+Generated paired offline first-admission and expected-bed tables using straight-line proximity and the reviewed emergency-preference map. The crosswalk preserves unknown and out-of-network matches. [Exports, evidence and reproduction commands](first-admission-matrix.md)
+
 ## 2026-11-19 03:05 +08:00 — QC first-admission allocation decisions
 
 Recorded the agreed all-hospital proximity model, Figure 4 preference adjustment, treatment of unknown preferences, and paired bed-demand comparison. The record identifies the illustrative distance and preference parameters and the evidence for each. [Allocation decision record](hospital-allocation-decisions.md)

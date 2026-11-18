@@ -1,11 +1,15 @@
 # Simulation session handoff
 
-Updated 2026-11-19 03:05 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-19 03:30 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## Local simulation model recovery
+
+On this checkout the annual ranking's source, code and output checksums matched, but its ignored local model differed from the model checksum in the tracked manifest. The future workspace also reported a seasonal model software mismatch. Running `.venv/bin/python scripts/train_qc_barangay.py` and `.venv/bin/python scripts/train_qc_seasonal.py` rebuilt the model files and companion JSON from the audited inputs in the engine's environment. A checkout that restores another environment's manifests can recreate this mismatch. Check `qcWorkspaceReady` and `futureWorkspaceReady` at `/readiness` after a rebuild. Both localhost web simulation endpoints returned HTTP 200 with 142 barangays, 46 facilities and 29 frames. All 90 Python tests passed.
 
 ## QC hospital allocation decision record
 
-The [allocation decision record](hospital-allocation-decisions.md) describes the research design for first admissions and distinguishes the working-tree distance-only export from the proposed Figure 4 preference multiplier. The live workspace currently uses nearest or nearest-three arrival policies. The multiplier and final sensitivity settings await selection. The offline exporter, its outputs and companion notes were already present as untracked work on `feat/ui-changes`.
+The [offline first-admission exports](first-admission-matrix.md) now include a proximity baseline and an illustrative 1.5× Figure 4 scenario. The reviewed crosswalk has 14 resolved in-network preferences and 128 unknowns. Both chains cover 142 barangays and 46 absorbing hospitals and conserve the same daily admissions and total expected beds. The workspace still uses its existing arrival policies. See the [decision record](hospital-allocation-decisions.md) for the source limits and sensitivity settings.
 
 ## Current continuation — shared loading, stable opening and no extra lines
 
