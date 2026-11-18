@@ -26,7 +26,8 @@ The existing README and `docs/data-sources.md` describe an older empty scaffold;
 hospital inventory/details, layers and evidence. Search and source totals stay
 visible while hospital results scroll independently. Fullscreen excludes the
 shared application rail. Street and optional generalized 3D building context use
-custom cartography; satellite/regional imagery were removed by user request.
+custom cartography; satellite/regional imagery were removed from Dashboard by user
+request. Simulation has an optional Esri World Imagery layer (2026-11-19).
 See `docs/dashboard-workspace-design.md`. The explorer links to the existing
 `/outbreak-response` workspace; it does not run the guarded legacy endpoint or
 transfer NCR demand to QC simulation.

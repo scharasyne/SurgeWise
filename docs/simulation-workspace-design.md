@@ -17,6 +17,11 @@ hospital network, source observations and API contracts are unchanged.
 - Playback retains play/pause, restart, previous/next day, speed, final-day jump
   and scrubbing. A peak-demand shortcut uses the backend's saved peak day; it is
   shown after playback starts. It never derives a competing peak in the browser.
+  Since 2026-11-19 a small tab on the timeline's top edge hides the whole
+  timeline (playback, readouts and Help) to give the map more room; a "Show
+  timeline · Day N / total" tab stays at the bottom of the map to bring it back.
+  Playback keeps running while it is hidden. Below 1100px the map credit and
+  map tools sit slightly higher so the tab never covers them.
 - Three compact readouts show accumulated projected cases with experimental
   range, current staffed beds required, and cumulative unplaced demand. Full day
   totals, observed source-year counts, holding, window totals, uncertainty and
@@ -71,7 +76,13 @@ This decorative height is not a measured building or disease quantity.
 
 3D generalized OSM buildings, QC/Philippines camera views, an optional national
 locator, hospital pins, connection toggles and reduced motion are in Layers.
-There is no satellite imagery. The national locator mounts on expansion and
+An optional Satellite imagery layer (since 2026-11-19) shows Esri World Imagery
+under roads and labels, like a hybrid map: minor roads, rails, casings and flat
+buildings are hidden, major roads are highlighted, and labels turn light with
+dark halos. Neutral barangays become a faint veil over it; case-colored ones keep
+their colors. Imagery capture dates vary by place, so it is dated background, not
+current conditions, and it does not verify hospital entrances. Esri is credited
+in the map attribution while the layer is visible. Dashboard has no imagery. The national locator mounts on expansion and
 resizes with its container. Camera padding accounts for top controls without
 treating a wide status banner as a left sidebar.
 

@@ -92,6 +92,12 @@
 @keyframes qs-rank-breathe { 0%,100% { transform:scale(.97);opacity:.9; } 50% { transform:scale(1.06);opacity:1; } }
 .qs-marker-label { position:absolute;left:50%;bottom:calc(100% + 9px);width:max-content;max-width:220px;padding:8px 11px;border:1px solid var(--sw-border);border-radius:5px;background:var(--sw-card);color:var(--sw-text-strong);font-size:11px;font-weight:400;line-height:1.65;text-align:left;transform:translateX(-50%);opacity:0;visibility:hidden;pointer-events:none; }
 .qs-workspace .movie-hotspot-icon:hover .qs-marker-label,.qs-workspace .movie-hotspot-icon:focus-visible .qs-marker-label,.qs-workspace .movie-hospital-icon:hover .qs-marker-label,.qs-workspace .movie-hospital-icon:focus-visible .qs-marker-label { opacity:1;visibility:visible; }
+/* Drawer tab on the timeline's top edge; it stays on the map to bring the timeline back. */
+.qs-workspace .qs-timeline-toggle { position:absolute;z-index:4;left:50%;bottom:0;display:flex;align-items:center;gap:6px;min-height:22px;padding:0 14px;border:1px solid var(--sw-border);border-bottom:0;border-radius:9px 9px 0 0;background:var(--sw-card);color:var(--sw-muted);font-size:11px;transform:translateX(-50%);box-shadow:0 -3px 10px #19394d0d; }
+.qs-workspace .qs-timeline-toggle:hover { background:var(--sw-hover);color:var(--sw-text-strong); }
+.qs-workspace .qs-timeline-toggle[aria-expanded='false'] { min-height:30px;color:var(--sw-text-strong); }
+.qs-timeline-toggle small { color:var(--sw-muted);font-size:11px; }
+.qs-timeline-toggle .qs-control-tooltip { right:auto;left:50%;top:auto;bottom:calc(100% + 8px);transform:translateX(-50%); }
 .qs-timeline { position:relative;z-index:5;flex-shrink:0;padding:8px 20px 12px;border-top:1px solid var(--sw-border);background:var(--sw-card); }
 .qs-timeline-heading { display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px; }
 .qs-research-status { color:var(--sw-muted);font-size:11px; }
@@ -296,6 +302,9 @@
 .qs-guide dd { margin:4px 0;color:var(--sw-muted);font-size:11px; }
 .qs-guide > p { margin:18px 0;color:var(--sw-muted);font-size:11px;line-height:1.9; }
 @media (max-width:1100px) {
+  /* Keep the map credit clear of the timeline tab at the bottom centre. */
+  .qs-workspace .maplibregl-ctrl-bottom-right { bottom:24px; }
+  .qs-map-tools { bottom:54px; }
   .qs-transport { grid-template-columns:70px minmax(118px,1fr) auto;gap:9px; }
   .qs-day-track { grid-row:2;grid-column:1/-1;min-height:33px;padding-top:12px;margin:1px 0 3px; }
   .qs-workspace .qs-peak { top:-6px; }
@@ -336,12 +345,12 @@
   .qs-workspace:not([data-panel='none']) .qs-live-totals { display:none; }
   .qs-workspace:not([data-panel='none']) .qs-map-key { bottom:12px; }
   .qs-workspace:not([data-panel='none']) .qs-map-key-content { max-height:130px; }
-  .qs-map-tools { right:12px;bottom:40px; }
+  .qs-map-tools { right:12px;bottom:54px; }
   .qs-map-button { min-height:36px!important;width:36px!important; }
   .qs-workspace:not([data-panel='none']) .qs-map-tools { top:68px;bottom:auto; }
   .qs-workspace:not([data-panel='none']) .qs-zoom,.qs-workspace:not([data-panel='none']) .qs-control-divider { display:none; }
   .qs-workspace:not([data-panel='none']) .qs-map-tools .qs-map-button:nth-child(3) { display:none; }
-  .qs-map-key { left:12px;bottom:44px; }
+  .qs-map-key { left:12px;bottom:50px; }
   .qs-workspace .maplibregl-ctrl-bottom-left { left:12px; }
   .qs-workspace:not([data-panel='none']) .maplibregl-ctrl-scale { visibility:hidden; }
   .qs-engine-status { top:68px;left:12px;right:65px;padding:7px 9px; }
