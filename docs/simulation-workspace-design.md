@@ -11,9 +11,14 @@ hospital network, source observations and API contracts are unchanged.
 - The initial view is a map and compact bottom playback dock. One optional right
   panel hosts Scenario, Results, barangay/hospital inspection or Layers. On phones
   this panel sits below the map. Results can be widened for tables and charts.
-- Scenario retains both modes, independent form state, all 1–28-day inputs,
-  2/7/12/14/28 quick runs, covered historical windows, future month/weather/surge
-  inputs and all patient-flow, capacity and allocation assumptions.
+- In **Set up scenario**, choose Historical replay or Future forecast. Pick a start
+  date and enter a duration from 1 to 28 days, or choose a duration preset.
+  The final snapshot date updates as you edit. **Run simulation** applies the changes.
+  A teal fill and checkmark identify the selected mode and duration.
+- Historical replay offers saved forecast periods. Future forecast uses the month
+  and day in the start date for seasonal planning. Both modes retain their own
+  settings. Hospital planning groups capacity, admissions and length of stay
+  separately from the choice of hospital.
 - Playback retains play/pause, restart, previous/next day, speed, final-day jump
   and scrubbing. A peak-demand shortcut uses the backend's saved peak day; it is
   shown after playback starts. It never derives a competing peak in the browser.

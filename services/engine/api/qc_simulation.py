@@ -11,6 +11,7 @@ from .research import StrictModel, FacilityAssumption, unavailable
 from .outbreak import OutbreakInput, inputs, create_movie
 from ..repositories.forecast_runs import load_environmental_runs, FOLDER
 from ..domain.source_calendar import historical_window
+from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
 
 router = APIRouter(prefix="/v1")
 LIMITS = {
@@ -43,12 +44,26 @@ class QCInput(StrictModel):
     admissionDelayDays: int = Field(default=0, strict=True, ge=0, le=28)
     surgeActivationDay: int = Field(default=7, strict=True, ge=0, le=28)
     acknowledgeAssumedCapacity: Literal[True] = True
-    allocationPolicy: Literal["nearest", "optimized"] = "nearest"
-    arrivalSplitPolicy: Literal["nearest", "nearest_three_equal"] = "nearest_three_equal"
+    allocationPolicy: AllocationPolicy = "first_hospital"
+    arrivalSplitPolicy: ArrivalPolicy = "markov_preference"
     compareAllocation: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_choice_defaults(cls, data):
+        if not isinstance(data, dict):
+            return data
+        values = dict(data)
+        if "arrivalSplitPolicy" in values:
+            values.setdefault("allocationPolicy", "first_hospital" if values["arrivalSplitPolicy"] in ("markov_preference", "markov_proximity") else "nearest")
+        elif values.get("allocationPolicy") in ("nearest", "optimized"):
+            values["arrivalSplitPolicy"] = "nearest_three_equal"
+        return values
 
     @model_validator(mode="after")
     def check_window(self):
+        if (self.arrivalSplitPolicy in MATRICES) != (self.allocationPolicy == "first_hospital"):
+            raise ValueError("Select first-hospital placement for a Markov choice policy.")
         if not 1 <= (self.endDate - self.startDate).days <= 28:
             raise ValueError("Select a 1–28 elapsed-day date range.")
         if not 2024 <= self.startDate.year <= 2035:
@@ -107,10 +122,12 @@ def workspace(params: QCInput):
         final = result["days"][-1]
         result["periodSummary"] = {"expectedCases": final["cumulativeCases"], "caseRange": final["caseRange"],
             "barangays": sorted(final["barangays"], key=lambda b: (-b["cumulativeCases"], b["barangayId"]))}
-        result["assumptions"] = "QC-wide historical case + lagged rainfall/temperature/humidity model; fixed prior annual barangay weights. Daily counts are uniformly disaggregated source-block forecasts. Zero initial dengue census, constant assumed non-dengue occupancy, configured admission fraction/delay and fixed LOS; observed source case totals are not observed hospital admissions. No user-selected infection origin or calibrated transmission model. All 46 registered hospitals are hypothetical eligible sites with separately assumed capacity. " + ("Minimum-distance capacity-constrained LP; holding solved after supported placements." if params.allocationPolicy == "optimized" else "Deterministic nearest-supported-capacity baseline, then finite holding.")
+        result["assumptions"] = "QC-wide historical case + lagged rainfall/temperature/humidity model; fixed prior annual barangay weights. Daily counts are uniformly disaggregated source-block forecasts. Zero initial dengue census, constant assumed non-dengue occupancy, configured admission fraction/delay and fixed LOS; observed source case totals are not observed hospital admissions. No user-selected infection origin or calibrated transmission model. All 46 registered hospitals are hypothetical eligible sites with separately assumed capacity. " + ("Markov first admissions retain demand at each chosen hospital." if params.allocationPolicy == "first_hospital" else "Minimum-distance capacity-constrained LP; holding solved after supported placements." if params.allocationPolicy == "optimized" else "Deterministic nearest-supported-capacity baseline, then finite holding.")
         result["assumptions"] = result["assumptions"].replace("fixed prior annual barangay weights", "fixed XGBoost annual barangay burden forecast shares")
         result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is evaluated separately; weekly hotspot and spatial-allocation uncertainty are not validated."
-        if params.compareAllocation:
+        if params.compareAllocation and params.allocationPolicy == "first_hospital":
+            result["firstAdmissionComparison"] = compare_first_admissions(model, result)
+        elif params.compareAllocation:
             counterpart = create_movie(model.model_copy(update={"allocationPolicy": "optimized" if params.allocationPolicy == "nearest" else "nearest"}))
             def metrics(movie):
                 last = movie["days"][-1]
@@ -127,3 +144,12 @@ def workspace(params: QCInput):
         raise
     except (OSError, ValueError, KeyError, TypeError):
         raise unavailable() from None
+
+def compare_first_admissions(model, movie):
+    other_policy = "markov_proximity" if model.arrivalSplitPolicy == "markov_preference" else "markov_preference"
+    other = create_movie(model.model_copy(update={"arrivalSplitPolicy": other_policy}))
+    return [{"arrivalSplitPolicy": value["parameters"]["arrivalSplitPolicy"],
+             "peakBedsShort": value["bedProjection"]["peakHospitalBedsShort"],
+             "peakShortageDate": value["bedProjection"]["peakHospitalShortageDate"],
+             "peakExpectedBeds": max(d["bedForecast"]["expectedBeds"] for d in value["days"])}
+            for value in sorted([movie, other], key=lambda v: v["parameters"]["arrivalSplitPolicy"], reverse=True)]

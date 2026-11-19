@@ -1,7 +1,21 @@
 # Simulation session handoff
 
-Updated 2026-11-16 02:39:53 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-19 04:32 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## Scenario panel
+
+The scenario form now uses a start date and an editable 1–28 day duration in both modes. The duration presets update the form. Run simulation submits the changes. Hospital planning holds the patient-choice, capacity and admission assumptions. Completed future runs show the timing audit in Methods & sources. [Panel behavior](simulation-workspace-design.md#layout-and-interaction)
+
+## Local simulation model recovery
+
+On this checkout the annual ranking's source, code and output checksums matched, but its ignored local model differed from the model checksum in the tracked manifest. The future workspace also reported a seasonal model software mismatch. Running `.venv/bin/python scripts/train_qc_barangay.py` and `.venv/bin/python scripts/train_qc_seasonal.py` rebuilt the model files and companion JSON from the audited inputs in the engine's environment. A checkout that restores another environment's manifests can recreate this mismatch. Check `qcWorkspaceReady` and `futureWorkspaceReady` at `/readiness` after a rebuild. Both localhost web simulation endpoints returned HTTP 200 with 142 barangays, 46 facilities and 29 frames. All 90 Python tests passed.
+
+## QC hospital allocation decision record
+
+The [offline first-admission exports](first-admission-matrix.md) now include a proximity baseline and an illustrative 1.5× Figure 4 scenario. The reviewed crosswalk has 14 resolved in-network preferences and 128 unknowns. Both chains cover 142 barangays and 46 absorbing hospitals and conserve the same daily admissions and total expected beds. Both live workspace tabs now use the preference-adjusted chain by default. The timeline, hospital breakdown and barangay inspector report selected-day shortages under assumed capacity. Proximity-only and legacy routing policies are available in Hospital planning. See the [decision record](hospital-allocation-decisions.md) for the source limits and sensitivity settings.
+
+Verification on `feat/markov-chains` covered all 100 Python and 92 web tests, TypeScript, lint, the production build and the historical/future HTTP smoke test. A browser replay with all dengue slots occupied and zero surge beds showed 46 whole beds short on the final day and 0.74 expected beds short attributable to Batasan Hills. The same date under default capacity showed zero shortage. Both cases are hypothetical.
 
 ## Current continuation — shared loading, stable opening and no extra lines
 

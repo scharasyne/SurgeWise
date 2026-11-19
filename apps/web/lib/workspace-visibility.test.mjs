@@ -199,17 +199,23 @@ test('the initial view reserves the map, with one hidden contextual panel and an
   assert.equal(findElements(tree, node => node.type === 'aside').length, 1);
 });
 
-test('both modes and original inputs remain accessible in Scenario while export has one Results entry point', () => {
+test('both modes and scenario assumptions remain accessible in Scenario while export has one Results entry point', () => {
   const tree = renderWorkspace(1, { 3: controlFixture, 23: 'scenario' });
   const settings = findElements(tree, node => node.props?.['aria-label'] === 'Simulation controls')[0];
   assert.equal(settings.node.props.hidden, false);
   const tabs = findElements(settings.node, node => node.props?.role === 'tab' && node.props?.id?.startsWith('qc-tab-'));
   assert.equal(tabs.length, 2); assert.equal(tabs.filter(item => item.node.props['aria-selected']).length, 1);
-  for (const label of ['Forecast start date', 'Forecast end date', 'Forecast horizon in days', 'Admission fraction', 'Length of stay', 'Non-dengue occupancy', 'Normal staffed beds / site', 'Supported surge beds / site', 'Unstaffed holding spaces / site']) {
+  for (const label of ['Start date', 'Duration', 'Cases admitted', 'Hospital stay', 'Occupied by other patients', 'Staffed beds per hospital', 'Extra staffed beds', 'Temporary holding spaces']) {
     assert.equal(findElements(settings.node, node => node.props?.['aria-label'] === label).length, 1, label);
   }
-  assert.equal(findElements(settings.node, node => node.props?.label === 'Hospital arrival split').length, 1);
-  assert.equal(findElements(settings.node, node => node.props?.label === 'Hospital allocation policy').length, 1);
+  assert.equal(findElements(settings.node, node => node.props?.label === 'How patients choose a hospital').length, 1);
+  assert.equal(findElements(settings.node, node => node.props?.label === 'When a hospital is full').length, 1);
+  const presets = findElements(settings.node, node => node.props?.['aria-pressed'] !== undefined);
+  assert.equal(presets.length, 5);
+  assert.deepEqual(presets.filter(({node}) => node.props['aria-pressed']).map(({node}) => node.key), ['14']);
+  assert.ok(presets.every(({node}) => node.props.type === 'button'));
+  const snapshot = findElements(settings.node, node => node.props?.className === 'qs-window-note')[0].node;
+  assert.match(renderToStaticMarkup(snapshot), /Jul 15, 2025/);
   const exports = findElements(tree, node => node.type === 'button' && node.props.onClick?.name === 'download');
   assert.equal(exports.length, 1);
   assert.ok(exports[0].ancestors.some(node => node.props?.['aria-label'] === 'Simulation results'));
@@ -460,7 +466,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
   function changeStart(date) {
     element(
       render(),
-      (node) => node.props?.['aria-label'] === 'Forecast start date'
+      (node) => node.props?.['aria-label'] === 'Start date'
     ).props.onChange({ target: { value: date } });
   }
   async function switchMode(mode) {
@@ -477,7 +483,22 @@ test('each mode restores its edited dates and input edits invalidate playback re
   assert.equal(states.get(2), fixture);
   element(render(), node => node.props?.['aria-label'] === 'Close simulation panel').props.onClick();
   assert.equal(states.get(23), null);
+  const capacity = () => element(render(), node => node.props?.['aria-label'] === 'Staffed beds per hospital');
+  capacity().props.onChange({ currentTarget: { value: '', validity: { valid: false } } });
+  assert.equal(capacity().props.value, '');
+  const input = { value: '02', validity: { valid: true } };
+  capacity().props.onChange({ currentTarget: input });
+  assert.equal(input.value, '2');
+  assert.equal(states.get(3).normalCapacity, 2);
+  element(render(), node => node.key === '7' && node.props?.['aria-pressed'] === false).props.onClick();
+  assert.equal(states.get(3).endDate, '2025-07-08');
+  assert.equal(element(render(), node => node.key === '7' && node.type === 'button').props['aria-pressed'], true);
+  assert.deepEqual(requests, []);
+  changeStart('');
+  assert.equal(element(render(), node => node.props?.type === 'submit').props.disabled, true);
+  assert.equal(element(render(), node => node.props?.['aria-label'] === 'Duration').props.value, 7);
   changeStart('2025-08-01');
+  assert.equal(states.get(3).endDate, '2025-08-08');
   assert.equal(states.get(2), null, 'outdated results are cleared');
   assert.equal(states.get(5), 0, 'playback resets to day zero');
   assert.equal(states.get(6), false, 'playback pauses');

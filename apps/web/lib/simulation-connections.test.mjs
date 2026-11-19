@@ -110,3 +110,18 @@ test('actual SVG renderer uses displayed endpoints, preserves direction, cancels
     if (previous.cancel === undefined) delete globalThis.cancelAnimationFrame; else globalThis.cancelAnimationFrame = previous.cancel;
   }
 });
+
+test('first-hospital map shows largest actual placements and excludes unplaced demand', () => {
+  const firstAdmissionOriginShares = Object.fromEntries(hospitals.map(h => [h.id, { B1: .75, B2: .25 }]));
+  const local = { ...context, firstAdmissionOriginShares };
+  const day = { assignments: [], facilities: hospitals.map((h, i) => ({ facilityId: h.id,
+    supportedPlacementsToday: i, holdingPlacementsToday: i === 3 ? 1 : 0, unplacedToday: 10 })) };
+  const options = { selected: 'B1', selectedHospital: '', focus: 'barangay', showOverview: false };
+  const drawn = simulationConnections(local, day, options).filter(c => c.kind === 'placement');
+  assert.deepEqual(drawn.map(c => c.facilityId), ['H4', 'H3', 'H2']);
+  assert.equal(drawn[0].patients, 3);
+  assert.equal(drawn[0].holding, .75);
+  const hospital = simulationConnections(local, day, { ...options, focus: 'hospital', selectedHospital: 'H4' })
+    .filter(c => c.kind === 'placement');
+  assert.equal(hospital.reduce((sum, c) => sum + c.patients, 0), 4);
+});

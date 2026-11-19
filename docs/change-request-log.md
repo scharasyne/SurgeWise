@@ -1,5 +1,25 @@
 # User-requested extensions
 
+## 2026-11-19 04:32 +08:00 — Simplify scenario setup
+
+Group the settings by forecast period, case forecast and hospital planning. Use “preferred hospital” throughout the interface. Mark selected tabs and duration presets with a checkmark and teal fill. Presets edit the duration, and Run simulation applies the settings. Numeric fields allow replacement of an initial zero and validate before submission. [Panel behavior](simulation-workspace-design.md#layout-and-interaction)
+
+## 2026-11-19 04:06 +08:00 — Clarify bed totals in English
+
+Label the selected-day totals “Total beds needed” and “Additional beds needed.” When the shortfall is zero, explain that assumed capacity covers demand at each hospital. [Metric definitions](first-admission-matrix.md#using-the-chain-in-the-simulation)
+
+## 2026-11-19 03:54 +08:00 — First-hospital bed shortages in the QC simulator
+
+Use the two reviewed Markov chains for daily bed demand and first-hospital placement in historical and future scenarios. Show how many staffed beds are missing at each hospital, the sum across sites, and each barangay’s fractional contribution to that shortage. [Calculation and workspace controls](first-admission-matrix.md#using-the-chain-in-the-simulation)
+
+## 2026-11-19 03:30 +08:00 — Generate QC first-admission chains
+
+Generated paired offline first-admission and expected-bed tables using straight-line proximity and the reviewed emergency-preference map. The crosswalk preserves unknown and out-of-network matches. [Exports, evidence and reproduction commands](first-admission-matrix.md)
+
+## 2026-11-19 03:05 +08:00 — QC first-admission allocation decisions
+
+Recorded the agreed all-hospital proximity model, Figure 4 preference adjustment, treatment of unknown preferences, and paired bed-demand comparison. The record identifies the illustrative distance and preference parameters and the evidence for each. [Allocation decision record](hospital-allocation-decisions.md)
+
 ## 2026-11-19 02:10 +08:00 — Hide/show the Simulation timeline (presentation only)
 
 The user asked for a button to hide the bottom timeline panel. A small tab with
