@@ -22,9 +22,12 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             raise ValueError("Exactly 28 daily group arrays required")
         for groups in daily_groups:
             for group in groups:
-                if not math.isfinite(group["cases"]) or group["cases"] < 0 or set(group["facilityOrder"]) != ids or len(group["facilityOrder"]) != len(ids):
+                order = group["facilityOrder"]
+                valid_order = (len(order) == 1 and order[0] in ids if assignment_method == "first_hospital"
+                               else set(order) == ids and len(order) == len(ids))
+                if not math.isfinite(group["cases"]) or group["cases"] < 0 or not valid_order:
                     raise ValueError("Invalid spatial demand or hospital ordering")
-    if assignment_method not in {"nearest", "optimized"} or (assignment_method == "optimized" and daily_groups is None):
+    if assignment_method not in {"nearest", "optimized", "first_hospital"} or (assignment_method != "nearest" and daily_groups is None):
         raise ValueError("Invalid assignment method or missing spatial costs")
     states = [{"config": f, "cohorts": [], "holding": 0.0} for f in facilities]
     arrivals_total = discharged_total = unmet_total = 0.0
@@ -49,6 +52,8 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
                 s["cohorts"].append((day + los, promote))
         remaining, assignments = 0.0, []
         by_id = {s["config"]["facilityId"]: s for s in states}
+        local = {ident: {"firstAdmissionsToday": 0.0, "supportedPlacementsToday": 0.0,
+                         "holdingPlacementsToday": 0.0, "unplacedToday": 0.0} for ident in ids} if assignment_method == "first_hospital" else {}
         plans = None
         if assignment_method == "optimized" and groups:
             from .optimizer import daily_plan
@@ -82,6 +87,14 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
                 if held:
                     routes.setdefault(ident, {"supportedPlacements": 0.0, "holdingPlacements": 0.0})["holdingPlacements"] += held
             remaining += pending
+            if local:
+                ident = group["facilityOrder"][0]
+                placed_here = routes.get(ident, {})
+                local[ident]["firstAdmissionsToday"] += group["cases"] * admission_rate
+                local[ident]["supportedPlacementsToday"] += placed_here.get("supportedPlacements", 0.0)
+                local[ident]["holdingPlacementsToday"] += placed_here.get("holdingPlacements", 0.0)
+                local[ident]["unplacedToday"] += pending
+                continue
             assignments.extend({"barangayId": group["originId"], "facilityId": ident, **counts} for ident, counts in routes.items())
         snapshots = []
         for s in states:
@@ -89,7 +102,7 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             n, surge = f["normalCapacity"], f["surgeCapacity"] if day >= activation_day else 0
             census = sum(c for _, c in s["cohorts"])
             total = n * occupancy + census
-            snapshots.append({"facilityId": f["facilityId"], "normalCapacity": n, "activatedSurgeCapacity": surge,
+            snapshots.append({**local.get(f["facilityId"], {}), "facilityId": f["facilityId"], "normalCapacity": n, "activatedSurgeCapacity": surge,
                 "supportedCapacity": n + surge, "remainingSupportedCapacity": max(0, n + surge - total),
                 "assumedNonDengueCensus": n * occupancy,
                 "normalDengueCensus": min(census, n * (1 - occupancy)),

@@ -23,11 +23,14 @@ def main():
     for page in ["/", "/dashboard", "/outbreak-response", "/simulate"]:
         status, html = request(page)
         assert status == 200, (page, status)
-        if page in {"/outbreak-response", "/simulate"}:
-            assert "SurgeWise" in html and "Base cases for selected date" in html and "Nearest hospital capacity" in html
+        # The legacy route can stream a Next.js redirect after sending HTTP 200.
+        if page == "/simulate" and "Simulation timeline and playback" not in html:
+            assert "__next-page-redirect" in html and "/outbreak-response" in html, "Missing simulation redirect"
+        elif page in {"/outbreak-response", "/simulate"}:
+            assert "SurgeWise" in html and "Base cases for selected date" in html and "Nearby hospital details" in html, page
             assert "Simulation not started" in html
-            assert "Historical replay" in html and "Future surge forecast" in html
-            assert "Hotspot guide" in html and "Nearest hospital" in html
+            assert "Historical replay" in html and "Future forecast" in html
+            assert "Simulation timeline and playback" in html and "Nearest hospital" in html
             assert "Expansion origin" not in html
     status, country = request("/data/philippines-context.geojson")
     assert status == 200 and len(country["features"]) == 17
@@ -53,6 +56,7 @@ def main():
     for frame in data["days"]:
         assert frame["caseRange"]["lowerCases"] <= frame["cumulativeCases"] <= frame["caseRange"]["upperCases"]
         assert abs(frame["balanceError"]) < 1e-7
+        assert frame["bedForecast"]["hospitalBedsShort"] == sum(f["bedForecast"]["additionalStaffedBedsNeeded"] for f in frame["facilities"])
     for days, end in [(7, "2025-02-05"), (14, "2025-02-12"), (28, "2025-02-26")]:
         controls = {**data["controlValues"], "endDate": end}
         status, window = request("/api/research/qc-simulation", controls)
@@ -60,7 +64,9 @@ def main():
         assert window["periodSummary"]["expectedCases"] == window["days"][-1]["cumulativeCases"]
     controls = {**data["controlValues"], "endDate": "2025-02-05", "compareAllocation": True}
     status, comparison = request("/api/research/qc-simulation", controls)
-    assert status == 200 and {"nearest", "optimized"}.issubset(comparison["allocationComparison"]), comparison
+    assert status == 200 and {r["arrivalSplitPolicy"] for r in comparison["firstAdmissionComparison"]} == {"markov_preference", "markov_proximity"}
+    status, legacy = request("/api/research/qc-simulation", {**controls, "allocationPolicy": "nearest", "arrivalSplitPolicy": "nearest_three_equal"})
+    assert status == 200 and {"nearest", "optimized"}.issubset(legacy["allocationComparison"])
     status, _ = request("/api/research/qc-simulation", {**controls, "area": "NCR"})
     assert status == 422
     status, future = request("/api/research/future-simulation")
@@ -71,9 +77,9 @@ def main():
     assert future["futureForecast"]["accuracyAssessment"]["status"] == "EXPERIMENTAL_NOT_OPERATIONALLY_VALIDATED"
     assert len(future["futureForecast"]["calendarDiagnostics"]["monthly"]) == 72
     assert {r["days"] for r in future["futureForecast"]["calendarDiagnostics"]["windowLengths"]} == {1, 2, 7, 12, 14, 28}
-    assert future["bedProjection"]["arrivalSplitPolicy"] == "nearest_three_equal"
+    assert future["bedProjection"]["arrivalSplitPolicy"] == "markov_preference"
     assert len(future["bedProjection"]["placePeaks"]) == 142
-    assert all(len(p["hospitals"]) == 3 and abs(sum(h["share"] for h in p["hospitals"]) - 1) < 1e-9 for p in future["bedProjection"]["placePeaks"])
+    assert all(len(p["hospitals"]) == 46 and all(h["share"] > 0 for h in p["hospitals"]) and abs(sum(h["share"] for h in p["hospitals"]) - 1) < 1e-9 for p in future["bedProjection"]["placePeaks"])
     assert future["progressionMethod"] == "dated_QC_forecast_allocated_by_xgboost_annual_burden_shares"
     assert all(f["nearestHotspot"]["barangayId"] in future["days"][-1]["hotspotIds"] for f in future["days"][-1]["facilities"])
     assert future["bedProjection"]["staffedBedsRequired"] >= 0

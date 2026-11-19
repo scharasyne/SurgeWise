@@ -1,3 +1,5 @@
+export type ArrivalPolicy = 'nearest' | 'nearest_three_equal' | 'markov_proximity' | 'markov_preference';
+export type AllocationPolicy = 'first_hospital' | 'nearest' | 'optimized';
 export interface MovieHospital {
   id: string; name: string; coordinates: [number, number]; coordinateStatus: string;
   coordinateSourceUrl: string; sourceAsOf: string; dengueInpatientEligible: null;
@@ -5,6 +7,7 @@ export interface MovieHospital {
   primarySourceUrl: string;
 }
 export interface MovieBarangay {
+  mappedFavoriteHospitalId?: string | null;
   id: string; name: string; coordinates: [number, number]; weight: number;
   observedAnnualCases: number | null;
   predictedAnnualCases?: number | null; burdenRank?: number | null; isHighBurdenCandidate?: boolean;
@@ -12,6 +15,7 @@ export interface MovieBarangay {
   hospitalsWithinBarangay?: { facilityId: string; distanceKm: number }[];
 }
 export interface MovieContext {
+  firstAdmissionOriginShares?: Record<string, Record<string, number>>;
   hotspotRanking?: { model: string; forecastYear: number; trainingCutoffYear: number; criterion: string;
     artifactSha256: string; candidateIds: string[]; limitations: string;
     validation: { targetYear: number; model: string; n: number; maeAnnualCases: number; top10Overlap: number; topCount: number }[] } | null;
@@ -20,8 +24,8 @@ export interface MovieContext {
 }
 export interface MovieParameters {
   forecastRunId: string; scenarioKind: 'hypothetical_shock' | 'historical_replay'; acknowledgeHypotheticalHospitalNetwork: true;
-  autoHotspots?: boolean; allocationPolicy?: 'nearest' | 'optimized';
-  arrivalSplitPolicy?: 'nearest' | 'nearest_three_equal';
+  autoHotspots?: boolean; allocationPolicy?: AllocationPolicy;
+  arrivalSplitPolicy?: ArrivalPolicy;
   acknowledgeHypotheticalDates: true; startDate: string; endDate: string; seedBarangayId: string;
   extraCasesPerWeek: number; initialRadiusKm: number; expansionKmPerDay: number; growthDays: number;
   shockProfile: 'step' | 'ramp'; hospitalizationRate: number; lengthOfStayDays: number;
@@ -38,15 +42,17 @@ export interface MovieDay {
   expansionRing: [number, number][];
   caseRange?: CaseRange; dailyCaseRange?: Pick<CaseRange, 'lowerCases' | 'upperCases'>;
   bedForecast?: BedForecast;
-  barangays: { barangayId: string; expectedCases: number; baselineCases: number; shockCases: number; cumulativeCases: number; caseRange?: Pick<CaseRange, 'lowerCases' | 'upperCases'> }[];
+  barangays: { barangayId: string; expectedBedsShort?: number; expectedCases: number; baselineCases: number; shockCases: number; cumulativeCases: number; caseRange?: Pick<CaseRange, 'lowerCases' | 'upperCases'> }[];
   assignments: { barangayId: string; facilityId: string; supportedPlacements: number; holdingPlacements: number; distanceKm: number }[];
   facilities: { facilityId: string; normalCapacity: number; activatedSurgeCapacity: number; supportedCensus: number;
+    firstAdmissionsToday?: number; supportedPlacementsToday?: number; holdingPlacementsToday?: number; unplacedToday?: number;
     nearestHotspot?: { barangayId: string; distanceKm: number } | null;
     bedForecast?: BedForecast;
     supportedCapacity: number; remainingSupportedCapacity: number; assumedNonDengueCensus: number;
     normalDengueCensus: number; surgeDengueCensus: number; holdingCensus: number; normalOccupancyPct: number; supportedOccupancyPct: number }[];
 }
 export interface BedForecast {
+  hospitalBedsRequired?: number; hospitalBedsShort?: number; hospitalsShort?: number;
   demandUtilizationPct?: number | null; utilizationDefinition?: string;
   baselineExpectedBeds?: number; baselineStaffedBedsRequired?: number; additionalStaffedBedsDueToSurge?: number;
   expectedBeds: number; lowerBeds: number | null; upperBeds: number | null;
@@ -57,7 +63,7 @@ export interface BedForecast {
 export interface BedProjection extends BedForecast {
   peakDemandUtilizationPct?: number | null;
   baselinePeakStaffedBedsRequired?: number; peakAdditionalStaffedBedsDueToSurge?: number;
-  arrivalSplitPolicy?: 'nearest' | 'nearest_three_equal';
+  arrivalSplitPolicy?: ArrivalPolicy;
   placePeaks?: { barangayId: string; hospitals: { facilityId: string; share: number; expectedAdmissions: number;
     peakStaffedBedsRequired: number; baselinePeakStaffedBedsRequired: number; additionalStaffedBedsDueToSurge: number }[] }[];
   peakDate: string; peakDayIndex: number; peakLowerStaffedBedsRequired: number | null; peakUpperStaffedBedsRequired: number | null;
@@ -70,8 +76,8 @@ export interface QCControls {
   growthDays: number; normalCapacity: number; surgeCapacity: number; holdingCapacity: number;
   hospitalizationRate: number; baselineOccupancy: number; lengthOfStayDays: number;
   admissionDelayDays: number; surgeActivationDay: number; acknowledgeAssumedCapacity: true;
-  allocationPolicy: 'nearest' | 'optimized'; compareAllocation: boolean;
-  arrivalSplitPolicy?: 'nearest' | 'nearest_three_equal';
+  allocationPolicy: AllocationPolicy; compareAllocation: boolean;
+  arrivalSplitPolicy?: ArrivalPolicy;
   horizonDays?: number; weatherProfile?: 'typical' | 'wetter' | 'drier' | 'hotter';
   surgeEnabled?: boolean; surgeOnsetDay?: number; surgeMultiplier?: number;
 }
@@ -104,6 +110,7 @@ export interface QCWorkspaceResult extends OutbreakMovie {
     selection: { criterion: string; scores: Record<string, number> };
     validation: { year: number; model: string; n: number; mae: number; rmse: number; meanBias?: number; wapePct?: number | null; empiricalRangeCoverage: number }[];
     stalenessCaveat: string; weatherCaveat: string };
+  firstAdmissionComparison?: { arrivalSplitPolicy: ArrivalPolicy; peakBedsShort: number; peakShortageDate: string | null; peakExpectedBeds: number }[];
   allocationComparison?: { nearest: AllocationMetrics; optimized: AllocationMetrics; caveat: string };
 }
 export interface AllocationMetrics { cumulativeUnresolved: number; holdingCensus: number; maxNormalOccupancyPct: number; expectedPatientKm: number }

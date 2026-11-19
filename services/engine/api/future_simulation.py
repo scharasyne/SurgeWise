@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, model_validator
 
-from .qc_simulation import QCInput, LIMITS
+from .qc_simulation import QCInput, LIMITS, compare_first_admissions
 from .research import FacilityAssumption, unavailable
 from .outbreak import OutbreakInput, inputs, create_movie
 from ..repositories.seasonal_runs import create_seasonal_run, approved_model, FOLDER, SeasonalArtifactError
@@ -128,7 +128,9 @@ def future_workspace(params: FutureInput):
             "simulationResultSha256": movie["resultSha256"]}
         result["assumptions"] = result["assumptions"].replace("Fixed prior annual spatial weights", "Fixed XGBoost annual barangay burden forecast shares")
         result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is not validated weekly hotspot detection; spatial uncertainty is not included in city case ranges."
-        if params.compareAllocation:
+        if params.compareAllocation and params.allocationPolicy == "first_hospital":
+            result["firstAdmissionComparison"] = compare_first_admissions(model, movie)
+        elif params.compareAllocation:
             other = create_movie(model.model_copy(update={"allocationPolicy": "optimized" if params.allocationPolicy == "nearest" else "nearest"}))
             def metrics(value):
                 last = value["days"][-1]
