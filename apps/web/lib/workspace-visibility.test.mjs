@@ -38,6 +38,7 @@ const dayFixture = (dayIndex) => ({
   cumulativeUnresolved: 0,
 });
 const fixture = {
+  progressionMethod: 'production_weekly_barangay_forecast',
   durationDays: 1,
   days: [dayFixture(0), dayFixture(1)],
   periodSummary: {

@@ -1,5 +1,6 @@
 'use client';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -74,13 +75,8 @@ const PhilippinesOverview = dynamic(
 const format = (n: number | undefined | null) =>
   n == null ? '—' : n.toLocaleString('en-PH', { maximumFractionDigits: 1 });
 const formatFractional = (n: number) => n > 0 && n < 0.01 ? '<0.01' : n.toLocaleString('en-PH', { maximumFractionDigits: 2 });
-const range = (r: { lowerCases: number; upperCases: number } | undefined) =>
+const range = (r: { lowerCases: number; upperCases: number } | undefined | null) =>
   r ? `${format(r.lowerCases)}–${format(r.upperCases)}` : 'Unavailable';
-const factorName: Record<string, string> = {
-  RF_NASA: 'Rainfall',
-  'Temp_ERA5-Land': 'Temperature',
-  'RH_ERA5-Land': 'Relative humidity',
-};
 const dateLabel = (date: string | undefined) =>
   date ? formatScenarioDate(date) : '—';
 
@@ -104,11 +100,11 @@ const GLOSSARY = {
   ],
   range: [
     'Case range',
-    'Experimental range targeting 80% coverage. Retrospective checks covered fewer weeks, so treat it as exploratory.',
+    'The production model supplies point forecasts. Prediction intervals are unavailable.',
   ],
   hotspot: [
     'High-burden candidate (hotspot)',
-    'One of the ten barangays with the highest predicted annual dengue burden. Not a confirmed outbreak.',
+    'One of the ten barangays with the highest baseline case forecasts over the selected window. Not a confirmed outbreak.',
   ],
   accredited: [
     'Accredited beds',
@@ -196,6 +192,9 @@ async function fetchWorkspace(
           ? data.detail.map((d: { msg: string }) => d.msg).join(' ')
           : `Request failed (${response.status})`)
     );
+  if (data.progressionMethod !== 'production_weekly_barangay_forecast') {
+    throw Error('The connected engine is serving an older case forecast. Restart or deploy the updated FastAPI engine and reload.');
+  }
   return data;
 }
 
@@ -532,6 +531,11 @@ export default function QCSimulationWorkspace() {
   );
   const localHospitals = area?.hospitalsWithinBarangay ?? [];
   const source = data?.forecastEvidence;
+  const targetWeeks = source?.targetWeeks;
+  const firstWeek = targetWeeks?.[0], lastWeek = targetWeeks?.at(-1);
+  const forecastPeriod = firstWeek && lastWeek
+    ? `${firstWeek.year} W${firstWeek.week}${firstWeek === lastWeek ? '' : `–${firstWeek.year === lastWeek.year ? '' : lastWeek.year + ' '}W${lastWeek.week}`}`
+    : null;
   const fullPeriod = scenario?.periodSummary;
   const finalDay = scenario?.days.at(-1);
   const hotspotRanking = context?.hotspotRanking;
@@ -612,13 +616,6 @@ export default function QCSimulationWorkspace() {
       (d) => d.bedForecast?.upperBeds ?? d.bedForecast?.expectedBeds ?? 0
     ) ?? [])
   );
-  const futureValidation =
-    data?.futureForecast?.validation.filter(
-      (r) => r.model === data.futureForecast?.selectedModel
-    ) ?? [];
-  const coverageValues = data?.futureForecast
-    ? futureValidation.map((r) => r.empiricalRangeCoverage)
-    : (data?.forecastBacktest.map((r) => r.empiricalRangeCoverage) ?? []);
   // Results were cleared by a settings change and have not been recalculated yet.
   const stale = !!controls && !data && !loading && !error;
   const scenarioDetail = !controls
@@ -1069,6 +1066,7 @@ export default function QCSimulationWorkspace() {
                             }}>{active && <Check aria-hidden="true" size={12} />}{days} days</button>;
                         })}
                       </div>
+                      {tab === 'future' && <p className="qs-window-note">The start date schedules hospital demand. The case forecast starts after the latest observed QC week.</p>}
                       {dateError ? <p className="qs-input-error" role="status">{dateError}</p> :
                         numberDrafts.horizonDays === undefined && controls.endDate && <p className="qs-window-note">Final snapshot <strong>{formatScenarioDate(controls.endDate)}</strong></p>}
                     </fieldset>
@@ -1262,13 +1260,14 @@ export default function QCSimulationWorkspace() {
                 ) : (
                   <p role="status">
                     {loading
-                      ? 'Loading the selected engine and case ranges…'
+                      ? 'Loading production case forecasts…'
                       : 'Model data unavailable.'}
                   </p>
                 )}
               </div>
             </form>
             <footer className="qc-controls-footer">
+            {tab === 'future' && <Link href="/forecast">Forecast weekly cases from observations</Link>}
             {controls && (
               <div className={`qc-run-bar${stale ? ' stale' : ''}`}>
                 {stale && (
@@ -1323,6 +1322,7 @@ export default function QCSimulationWorkspace() {
                   </p>
                 )}
               </section>
+              {data?.futureForecast && <p className="qc-panel-tip">{source?.model} case forecast for {formatScenarioDate(data.futureForecast.sourcePeriodStart)}–{formatScenarioDate(data.futureForecast.sourcePeriodEnd)} on the assumed calendar, applied to the selected hospital scenario dates.</p>}
               <h3 className="qc-panel-subheading">
                 {scenario && snapshot
                   ? `Day ${day} of ${scenario.durationDays} · ${formatScenarioDate(snapshot.date)}`
@@ -1416,22 +1416,10 @@ export default function QCSimulationWorkspace() {
                 {summaryCard(
                   'window-range',
                   <TrendingUp size={20} />,
-                  'Experimental empirical case range · 80% target',
+                  'Case prediction interval',
                   range(fullPeriod?.caseRange),
-                  'Conditional on historical spatial weights',
+                  'The production model supplies point forecasts.',
                   GLOSSARY.range[1]
-                )}
-                {data && coverageValues.length > 0 && (
-                  <p className="qc-range-caution">
-                    Range validation: observed weekly coverage{' '}
-                    {format(Math.min(...coverageValues) * 100)}–
-                    {format(Math.max(...coverageValues) * 100)}%{' '}
-                    {data.futureForecast
-                      ? 'on 2024–2025 seasonal holdouts (52 weeks/year)'
-                      : 'across eight retrospective origins/horizon'}
-                    . The 80% target was not achieved; these are exploratory
-                    ranges.
-                  </p>
                 )}
               </section>
               <div className="qc-panel-notes">
@@ -1440,7 +1428,7 @@ export default function QCSimulationWorkspace() {
                   <li>
                     {tab === 'future'
                       ? 'Projected dengue cases drive admissions and bed demand under the selected hospital assumptions.'
-                      : 'Historical replay: source-based case/environment forecasts for retrospective periods.'}{' '}
+                      : 'Historical replay uses the production model with observations through the selected origin.'}{' '}
                     No place selection is required. QC calculations; Philippines
                     geography is context only.
                   </li>
@@ -1465,7 +1453,7 @@ export default function QCSimulationWorkspace() {
                 <h2>Top projected-burden barangays</h2>
                 <p>
                   {hotspotRanking
-                    ? `Annual burden forecast for ${hotspotRanking.forecastYear}; source/training cutoff ${hotspotRanking.trainingCutoffYear}. Top ten is a research ranking, not a validated outbreak threshold.`
+                    ? `${hotspotRanking.model} ranks barangays by forecast cases over the selected window, before the scenario surge.`
                     : 'Hotspot ranking awaits approved model data.'}{' '}
                   Window cases: {controls?.startDate} to {controls?.endDate}{' '}
                   (end exclusive).
@@ -1475,7 +1463,6 @@ export default function QCSimulationWorkspace() {
                     <thead>
                       <tr>
                         <th>Candidate location</th>
-                        <th>XGBoost annual burden</th>
                         <th>Projected window cases</th>
                         <th>Nearest hospital</th>
                       </tr>
@@ -1503,12 +1490,6 @@ export default function QCSimulationWorkspace() {
                               </button>
                             </td>
                             <td>
-                              {format(b.predictedAnnualCases)}
-                              <small>
-                                Annual forecast · {hotspotRanking?.forecastYear}
-                              </small>
-                            </td>
-                            <td>
                               {format(row.cumulativeCases)}
                               <small>Range {range(row.caseRange)}</small>
                             </td>
@@ -1532,48 +1513,6 @@ export default function QCSimulationWorkspace() {
                     </tbody>
                   </table>
                 </div>
-                {hotspotRanking && (
-                  <details className="qc-hotspot-validation">
-                    <summary>
-                      Annual XGBoost ranking definition & validation
-                    </summary>
-                    <p>
-                      {hotspotRanking.criterion}. Forecast year{' '}
-                      {hotspotRanking.forecastYear}; source-label cutoff{' '}
-                      {hotspotRanking.trainingCutoffYear}. Shares are held fixed
-                      for the selected window.
-                    </p>
-                    <div className="qc-table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Evaluation year</th>
-                            <th>Model</th>
-                            <th>Annual-case MAE</th>
-                            <th>Matched observed top 10</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {hotspotRanking.validation.map((row) => (
-                            <tr key={`${row.targetYear}-${row.model}`}>
-                              <td>{row.targetYear}</td>
-                              <td>{row.model}</td>
-                              <td>{format(row.maeAnnualCases)}</td>
-                              <td>
-                                {row.top10Overlap}/{row.topCount}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p>
-                      {hotspotRanking.limitations} Baselines can outperform
-                      XGBoost on the ranking metric; no superiority claim is
-                      made.
-                    </p>
-                  </details>
-                )}
                 {scenario && !finalDay?.hotspotIds.length && (
                   <p>
                     No positive projected hotspot burden in this date window.
@@ -1608,11 +1547,7 @@ export default function QCSimulationWorkspace() {
                         : ''}
                     </span>
                     <small>
-                      Progression uses this barangay’s dated allocated forecast.
-                      All places update together; no infection chain is modeled.
-                      XGBoost predicts annual barangay burden; its modeled
-                      shares allocate QC weekly forecasts. Independent weekly
-                      barangay forecasts remain unavailable.
+                      The production model forecasts this barangay directly. Each daily estimate uses its share of the forecast week.
                     </small>
                     {scenario && (
                       <svg
@@ -1673,9 +1608,7 @@ export default function QCSimulationWorkspace() {
                 </div>
                 <p>
                   Case model:{' '}
-                  {data?.futureForecast
-                    ? 'XGBoost seasonal projection'
-                    : 'audited historical cases/weather replay'}
+                  {source?.model ?? 'Loading…'}
                   . Bed need is a conditional admissions/LOS calculation; no
                   observed hospital occupancy targets were available for model
                   training.
@@ -1850,30 +1783,15 @@ export default function QCSimulationWorkspace() {
                 </div>
                 <div className="qc-chart-heading">
                   <strong>Daily unconstrained bed demand</strong>
-                  <span>Expected beds · shaded case-range sensitivity</span>
+                  <span>Expected beds</span>
                 </div>
                 <svg
                   viewBox="0 0 900 100"
                   role="img"
-                  aria-label="Forecast daily bed demand and case-range sensitivity, separate from real vacancies"
+                  aria-label="Forecast daily bed demand"
                 >
                   {scenario && (
                     <>
-                      <polygon
-                        points={[
-                          ...scenario.days.map(
-                            (d, i) =>
-                              `${12 + (i * 876) / scenario.durationDays},${90 - ((d.bedForecast?.upperBeds ?? d.bedForecast?.expectedBeds ?? 0) / maxBeds) * 78}`
-                          ),
-                          ...[...scenario.days]
-                            .reverse()
-                            .map(
-                              (d) =>
-                                `${12 + (d.dayIndex * 876) / scenario.durationDays},${90 - ((d.bedForecast?.lowerBeds ?? d.bedForecast?.expectedBeds ?? 0) / maxBeds) * 78}`
-                            ),
-                        ].join(' ')}
-                        fill="#457b9d33"
-                      />
                       <polyline
                         points={scenario.days
                           .map(
@@ -1914,10 +1832,7 @@ export default function QCSimulationWorkspace() {
                     : <p>Assumed dengue slots cover expected bed demand at every hospital today.</p>}
                 </section>}
                 <p>
-                  Initial dengue census is assumed zero. Real staffed
-                  beds/current occupancy and observed hospital admissions are
-                  unavailable; bed ranges are case-demand sensitivity, not
-                  validated occupancy intervals.
+                  Initial dengue census is assumed zero. The release provides point estimates for the case-to-bed calculation.
                 </p>
               </section>
             </div>
@@ -1927,11 +1842,7 @@ export default function QCSimulationWorkspace() {
                   Automatically ranked QC barangays · full selected date range
                 </div>
                 <p>
-                  Annual XGBoost burden predictions supply modeled shares;
-                  observed annual source counts below are from{' '}
-                  {context?.weightYear ?? '—'}. Forecast ranges omit
-                  spatial-model uncertainty. Positive demand is not hotspot
-                  membership.{' '}
+                  Weekly forecasts come from {source?.model}. Observed annual counts are from {context?.weightYear ?? '—'}.{' '}
                   <button onClick={() => setShowAll((v) => !v)}>
                     {showAll ? 'Show top 10' : 'Show all 142 barangays'}
                   </button>
@@ -2001,10 +1912,6 @@ export default function QCSimulationWorkspace() {
                 <p>{source?.intervalCaveat}</p>
                 <p>{source?.spatialCaveat}</p>
                 <p>{data?.assumptions}</p>
-                {data?.futureForecast ? (
-                  <>
-                    <p>{data.futureForecast.stalenessCaveat}</p>
-                    {data.futureForecast.usesWeather && <p>The current case model still uses historical weather inputs. Future simulations use its default seasonal profile.</p>}
                     {timing && <details className="qc-environment">
                       <summary>Forecast period and surge timing</summary>
                       <p>{timing.horizonDays} elapsed days from {formatScenarioDate(timing.startDate)} to the final snapshot on {formatScenarioDate(timing.endDateExclusive)}.</p>
@@ -2012,269 +1919,7 @@ export default function QCSimulationWorkspace() {
                         ? `The added surge starts on ${formatScenarioDate(timing.surgeOnsetDate)}. The largest multiplier applied is ${format(timing.maximumAppliedMultiplier)}×. ${timing.fullMultiplierReached ? 'The requested peak falls within this period.' : 'The period ends before the requested peak.'}`
                         : 'This run has no added case surge.'}</p>
                       <p>Extra staffed beds are scheduled for {formatScenarioDate(timing.staffedSurgeActivationSnapshotDate)}{timing.staffedSurgeActivationWithinWindow ? '.' : ', outside this period.'} The assumed admission delay is {timing.admissionDelayDays} days and the stay is {timing.lengthOfStayDays} days.</p>
-                      <p>The seasonal pattern repeats from historical evidence. The largest gap from the source data is {timing.sourceYearGap} years. {timing.centralGapEvaluated
-                        ? 'The seasonal baseline was evaluated at this gap.'
-                        : 'The baseline has no matched evaluation for this gap.'} {!timing.rangeEvaluatedAtRequestedGap && 'Range coverage is unverified for this scenario and year gap.'}</p>
                     </details>}
-                    <p>
-                      Selection: {data.futureForecast.selection.criterion}.
-                      Calibration MAE: XGBoost{' '}
-                      {format(
-                        data.futureForecast.selection.scores.seasonal_xgboost
-                      )}
-                      , original boosted{' '}
-                      {format(
-                        data.futureForecast.selection.scores
-                          .seasonal_boosted_trees
-                      )}
-                      , seasonal baseline{' '}
-                      {format(
-                        data.futureForecast.selection.scores.seasonal_baseline
-                      )}
-                      . XGBoost is a requested planning model; comparisons below
-                      do not establish superiority. There are no observed
-                      admissions or occupancy targets to validate a direct bed
-                      model.
-                    </p>
-                    <div className="qc-table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Evaluation year</th>
-                            <th>Model</th>
-                            <th>n</th>
-                            <th>MAE cases/week</th>
-                            <th>RMSE</th>
-                            <th>Weighted absolute error</th>
-                            <th>Mean bias</th>
-                            <th>Range coverage</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {data.futureForecast.validation.map((m) => (
-                            <tr key={`${m.year}-${m.model}`}>
-                              <td>{m.year}</td>
-                              <td>{m.model}</td>
-                              <td>{m.n}</td>
-                              <td>{format(m.mae)}</td>
-                              <td>{format(m.rmse)}</td>
-                              <td>{format(m.wapePct)}%</td>
-                              <td>{format(m.meanBias)}</td>
-                              <td>{format(m.empiricalRangeCoverage * 100)}%</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p>{data.futureForecast.rangeEvidencePolicy}</p>
-                    {data.futureForecast.leadYearGapValidation && (
-                      <details>
-                        <summary>
-                          Forecast accuracy when source data are older
-                        </summary>
-                        <p>
-                          Frozen XGBoost configuration, evaluated with one, two
-                          or three source-year gaps. No later-year labels enter
-                          training or weather analogs. Range coverage was
-                          evaluated only at gap 1; these stale-source
-                          comparisons assess central cases.
-                        </p>
-                        <div className="qc-table-scroll">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Evaluation year</th>
-                                <th>Last training year</th>
-                                <th>Year gap</th>
-                                <th>Model</th>
-                                <th>MAE cases/week</th>
-                                <th>Weighted error</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {data.futureForecast.leadYearGapValidation.map(
-                                (row) => (
-                                  <tr
-                                    key={`${row.year}-${row.sourceYearGap}-${row.model}`}
-                                  >
-                                    <td>{row.year}</td>
-                                    <td>{row.lastTrainingYear}</td>
-                                    <td>{row.sourceYearGap}</td>
-                                    <td>{row.model}</td>
-                                    <td>{format(row.mae)}</td>
-                                    <td>{format(row.wapePct)}%</td>
-                                  </tr>
-                                )
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </details>
-                    )}
-                    {data.futureForecast.calendarDiagnostics && (
-                      <details>
-                        <summary>
-                          Accuracy by month, season and number of days
-                        </summary>
-                        <p>
-                          {
-                            data.futureForecast.calendarDiagnostics
-                              .targetDefinition
-                          }{' '}
-                          {
-                            data.futureForecast.calendarDiagnostics
-                              .evaluationDesign
-                          }{' '}
-                          These are retrospective diagnostics. Negative bias
-                          means underprediction; weighted absolute error is an
-                          error percentage, not an accuracy score.
-                        </p>
-                        <p>
-                          XGBoost configuration:{' '}
-                          {data.futureForecast.xgboostVariant}. Selection used
-                          only 2018–2023; 2024–2025 were excluded from
-                          selection. These evaluation years have already been
-                          examined during development.
-                        </p>
-                        <h3>Window length · XGBoost</h3>
-                        <div className="qc-table-scroll">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Year</th>
-                                <th>Days</th>
-                                <th>Windows</th>
-                                <th>MAE cases/window</th>
-                                <th>Weighted error</th>
-                                <th>Range coverage</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {data.futureForecast.calendarDiagnostics.windowLengths
-                                .filter(
-                                  (row) =>
-                                    row.model ===
-                                    data.futureForecast?.selectedModel
-                                )
-                                .map((row) => (
-                                  <tr key={`${row.year}-${row.days}`}>
-                                    <td>{row.year}</td>
-                                    <td>{row.days}</td>
-                                    <td>{row.n}</td>
-                                    <td>{format(row.mae)}</td>
-                                    <td>{format(row.wapePct)}%</td>
-                                    <td>
-                                      {format(row.empiricalRangeCoverage * 100)}
-                                      %
-                                    </td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <h3>Seasonal source quarters · XGBoost</h3>
-                        <p>
-                          Each quarter contains 13 native source weeks. These
-                          are calendar groupings, not official wet/dry-season
-                          labels.
-                        </p>
-                        <div className="qc-table-scroll">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Year</th>
-                                <th>Quarter</th>
-                                <th>Weeks</th>
-                                <th>MAE cases/week</th>
-                                <th>Weighted error</th>
-                                <th>Mean bias</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {data.futureForecast.calendarDiagnostics.sourceQuarters
-                                .filter(
-                                  (row) =>
-                                    row.model ===
-                                    data.futureForecast?.selectedModel
-                                )
-                                .map((row) => (
-                                  <tr key={`${row.year}-${row.sourceQuarter}`}>
-                                    <td>{row.year}</td>
-                                    <td>{row.sourceQuarter}</td>
-                                    <td>{row.n}</td>
-                                    <td>{format(row.mae)}</td>
-                                    <td>{format(row.wapePct)}%</td>
-                                    <td>{format(row.meanBias)}</td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <h3>Assumed calendar months · XGBoost</h3>
-                        <div className="qc-table-scroll">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Year/month</th>
-                                <th>Days</th>
-                                <th>Predicted cases</th>
-                                <th>Source-derived cases</th>
-                                <th>Absolute error</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {data.futureForecast.calendarDiagnostics.monthly
-                                .filter(
-                                  (row) =>
-                                    row.model ===
-                                    data.futureForecast?.selectedModel
-                                )
-                                .map((row) => (
-                                  <tr key={`${row.year}-${row.month}`}>
-                                    <td>
-                                      {row.year}/
-                                      {String(row.month).padStart(2, '0')}
-                                    </td>
-                                    <td>{row.calendarDays}</td>
-                                    <td>{format(row.expectedCases)}</td>
-                                    <td>{format(row.sourceDerivedCases)}</td>
-                                    <td>{format(row.absoluteError)}</td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </details>
-                    )}
-                  </>
-                ) : (
-                  <div className="qc-table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Horizon</th>
-                          <th>n</th>
-                          <th>Weather MAE</th>
-                          <th>Cases-only MAE</th>
-                          <th>Persistence MAE</th>
-                          <th>Empirical range coverage</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data?.forecastBacktest.map((m) => (
-                          <tr key={m.horizon}>
-                            <td>{m.horizon} source blocks</td>
-                            <td>{m.n}</td>
-                            <td>{format(m.weatherMae)}</td>
-                            <td>{format(m.casesOnlyMae)}</td>
-                            <td>{format(m.persistenceMae)}</td>
-                            <td>{format(m.empiricalRangeCoverage * 100)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
                 <p>
                   Source:{' '}
                   <a href="https://github.com/pelitro-rcw/dengue-environmental-dataset/tree/02926278d570db8950da368d44db544ae0097615">
@@ -2299,7 +1944,7 @@ export default function QCSimulationWorkspace() {
   const selectedPlace = area && !inspectedHospital && (showHotspotDetails || panelView === 'hospitals') ? (
     <section className="qs-inspector-block" aria-label="Selected hotspot details" aria-live="polite">
       {selectedShortfall != null && <p className="qs-inspector-note"><strong>{formatFractional(selectedShortfall)} expected beds short</strong> attributable to this barangay on day {day}. Each hospital’s gap is shared in proportion to its modeled arrivals.</p>}
-      <div className="qs-place-heading"><span>{markerHotspotIds?.includes(area.id) ? 'Annual high-burden candidate' : 'Selected barangay · outside the top candidates'}</span><h3>{area.name}</h3></div>
+      <div className="qs-place-heading"><span>{markerHotspotIds?.includes(area.id) ? 'High forecast burden in this window' : 'Selected barangay · outside the top candidates'}</span><h3>{area.name}</h3></div>
       {markovResult && <div className="qs-choice-control">
         <label><input type="checkbox" checked={!!probabilityPlace} disabled={!choiceRow}
           onChange={event => {
@@ -2316,15 +1961,13 @@ export default function QCSimulationWorkspace() {
         [`Accumulated to day ${day}`, format(snapshot?.barangays.find(b => b.barangayId === area.id)?.cumulativeCases)],
         ['Experimental window range', range(selectedPeriod?.caseRange)],
       ]} />
-      <p className="qs-inspector-note">Modeled allocation, not observed weekly barangay surveillance. The case range is conditional on the spatial weights.</p>
-      <details className="qs-inspector-disclosure"><summary>Annual ranking & model context</summary>
+      <p className="qs-inspector-note">The production model estimates weekly barangay cases. Daily totals assume an even split within each week.</p>
+      <details className="qs-inspector-disclosure"><summary>Forecast ranking & model context</summary>
         <InspectorFacts rows={[
-          ['Annual model', hotspotRanking?.model ?? 'Unavailable'],
-          ['Forecast year', hotspotRanking?.forecastYear ?? 'Unavailable'],
-          ['Predicted annual cases', scenario ? format(area.predictedAnnualCases) : 'Start playback to view'],
-          ['Annual burden rank', area.burdenRank == null ? 'Unavailable' : `${area.burdenRank} of 142`],
+          ['Case model', source?.model ?? 'Unavailable'],
+          ['Baseline window rank', area.burdenRank == null ? 'Unavailable' : `${area.burdenRank} of 142`],
         ]} />
-        <p>Rank identifies the model’s annual burden order. It is not a case count or a confirmed outbreak.</p>
+        <p>Rank identifies the model’s predicted burden over the selected window. It is not a case count or a confirmed outbreak.</p>
       </details>
       <section className="qs-inspector-section"><h4>Nearest registered hospital</h4>
         <p className="qs-inspector-name">{nearestHospital?.name ?? 'Unavailable'}</p>
@@ -2357,7 +2000,7 @@ export default function QCSimulationWorkspace() {
           ['Projected window cases', format(hospitalHotspotCases?.cumulativeCases)],
           ['Experimental range', range(hospitalHotspotCases?.caseRange)],
         ]} />
-        <p className="qs-inspector-note">Closest annual candidate by representative point; not a verified hospital entrance or referral.</p>
+        <p className="qs-inspector-note">Closest ranked candidate by representative point; not a verified hospital entrance or referral.</p>
         <div className="qs-inspector-actions"><button type="button" className="text-button" disabled={!hospitalHotspotArea} onClick={() => hospitalHotspotArea && inspectHotspot(hospitalHotspotArea.id)}>Inspect barangay <ChevronRight size={13} /></button><button type="button" className="text-button" onClick={() => { setHospital(''); setShowHotspotDetails(true); }}>Most likely first hospitals</button></div>
       </section>}
       <h3 className="qs-inspector-section-title">{inspectedHospital ? 'Hospital capacity & demand' : 'Most likely first hospitals'}</h3>
@@ -2497,7 +2140,7 @@ export default function QCSimulationWorkspace() {
                     <b className="qc-marker-hotspot" aria-hidden="true">
                       1
                     </b>
-                    Annual predicted burden · number = rank
+                    Predicted window burden · number = rank
                   </span>
                   <span>
                     <b className="qc-marker-hospital" aria-hidden="true">
@@ -2526,9 +2169,7 @@ export default function QCSimulationWorkspace() {
                     More about the map colors, markers and lines
                   </summary>
                   <p className="qc-progression-note">
-                    {hotspotRanking
-                    ? `XGBoost ranks predicted annual barangay burden for ${hotspotRanking.forecastYear}, trained only through ${hotspotRanking.trainingCutoffYear}. Only the ten highest-burden candidates receive numbered markers. Their modeled annual shares allocate the dated QC forecast; this is not validated weekly hotspot detection.`
-                      : 'Places follow dated modeled allocations; local weekly hotspot forecasts are unavailable.'}{' '}
+                    {hotspotRanking?.model} ranks barangays by expected cases over the selected window.{' '}
                     All places update together, without a neighbor-triggered
                     outbreak sequence.
                   </p>
@@ -2542,7 +2183,7 @@ export default function QCSimulationWorkspace() {
                   </small>
                   <small>
                     Only the {markerHotspotIds?.length ?? '—'} highest predicted
-                    annual-burden candidates have numbered markers and case-band
+                    window-burden candidates have numbered markers and case-band
                     coloring; other barangays remain neutral. Small unnumbered dots identify other barangays linked to an inspected hospital. Positive demand
                     alone does not make a hotspot. Click a marker to inspect its
                     hospital connections. {hotspotRanking?.model}; no
@@ -2555,7 +2196,7 @@ export default function QCSimulationWorkspace() {
               </div></details>
           </div>
           <section id="qs-timeline" className="qs-timeline" role="group" aria-label="Simulation timeline and playback" hidden={timelineHidden}>
-            <div className="qs-timeline-heading"><span className="qs-research-status">Research scenario · Assumed capacity</span><button ref={guideTrigger} type="button" className="text-button qs-help" aria-label="How to use this page" aria-expanded={showGuide} onClick={openGuide}><CircleHelp size={15} />Help</button></div>
+            <div className="qs-timeline-heading"><span className="qs-research-status">Research scenario · Assumed capacity{source?.model && ` · ${source.model}${forecastPeriod ? ' · forecast ' + forecastPeriod : ''}`}</span><button ref={guideTrigger} type="button" className="text-button qs-help" aria-label="How to use this page" aria-expanded={showGuide} onClick={openGuide}><CircleHelp size={15} />Help</button></div>
             <div className="qs-transport">
               <button type="button" className="text-button qs-play" aria-label={playing ? 'Pause simulation' : 'Play simulation'} disabled={!data} onClick={() => { if (data && day === data.durationDays) setDay(0); setPlaying(v => !v); }}>{playing ? <Pause size={17} /> : <Play size={17} />}{playing ? 'Pause' : 'Play'}</button>
               <div className="qs-timeline-date"><strong>{snapshot ? formatScenarioDate(snapshot.date) : controls?.startDate ? formatScenarioDate(controls.startDate) : 'Choose a scenario'}</strong><span>Day {day} / {data?.durationDays ?? '—'} · {playing ? 'Playing' : scenario ? 'Paused' : data ? 'Ready' : 'Awaiting update'}</span></div>
@@ -2579,7 +2220,7 @@ export default function QCSimulationWorkspace() {
                 : <div><span>Unplaced demand to date</span><strong>{format(snapshot?.cumulativeUnresolved)}</strong><small>Expected patients · cumulative</small></div>}
               <button type="button" className="text-button qs-more-results" onClick={() => openDetail('overview')}>View results <ChevronRight size={14} /></button>
             </div>
-            {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Numbered markers show annual burden rank; H pins are hospitals.</p>}
+            {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Numbered markers show forecast burden rank; H pins are hospitals.</p>}
           </section>
         </section>
         <aside id="qs-context-panel" className="qs-context-panel" hidden={!panelView} aria-labelledby="qs-panel-title" data-reduced-motion={reduced}>
@@ -2656,67 +2297,9 @@ export default function QCSimulationWorkspace() {
             </div>}{analysis}
               {activeDetail === 'methods' && <details className="qc-environment">
                 <summary>
-                  {tab === 'future'
-                    ? 'Seasonal forecasting engine'
-                    : 'Environmental basis'}
+                  Production forecast model
                 </summary>
-                {source ? (
-                  <>
-                    <p>
-                      {tab === 'future'
-                        ? 'Training observations through'
-                        : 'Source origin'}{' '}
-                      <strong>
-                        {source.issueBlock.YR} / WN {source.issueBlock.WN}
-                      </strong>
-                    </p>
-                    {data?.futureForecast && (
-                      <p>
-                        <strong>
-                          {data.futureForecast.selectedModel ===
-                          'seasonal_xgboost'
-                            ? 'XGBoost seasonal case forecast'
-                            : data.futureForecast.selectedModel ===
-                                'seasonal_boosted_trees'
-                              ? 'Seasonal gradient-boosted trees'
-                              : 'Seasonal baseline'}
-                        </strong>
-                        <br />
-                        Issued for planning: {data.futureForecast.asOfDate}
-                      </p>
-                    )}
-                    {data?.futureForecast?.accuracyAssessment && (
-                      <p className="qc-range-caution">
-                        Experimental accuracy:{' '}
-                        {data.futureForecast.accuracyAssessment.comparison
-                          .map(
-                            (row) =>
-                              `${row.year}: ${format(row.maeSkillVsSeasonalBaseline * 100)}% MAE improvement versus seasonal baseline`
-                          )
-                          .join('; ')}
-                        . Negative means worse. Current-year, barangay-weekly
-                        and bed-occupancy accuracy remain unverified.
-                      </p>
-                    )}
-                    {tab === 'historical' && <>
-                      {source.environmentalInputs.map((f) => (
-                        <div key={f.sourceColumn}>
-                          <span>
-                            {factorName[f.sourceColumn] || f.sourceColumn}
-                          </span>
-                          <strong>
-                            {format(f.valueAtOrigin)} <small>{f.unit}</small>
-                          </strong>
-                        </div>
-                      ))}
-                      <p>Observed inputs at origin, lagged 1, 2 and 4 source blocks in the city model. No measured barangay microclimate.</p>
-                    </>}
-                  </>
-                ) : (
-                  <p>
-                    {tab === 'future' ? 'Model details load with the case forecast.' : 'Environmental evidence loads with the approved forecast.'}
-                  </p>
-                )}
+                {source && <p>{source.model} · trained through {source.trainedThrough}. Observations through {source.issueBlock.YR} week {source.issueBlock.WN}.</p>}
               </details>}
             </div>
           </div>
@@ -2746,7 +2329,7 @@ export default function QCSimulationWorkspace() {
           else if(!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}><section className="qs-guide" role="dialog" aria-modal="true" aria-labelledby="qs-guide-title"><div className="qs-guide-heading"><h2 id="qs-guide-title">Explore a preparedness scenario</h2><button type="button" ref={guideClose} className="text-button qs-panel-icon" aria-label="Close guide" onClick={closeGuide}><X size={18} /></button></div>
-        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers are annual projected-burden ranks, not case counts or confirmed outbreaks. H pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and hospital-choice comparisons, then export the saved scenario.</li></ol>
+        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers are forecast window ranks, not case counts or confirmed outbreaks. H pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case forecasts, bed-demand charts and hospital-choice comparisons, then export the saved scenario.</li></ol>
         <details><summary>Terms used in this simulation</summary><dl>{Object.values(GLOSSARY).map(([term, meaning]) => <div key={term}><dt>{term}</dt><dd>{meaning}</dd></div>)}</dl></details>
         <p>Historical source evidence and configured assumptions support this research scenario. Current hospital vacancies, dengue capacity and entrances are not verified. This is not live surveillance or clinical referral guidance.</p><button type="button" className="text-button qs-primary" onClick={closeGuide}>Explore the map</button>
       </section></div>}

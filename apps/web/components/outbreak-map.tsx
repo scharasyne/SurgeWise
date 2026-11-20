@@ -295,7 +295,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       button.setAttribute('aria-label', `Inspect modeled demand location: ${b.name}`);
       button.setAttribute('aria-pressed', String(id === selected));
       const label = document.createElement('span'); label.className = 'qs-marker-label';
-      label.textContent = `${b.name} · annual projected-burden rank ${rank >= 0 ? rank + 1 : 'unranked'}`;
+      label.textContent = `${b.name} · projected window-burden rank ${rank >= 0 ? rank + 1 : 'unranked'}`;
       label.setAttribute('aria-hidden', 'true'); button.append(label);
       button.onclick = event => { event.stopPropagation(); onSelectRef.current(id); };
       add('b-' + id, b.coordinates, rank >= 0 ? 29 : id === selected ? 21 : 16, button);

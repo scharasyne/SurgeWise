@@ -1,15 +1,15 @@
 # Simulation session handoff
 
-Updated 2026-11-21 01:22 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-21 02:58 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## Weekly case forecasts
+
+Both simulation tabs call the production random forest. Historical replay passes QC observations through the selected issue week. Future planning applies the next weekly forecasts after the latest available observations to a hypothetical hospital timeline. The day and hospital calculations use the forecasts for the individual barangays. [Model and request format](../production/README.md)
 
 ## Simulation map gestures
 
 The connection overlay now mounts inside MapLibre’s canvas container. Wheel and trackpad zoom over a probability arrow reach the same map handler as zoom over the basemap. The renderer removes the overlay when the layer closes. [Interaction details](simulation-workspace-design.md#layout-and-interaction)
-
-## Future forecast setup
-
-The Future forecast form exposes the case-surge controls and hospital assumptions. The client omits weather profiles on all future requests, including reruns and comparisons. The API still defaults to its typical seasonal profile. Methods and exported run metadata describe the current forecast model. Training a replacement without weather inputs is pending.
 
 ## Hospital choice and overflow
 

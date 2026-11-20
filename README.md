@@ -4,51 +4,20 @@ Map-first public-health research and preparedness prototype using Next.js/MapLib
 
 ## Current implementation
 
-- The simulation sidebar now separates **Historical replay** and **Future surge
-  forecast**, with arbitrary **1–28-day** windows and 2/7/12/14/28 shortcuts.
-  Future dates, including January 2027, use newly generated XGBoost seasonal
-  case forecasts and assumed historical weather analogs. Configure surge
-  onset/ramp/multiplier; view daily/peak required staffed beds, sensitivity bounds
-  and hospital catchment demand. Actual vacancies remain unknown. The simpler
-  baseline outperformed the selected model on later holdouts; the validation table
-  exposes this limitation. See [future methods](docs/future-seasonal-simulation.md)
-  and [model-switch handoff](docs/SESSION_HANDOFF.md). Historical behavior below
-  remains available in its own tab. Future mode requires the local approved model:
-  `python scripts/train_qc_seasonal.py` regenerates it from audited source inputs.
-  `python scripts/train_qc_barangay.py` separately rebuilds the approved annual
-  barangay-burden ranking and its validation/manifests. Both local artifacts are
-  required for the QC workspace; missing/invalid artifacts block it without fallback.
+- Open **Forecast** (`/forecast`) to run the bundled `RF_shallow` model for 1–6
+  morbidity weeks in Quezon City. Select the city total or one of 142 barangays.
+  The bundled origin is 2022 week 52. Upload newer weekly observations to advance
+  the origin. The page uses the existing `ENGINE_BASE_URL` connection and calls
+  `POST /v1/predict` on FastAPI. The engine reads the weights and history in
+  `production/surgewise` directly. See the [model and input format](production/README.md).
 
-- `/outbreak-response` is the automatic QC forecast/capacity workspace
-  (`/simulate` redirects there). No place selection is required. Choose a date
-  window or 7/14/28-day horizon; source case history and lagged rainfall,
-  temperature and humidity inform QC forecasts. A separate annual XGBoost model
-  supplies modeled spatial shares across 142 barangays; only its ten highest-burden
-  candidates receive hotspot markers/coloring. Positive demand alone does not mean
-  hotspot status. See [annual ranking methods](docs/barangay-xgboost-ranking.md).
-  The entire Philippines remains geographic
-  context, including a permanent overview; numerical simulation is QC only.
-  The bottom bar starts with dated observed source cases and retains daily/
-  cumulative expected cases, supported census, holding and unresolved demand.
-  The right sidebar automatically shows nearest-hospital capacity, separating
-  source-reported accredited beds from unknown real staffed beds and assumed
-  normal/surge/residual capacity.
-
-  Case estimates have explicit experimental ranges and map display bins; editable
-  assumptions have visible numeric limits. The 80%-target empirical city ranges
-  achieved only 50–62.5% retrospective weekly coverage (eight origins/horizon),
-  disclosed in the UI. Barangay ranges are conditional on fixed annual weights,
-  not validated weekly barangay intervals. Dates remain explicitly assumed
-  labels because source-week alignment is unresolved; no live 2026 forecast.
-
-  The normal mode adds no invented shock. Unexpected/off-season mode separately
-  adds bounded hypothetical demand. All 46 registered sites are assumed eligible
-  for planning, with 20 normal + 10 surge beds and 5 holding spaces/site by
-  default, 15% admission fraction, 4-day LOS and 75% background occupancy.
-  These are assumptions, not observations or vacancies. Compare the baseline
-  against a capacity-constrained minimum-distance placement LP on identical
-  inputs; no real-world benefit is claimed. See [workspace methods and limits](docs/qc-simulation-workspace.md)
-  and [timestamped user extensions](docs/change-request-log.md).
+- Both **Simulation** tabs (`/outbreak-response`) run the same production model.
+  Historical replay uses the QC city counts reported through the selected issue week.
+  Future forecast runs from the latest stored QC observation (2025 week 52) and applies
+  that trajectory to the chosen 1–28-day hospital scenario. Forecast target weeks and
+  scenario dates are reported separately. Each barangay’s weekly point forecast
+  supplies its daily case estimates, admission demand and hospital projections.
+  The release does not supply predictive intervals. [Simulation methods](docs/future-seasonal-simulation.md)
 
 - `/dashboard` retains the existing map and 17 NCR city/municipality polygons. QC hospital markers use the canonical PhilHealth registry only, with search, ownership filtering, provisional point symbols, source details and a table independent of map availability.
 - Active inventory: **46 QC hospital/infirmary source rows; 9,389 accredited beds**, as of **2026-09-30**. All 46 points are provisional; **zero independently verified emergency entrances**. Accredited beds are not staffed, free or dengue-usable capacity. Local HOSP IDs identify source rows, not official accreditation numbers.
@@ -56,7 +25,7 @@ Map-first public-health research and preparedness prototype using Next.js/MapLib
 - FastAPI `/v1/facilities` exposes the server-approved inventory; `/readiness` separates source readiness from process health. `/simulate` and `/api/simulate` remain guarded; the dashboard Run button is disabled.
 - `/research` connects the official UPRI-NOAH workbook, observed annual barangay CSV and archive-derived polygons to separate QC/NCR historical source-block forecasts and a QC-only 28-day expected-patient simulation. All six raw files match pinned upstream commit `02926278d570db8950da368d44db544ae0097615` and remain unchanged.
 - The pre-training [source audit](docs/upri-integration-audit.md) identifies unresolved week/calendar semantics, stale upstream validation-report schema, annual/city total discrepancies, and two missing polygon IDs reconciled through explicit project name crosswalks. These limitations remain visible. Annual burden is never labeled weekly ground truth; spatial allocations use complete prior years under an assumed availability lag.
-- Versioned research endpoints validate source/artifact hashes, resolve forecast/facility IDs server-side and separate hypothetical hospital assumptions. The 2026 inventory is not evidence of historical hospital operations. Actual capacity, validated predictive intervals and clinical calibration remain unavailable. The automatic QC workspace adds experimental case ranges and a transparent day-specific placement LP; the original seeded/radial hypothetical API remains for legacy experiments.
+- Versioned research endpoints validate source/artifact hashes, resolve forecast/facility IDs server-side and separate hypothetical hospital assumptions. The 2026 inventory is not evidence of historical hospital operations. Actual capacity, validated predictive intervals and clinical calibration remain unavailable. The original seeded/radial hypothetical API remains available for legacy experiments.
 - Legacy forecast experiments/reports are retained separately, with unverified source hashes and ISO-calendar assumptions. Their shared loader now refuses this workbook's unresolved week metadata with an actionable error. Use the source-block pipeline below. Saved forecast runs contain predictions and provenance; `.joblib` models are not needed to replay them.
 
 ## Run locally
@@ -87,9 +56,7 @@ The dashboard currently loads version-pinned public inventory directly and does 
 On Render, set the frontend service's server-only `ENGINE_BASE_URL` to the engine's
 actual base URL and redeploy. Opening any page, including the landing dashboard,
 automatically checks and wakes a sleeping engine for up to two minutes.
-Simulation/research requests also check before fetching data. The engine build
-must generate the two trained model files excluded from Git; dependency
-installation alone is insufficient. See [Render deployment](docs/render-deployment.md)
+Simulation/research requests also check before fetching data. The engine deployment must include the bundled production model, history and audited QC data. See [Render deployment](docs/render-deployment.md)
 for configuration, startup behavior and troubleshooting.
 
 The map-movie engine additionally uses declared Shapely 2.2.0 / pyproj 3.8.0

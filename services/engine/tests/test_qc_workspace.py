@@ -69,7 +69,7 @@ def test_automatic_workspace_never_invokes_the_radial_outbreak_path(monkeypatch)
         raise AssertionError("Forecast workspace invoked radial outbreak sequence")
     monkeypatch.setattr(outbreak, "spatial_trajectory", forbidden)
     workspace = default_workspace()
-    assert workspace["progressionMethod"] == "dated_QC_forecast_allocated_by_xgboost_annual_burden_shares"
+    assert workspace["progressionMethod"] == "production_weekly_barangay_forecast"
 
 
 def test_changed_simulation_code_blocks_stale_worker_before_loading_or_saving(monkeypatch):
@@ -97,7 +97,7 @@ def test_residual_range_is_data_derived_and_preserves_path_covariance():
 def test_automatic_qc_scope_ranges_and_capacity_definition(result):
     assert result["scope"] == "QUEZON_CITY" and result["parameters"]["autoHotspots"] is True
     assert result["parameters"]["extraCasesPerWeek"] == 0
-    assert result["forecastEvidence"]["model"] == "cases_weather"
+    assert result["forecastEvidence"]["model"] == "RF_shallow"
     assert len(result["context"]["barangays"]) == len(result["periodSummary"]["barangays"]) == 142
     assert len(result["context"]["hospitals"]) == len(result["days"][-1]["facilities"]) == 46
     assert sum(h["accreditedBeds"] for h in result["context"]["hospitals"]) == 9389
@@ -105,9 +105,8 @@ def test_automatic_qc_scope_ranges_and_capacity_definition(result):
     for d in result["days"]:
         assert not d["expansionRing"]
         assert sum(b["cumulativeCases"] for b in d["barangays"]) == pytest.approx(d["cumulativeCases"])
-        for bound in ["lowerCases", "upperCases"]:
-            assert sum(b["caseRange"][bound] for b in d["barangays"]) == pytest.approx(d["caseRange"][bound])
-        assert all(b["caseRange"]["lowerCases"] <= b["cumulativeCases"] <= b["caseRange"]["upperCases"] for b in d["barangays"])
+        assert "caseRange" not in d
+        assert d["bedForecast"]["lowerBeds"] is d["bedForecast"]["upperBeds"] is None
         assert all(f["remainingSupportedCapacity"] >= 0 for f in d["facilities"])
         assert abs(d["balanceError"]) < 1e-7
     summary = result["periodSummary"]

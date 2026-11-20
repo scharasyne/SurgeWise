@@ -1,5 +1,13 @@
 # Historical and future simulation workspaces
 
+## Production case forecasts
+
+Both simulation tabs use the released `RF_shallow` forest trained through 2022. The engine supplies the audited `DC_QC` series from 2023 onward as city observations on the model’s 52-week calendar. Historical replay stops inputs at the issue week and slices the appropriate target days. Future planning uses the latest observed week and schedules the resulting demand on the chosen scenario dates. Moving those dates alone does not change the forecast origin.
+
+The simulator divides each barangay’s forecast by the number of days in its target source block under the January 1 display assumption. Hospital choice and admission delay apply to that week’s barangay demand. The release supplies point estimates. Earlier seasonal model methods and validation below document the archived implementation. [Production release](../production/README.md)
+
+## Archived seasonal simulation
+
 User extension recorded 2026-10-24 21:19:03 +08:00 (Asia/Manila).
 
 The 2026-11-16 presentation revision moves both modes and their independent

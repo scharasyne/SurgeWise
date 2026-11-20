@@ -50,7 +50,8 @@ export function simulationConnections(context: MovieContext, snapshot: MovieDay 
     if (!result.has(`proximity:${id}:${facilityId}`)) add('hospital-context', id, facilityId);
   }
   // A diversion carries the origin mix of the first hospital to the receiving site.
-  if (context.firstAdmissionOriginShares && snapshot) {
+  const arrivalShares = context.weeklyOriginShares?.[snapshot?.arrivalWeekIndex ?? 0] ?? context.firstAdmissionOriginShares;
+  if (arrivalShares && snapshot) {
     const routes = snapshot.firstHospitalRoutes ?? snapshot.facilities.map(site => ({
       firstFacilityId: site.facilityId, facilityId: site.facilityId,
       supportedPlacements: site.supportedPlacementsToday ?? 0, holdingPlacements: site.holdingPlacementsToday ?? 0,
@@ -63,7 +64,7 @@ export function simulationConnections(context: MovieContext, snapshot: MovieDay 
       const actual = snapshot.placementsByOrigin?.[h];
       const counts = actual
         ? context.barangays.map(({ id }, i) => ({ b: id, patients: (actual.supported[i] ?? 0) + (actual.holding[i] ?? 0), held: actual.holding[i] ?? 0 }))
-        : Object.entries(context.firstAdmissionOriginShares[route.firstFacilityId] ?? {}).map(([b, fraction]) =>
+        : Object.entries(arrivalShares[route.firstFacilityId] ?? {}).map(([b, fraction]) =>
             ({ b, patients: total * fraction, held: route.holdingPlacements * fraction }));
       for (const { b, patients, held } of counts) {
         if (patients <= 0) continue;

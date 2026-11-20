@@ -30,7 +30,7 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
     high_by_hospital = {f["facilityId"]: [0.0] for f in config["facilities"]}
     baseline_by_hospital = {f["facilityId"]: [0.0] for f in config["facilities"]}
     for i, d in enumerate(case_days[:n - 1]):
-        if run.get("dailyPredictions"):
+        if bounds_available and run.get("dailyPredictions"):
             baseline = run["dailyPredictions"][i]
             lo, hi = baseline["lowerCases"], baseline["upperCases"]
         elif bounds_available:
@@ -78,6 +78,14 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
     # Per-hospital non-dengue share when imported allotments supply one, else the scenario-wide share.
     non_dengue_shares = {f["facilityId"]: config["baselineOccupancy"] if f.get("baselineOccupancy") is None else f["baselineOccupancy"]
                          for f in config["facilities"]}
+    origin_demand = {}
+    if "weeklyOriginShares" in context and config.get("allocationPolicy") == "first_hospital":
+        origin_cases = {b: [0.0] for b in by_id}
+        for case_day in case_days[:n - 1]:
+            for row in case_day["barangays"]:
+                origin_cases[row["barangayId"]].append(row["expectedCases"])
+        origin_demand = {b: demand(values) for b, values in origin_cases.items()}
+        probabilities = {b: dict(options) for b, options in shares.items()}
     for day in flow:
         i = day["dayIndex"]
         capacity = sum(f["normalCapacity"] * (1 - non_dengue_shares[f["facilityId"]]) + f["activatedSurgeCapacity"] for f in day["facilities"])
@@ -109,8 +117,12 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
                 h, forecast = f["facilityId"], f["bedForecast"]
                 gap = max(0, forecast["expectedBeds"] - forecast["assumedSupportedDengueCapacity"])
                 if gap:
-                    for origin, fraction in context["firstAdmissionOriginShares"][h].items():
-                        by_origin[origin] += gap * fraction
+                    if origin_demand:
+                        for origin, curve in origin_demand.items():
+                            by_origin[origin] += gap * curve[i] * probabilities[origin][h] / forecast["expectedBeds"]
+                    else:
+                        for origin, fraction in context["firstAdmissionOriginShares"][h].items():
+                            by_origin[origin] += gap * fraction
             for b in day["barangays"]:
                 b["expectedBedsShort"] = by_origin[b["barangayId"]]
     shortage_peak = max(flow, key=lambda d: d["bedForecast"]["hospitalBedsShort"])

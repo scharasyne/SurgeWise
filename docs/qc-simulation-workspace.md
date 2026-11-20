@@ -1,6 +1,8 @@
 # Automatic QC forecasting and capacity workspace
 
-Current UI revision (2026-11-16): see
+Both active tabs use the production weekly barangay model. The historical environmental forecasts and ranges described below document the earlier implementation. [Current case forecasts](future-seasonal-simulation.md#production-case-forecasts)
+
+Previous UI revision (2026-11-16): see
 [simulation workspace design](simulation-workspace-design.md). One optional
 contextual panel replaces the former simultaneous sidebars, and playback stays
 in a bottom dock. The older panel-placement and red-marker descriptions below

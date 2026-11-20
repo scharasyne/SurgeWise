@@ -1,5 +1,13 @@
 # User-requested extensions
 
+## 2026-11-21 02:58 +08:00 — Use the production model inside Simulation
+
+Historical replay and Future forecast use the released weekly barangay predictions to calculate dengue cases and hospital demand. [Forecast source and dates](future-seasonal-simulation.md)
+
+## 2026-11-21 02:25 +08:00 — Connect the weekly production forecast
+
+Run the bundled Quezon City model from the web app for the next one to six morbidity weeks after the latest observation. [Production forecast contract](../production/README.md)
+
 ## 2026-11-21 01:22 +08:00 — Inspect weighted hospital choices before playback
 
 Rank the selected barangay’s three hospital cards by modeled first-admission probability. Show all 46 probability arrows by default on day zero and allow searches by hospital name. [Barangay hospital choices](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)

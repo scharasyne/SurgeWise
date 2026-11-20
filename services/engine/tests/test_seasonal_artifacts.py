@@ -39,11 +39,8 @@ def test_seasonal_failure_is_actionable_and_does_not_break_historical(monkeypatc
         repository.approved_model()
     client = TestClient(app)
     response = client.get("/v1/future-simulation")
-    assert response.status_code == 503
-    detail = response.json()["detail"]
-    assert detail["code"] == "SEASONAL_ARTIFACTS_UNAVAILABLE"
-    assert reason in detail["message"]
-    assert "python scripts/train_qc_seasonal.py" in detail["message"]
+    assert response.status_code == 200
+    assert response.json()["forecastEvidence"]["model"] == "RF_shallow"
     readiness = client.get("/readiness").json()
     assert readiness["seasonalForecast"]["ready"] is False
     assert readiness["historicalSourceBlockReplayReady"] is True

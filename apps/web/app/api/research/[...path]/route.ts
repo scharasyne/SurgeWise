@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
-const allowed = /^(forecast-runs(?:\/[A-Za-z0-9_-]{1,120})?|research-evidence|qc-simulation|future-simulation|outbreak-demo|spatial-allocations\/[A-Za-z0-9_-]{1,120}|outbreak-context\/[A-Za-z0-9_-]{1,120}|(?:outbreak-scenarios|scenarios)(?:\/[a-f0-9]{64})?)$/;
+const allowed = /^(predict|forecast-runs(?:\/[A-Za-z0-9_-]{1,120})?|research-evidence|qc-simulation|future-simulation|outbreak-demo|spatial-allocations\/[A-Za-z0-9_-]{1,120}|outbreak-context\/[A-Za-z0-9_-]{1,120}|(?:outbreak-scenarios|scenarios)(?:\/[a-f0-9]{64})?)$/;
 async function proxy(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join('/');
-  if (!allowed.test(path) || (request.method === 'POST' && !['scenarios', 'outbreak-scenarios', 'qc-simulation', 'future-simulation'].includes(path)))
+  if (!allowed.test(path) || (request.method === 'POST' && !['predict', 'scenarios', 'outbreak-scenarios', 'qc-simulation', 'future-simulation'].includes(path)))
     return NextResponse.json({ error: 'Unsupported research endpoint' }, { status: 404 });
+  if (path === 'predict' && request.method !== 'POST')
+    return NextResponse.json({ error: 'Use POST to run a forecast.' }, { status: 405, headers: { Allow: 'POST' } });
   const base = process.env.ENGINE_BASE_URL;
   if (!base) return NextResponse.json({ error: 'Set server-only ENGINE_BASE_URL to connect the audited research engine.' }, { status: 503 });
   let body: string | undefined;
@@ -13,14 +15,15 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     const reader = request.body?.getReader();
     if (!reader) return NextResponse.json({ error: 'Missing JSON body' }, { status: 422 });
     const chunks: Uint8Array[] = [];
+    const maximum = path === 'predict' ? 2 * 1024 * 1024 : 32768;
     let size = 0;
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 32768) {
+      if (size > maximum) {
         await reader.cancel();
-        return NextResponse.json({ error: 'Request exceeds 32 KB' }, { status: 413 });
+        return NextResponse.json({ error: `Request exceeds ${maximum / 1024} KB` }, { status: 413 });
       }
       chunks.push(value);
     }
@@ -29,7 +32,7 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
   }
   const query = new URL(request.url).searchParams;
   const area = query.get('area');
-  if (area && !['QUEZON_CITY', 'NCR'].includes(area))
+  if (area && (!['QUEZON_CITY', 'NCR'].includes(area) || (path === 'predict' && area !== 'QUEZON_CITY')))
     return NextResponse.json({ error: 'Unsupported area' }, { status: 422 });
   try {
     const response = await fetch(`${base.replace(/\/$/, '')}/v1/${path}${area ? `?area=${area}` : ''}`, {

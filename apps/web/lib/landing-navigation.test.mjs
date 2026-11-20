@@ -66,12 +66,12 @@ test('Quezon City’s outline is on the dark teal tile, not on the platform', ()
 });
 
 test('persistent navigation identifies each current route including the simulation alias', () => {
-  for (const [path, label] of [['/', 'Home'], ['/dashboard', 'Dashboard'], ['/outbreak-response', 'Simulation'], ['/simulate', 'Simulation'], ['/research', 'Research']]) {
+  for (const [path, label] of [['/', 'Home'], ['/dashboard', 'Dashboard'], ['/outbreak-response', 'Simulation'], ['/simulate', 'Simulation'], ['/forecast', 'Forecast'], ['/research', 'Research']]) {
     activePath = path;
     const nav = renderToStaticMarkup(React.createElement(Navigation));
     assert.equal((nav.match(/aria-current="page"/g) ?? []).length, 1);
     assert.match(nav, new RegExp(`aria-label="${label}" aria-current="page"`));
-    assert.equal((nav.match(/role="tooltip"/g) ?? []).length, 4);
+    assert.equal((nav.match(/role="tooltip"/g) ?? []).length, 5);
     assert.ok(!nav.includes('title='), 'navigation uses custom descriptions, not browser title tooltips');
     assert.ok(!nav.includes('sw-nav-label'), 'rail is icons-only');
     assert.ok(!nav.includes('QC / PH'));
@@ -84,4 +84,14 @@ test('Home uses the shared light appearance without an isolated theme control', 
   assert.ok(!html.includes('Pause model animation'));
   assert.ok(!html.includes('home-model-index'));
   assert.ok(!html.includes('Conceptual model · Not a real facility'));
+});
+
+test('weekly forecast offers an observation-based run before any results are available', () => {
+  const Forecast = load('../app/forecast/page.tsx').default;
+  const markup = renderToStaticMarkup(React.createElement(Forecast));
+  assert.match(markup, /Weekly dengue forecast/);
+  assert.match(markup, /week 52 of 2022/);
+  assert.match(markup, /Run forecast/);
+  assert.match(markup, /type="file"/);
+  assert.doesNotMatch(markup, /<table/);
 });

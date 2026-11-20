@@ -54,20 +54,31 @@ def test_local_shortage_survives_spare_beds_elsewhere(two_site_inputs):
 
 
 @pytest.mark.parametrize("policy,folder", [(k, v[0]) for k, v in first_admission.MATRICES.items()])
-def test_live_historical_run_matches_every_exported_hospital_day(policy, folder):
+def test_historical_run_routes_production_forecasts_to_every_hospital_day(policy, folder):
     movie = workspace(QCInput(arrivalSplitPolicy=policy))
     assert movie["parameters"]["allocationPolicy"] == "first_hospital"
     assert movie["firstAdmissionMatrixSha256"] == first_admission.MATRICES[policy][1]
     assert len([b for b in movie["context"]["barangays"] if b["mappedFavoriteHospitalId"]]) == 14
-    with (ROOT / "data/processed" / folder / "daily_hospital_beds.csv").open() as stream:
-        reference = list(csv.DictReader(stream))
-    assert len(reference) == 28 * 46
-    # The export labels interval starts. The movie labels the end snapshot.
-    observations = {(d["intervalStart"][:10], f["facilityId"]): f for d in movie["days"][1:] for f in d["facilities"]}
-    for row in reference:
-        f = observations[(row["scenarioDate"], row["hospitalId"])]
-        assert f["firstAdmissionsToday"] == pytest.approx(float(row["expectedFirstAdmissions"]), abs=1e-12)
-        assert f["bedForecast"]["expectedBeds"] == pytest.approx(float(row["expectedOccupiedDengueBedsIfAdmitted"]), abs=1e-12)
+    # Use the production model as the case oracle and apply the reviewed
+    # hospital-choice table independently of the simulation's daily groups.
+    from production.surgewise.predictor import predict
+    from services.engine.repositories.forecast_runs import artifact
+    rows = artifact("QUEZON_CITY-observations.json")["records"]
+    updates = [dict(year=r["YR"], week=r["WN"], city_cases=r["DC_QC"]) for r in rows
+               if 2023 <= r["YR"] and (r["YR"], r["WN"]) <= (2025, 4)]
+    direct = predict(weeks_ahead=4, city_updates=updates)
+    with (ROOT / "data/processed" / folder / "first_hospital_probabilities.csv").open() as stream:
+        probabilities = {r["barangayId"]: r for r in csv.DictReader(stream)}
+    hospital_history = {}
+    for i, day in enumerate(movie["days"][1:]):
+        local = {r["barangay_code"]: r["expected_cases"] / 7 for r in direct["barangays"] if r["horizon"] == i // 7 + 1}
+        assert {b["barangayId"]: b["baselineCases"] for b in day["barangays"]} == pytest.approx(local)
+        for site in day["facilities"]:
+            ident = site["facilityId"]
+            expected = .15 * sum(cases * float(probabilities[b][ident]) for b, cases in local.items())
+            hospital_history.setdefault(ident, []).append(expected)
+            assert site["firstAdmissionsToday"] == pytest.approx(expected)
+            assert site["bedForecast"]["expectedBeds"] == pytest.approx(sum(hospital_history[ident][-4:]))
     places = movie["bedProjection"]["placePeaks"]
     origins = {b["id"]: b for b in movie["context"]["barangays"]}
     sites = {h["id"]: h["coordinates"] for h in movie["context"]["hospitals"]}

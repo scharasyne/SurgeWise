@@ -47,7 +47,7 @@ blank so `services` imports and shared approved data paths remain accessible:
 
 ```sh
 # Engine build command, from repository root
-pip install -r services/engine/requirements.txt && python scripts/train_qc_seasonal.py && python scripts/train_qc_barangay.py
+pip install -r services/engine/requirements.txt
 # Engine start command, from repository root
 python -m uvicorn services.engine.main:app --host 0.0.0.0 --port $PORT
 ```
@@ -56,14 +56,7 @@ See Render's [FastAPI deployment guide](https://render.com/docs/deploy-fastapi).
 For the frontend, use Root Directory `apps/web`, build `npm ci && npm run build`,
 and start `npm start -- --hostname 0.0.0.0 --port $PORT`.
 
-Both trained `.joblib` files are intentionally excluded from Git. Installing
-Python dependencies alone does **not** prepare a working forecasting deployment.
-The two training commands above generate models and matching manifests in the
-same installed Python environment used at runtime. All audited raw/reference
-inputs and processed prerequisites must be present. Keep generated model files
-in the deployment image; do not train at each request or service startup.
-Setting `OMP_NUM_THREADS=2` and `LOKY_MAX_CPU_COUNT=2` on the engine limits worker
-parallelism, but available memory/build resources still need verification.
+Deploy the `production/surgewise` package with its `models` and `data` directories and the repository’s audited QC inputs. Both Simulation tabs and the Forecast page load the fitted production model directly. The archived seasonal and annual ranking experiments have separate training scripts.
 
 For local Next.js, create `apps/web/.env.local` using `.env.example`, set the
 desired engine URL there and restart Next.js. A `.env` in this repository's root
@@ -81,7 +74,7 @@ Use these endpoints to distinguish the failure:
 
 `/readiness` deliberately keeps its top-level `ready` false because operational
 data/calendar limitations remain. Check `qcWorkspaceReady`, `futureWorkspaceReady`,
-`seasonalForecast` and `barangayRanking` for the research workspaces instead.
+`productionForecast` for the active case model. The seasonal and annual ranking fields describe archived models.
 
 To verify a cold start, leave the free engine idle for at least 15 minutes, then
 open `/` without opening its engine URL first. Expect the dashboard's connection

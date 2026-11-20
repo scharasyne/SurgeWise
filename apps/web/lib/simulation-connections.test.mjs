@@ -205,3 +205,12 @@ test('ranked overflow arrows show the actual origin mix of a receiving hospital'
   assert.deepEqual(placed('hospital'), [['B2', 'H2', 4, 1], ['B1', 'H2', 2, 0]]);
   assert.deepEqual(placed('barangay'), [['B1', 'H2', 2, 0], ['B1', 'H1', 1, 0]]);
 });
+
+test('production placement arrows use the origin shares of the week that generated admissions', () => {
+  const source = { ...context, firstAdmissionOriginShares: { H1: { B1: 1 } },
+    weeklyOriginShares: [{ H1: { B1: 1 } }, { H1: { B1: .25, B2: .75 } }] };
+  const snapshot = { arrivalWeekIndex: 1, facilities: [{ facilityId: 'H1', supportedPlacementsToday: 4 }], assignments: [] };
+  const flows = simulationConnections(source, snapshot, { ...options, focus: 'hospital', selectedHospital: 'H1' })
+    .filter(row => row.kind === 'placement').map(row => [row.barangayId, row.patients]);
+  assert.deepEqual(flows, [['B2', 3], ['B1', 1]]);
+});
