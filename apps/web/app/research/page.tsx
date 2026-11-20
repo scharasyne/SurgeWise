@@ -11,6 +11,7 @@ import type { Facility } from '@/lib/types';
 import type { AnnualRecord, ResearchRun, ResearchScenario, SpatialResult } from '@/lib/research-types';
 import WorkspaceSelect from '@/components/workspace-select';
 import ForecastChart from './forecast-chart';
+import AdmissionMethods from './admission-methods';
 import './research.css';
 
 const BarangayMap = dynamic(() => import('@/components/barangay-map'), { ssr: false, loading: () => <div className="rs-map-card rs-map-placeholder">Loading map…</div> });
@@ -25,8 +26,8 @@ type Kind = 'observed' | 'forecast' | 'modeled' | 'assumption' | 'unavailable';
 const KINDS: Record<Kind, { label: string; meaning: string; Icon: typeof Database }> = {
   observed: { label: 'Observed', meaning: 'Reported in the source dataset', Icon: Database },
   forecast: { label: 'Forecast', meaning: 'Predicted by a historical model', Icon: TrendingUp },
-  modeled: { label: 'Modeled estimate', meaning: 'City totals shared out across barangays', Icon: Split },
-  assumption: { label: 'Assumption', meaning: 'A value you set; not verified', Icon: SlidersHorizontal },
+  modeled: { label: 'Modeled estimate', meaning: 'A quantity calculated from data and scenario assumptions', Icon: Split },
+  assumption: { label: 'Assumption', meaning: 'A choice made for the scenario', Icon: SlidersHorizontal },
   unavailable: { label: 'Unavailable', meaning: 'Not in any source; never shown as zero', Icon: CircleSlash },
 };
 function KindTag({ kind }: { kind: Kind }) {
@@ -47,6 +48,7 @@ const SECTIONS = [
   { id: 'rs-forecasts', title: 'Historical forecasts', hint: 'Forecast vs what happened' },
   { id: 'rs-accuracy', title: 'Forecast accuracy', hint: 'How far off past tests were' },
   { id: 'rs-barangays', title: 'Barangay burden', hint: 'Cases across Quezon City' },
+  { id: 'rs-allocation', title: 'Hospital bed allocation', hint: 'From barangay cases to beds' },
   { id: 'rs-replay', title: 'Hospital capacity replay', hint: 'One-hospital stress test' },
 ];
 const fmt = (value: number, digits = 1) => value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -132,14 +134,29 @@ export default function Research() {
   }, [allocation, layer]);
   // Highlight the table-of-contents entry for the section nearest the top of the viewport.
   useEffect(() => {
-    const visible = new Map<string, number>();
-    const observer = new IntersectionObserver(entries => {
-      for (const entry of entries) visible.set(entry.target.id, entry.isIntersecting ? entry.boundingClientRect.top : Infinity);
-      const current = SECTIONS.map(s => s.id).find(sid => (visible.get(sid) ?? Infinity) < Infinity);
-      if (current) setActiveSection(current);
-    }, { rootMargin: '-15% 0px -70% 0px' });
-    SECTIONS.forEach(s => { const element = document.getElementById(s.id); if (element) observer.observe(element); });
-    return () => observer.disconnect();
+    let observer: IntersectionObserver;
+    function observeSections() {
+      observer?.disconnect();
+      // Percentage root margins resolve against width, including the vertical ones.
+      const top = Math.round(window.innerHeight * 0.15);
+      const bottom = Math.round(window.innerHeight * 0.7);
+      const visible = new Set<string>();
+      observer = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.add(entry.target.id);
+          else visible.delete(entry.target.id);
+        }
+        const current = SECTIONS.find(section => visible.has(section.id));
+        if (current) setActiveSection(current.id);
+      }, { rootMargin: `-${top}px 0px -${bottom}px 0px` });
+      SECTIONS.forEach(section => {
+        const element = document.getElementById(section.id);
+        if (element) observer.observe(element);
+      });
+    }
+    observeSections();
+    window.addEventListener('resize', observeSections);
+    return () => { observer.disconnect(); window.removeEventListener('resize', observeSections); };
   }, []);
   const run = runs.find(r => r.id === id);
   const rec = reconciliation.find(r => r.year === year);
@@ -185,7 +202,7 @@ export default function Research() {
       <div className="rs-hero-text">
         <span className="rs-eyebrow">SurgeWise / Research</span>
         <h1>Research &amp; evidence</h1>
-        <p>Check the historical data behind SurgeWise, see how past forecasts compared with what actually happened, and test one hospital against assumed capacity. Everything on this page is historical or hypothetical.</p>
+        <p>Check the historical dengue forecasts, follow a Quezon City barangay’s expected admissions to hospital beds, and test how a hospital handles demand under assumed capacity.</p>
         <div className="rs-hero-facts">
           <span><Database size={14} aria-hidden="true" />Historical data, 2010–2025</span>
           <span><Ban size={14} aria-hidden="true" />No live surveillance or bed availability</span>
@@ -226,7 +243,7 @@ export default function Research() {
             <article className="rs-card">
               <span className="rs-card-label">Hospitals</span>
               <h3>PhilHealth Quezon City register</h3>
-              <p>Hospital identities used by the capacity replay in section 5. Accredited beds are not staffed, vacant or dengue-ready beds.</p>
+              <p>The register identifies the hospitals in the allocation model and capacity replay. The simulation uses scenario assumptions for staffed dengue capacity.</p>
               <dl className="rs-facts">
                 <div><dt>As of</dt><dd>30 Sep 2026</dd></div>
                 <div><dt>Records</dt><dd>{facilities.length ? `${facilities.length} hospitals` : sourceError ? 'Unavailable' : 'Loading…'}</dd></div>
@@ -357,8 +374,15 @@ export default function Research() {
           </details>
         </section>
 
+        <section id="rs-allocation" className="rs-section" aria-labelledby="rs-allocation-title">
+          <SectionHeader index={5} title="From barangay forecasts to hospital beds" kinds={['forecast', 'assumption', 'modeled']}>
+            If dengue cases rise in a barangay, which hospitals might see more admissions, and how many extra staffed beds might they need?
+          </SectionHeader>
+          <AdmissionMethods />
+        </section>
+
         <section id="rs-replay" className="rs-section" aria-labelledby="rs-replay-title">
-          <SectionHeader index={5} title="Hospital capacity replay" kinds={['forecast', 'assumption']}>
+          <SectionHeader index={6} title="Hospital capacity replay" kinds={['forecast', 'assumption']}>
             Send all of Quezon City&apos;s forecast dengue admissions to one hospital for 28 days, using capacity values you set. It is a stress test of your assumptions, not a picture of any real hospital.
           </SectionHeader>
           <div className="rs-callout">

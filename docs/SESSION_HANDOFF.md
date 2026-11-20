@@ -1,7 +1,13 @@
 # Simulation session handoff
 
-Updated 2026-11-19 23:11 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-20 20:49 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## Research allocation walkthrough
+
+At `/research#rs-allocation`, the first-hospital explorer reads a bundled snapshot of both reviewed matrices. The walkthrough covers the distance and preference rules, absorbing states, rolling bed demand and hospital-level rounding. The one-hospital capacity replay follows as section 6. [Sources and regeneration](first-admission-matrix.md#research-page)
+
+Verification covered 101 Python tests, including every probability cell against the reviewed tables, and all 94 web tests. Lint, TypeScript and the production build passed. Chromium checks at 1440 px and 390 px exercised the keyboard picker, both preference cases, 46-destination tables, section navigation, the matrix and the bed example.
 
 ## First-hospital probability arrows
 
