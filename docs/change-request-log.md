@@ -1,5 +1,9 @@
 # User-requested extensions
 
+## 2026-11-21 00:51 +08:00 — Keep both overflow choices and adopt the circled-H pin
+
+Historical replay and Future forecast retain local shortage recording and probability-ranked overflow. Dashboard and Simulation use the shared circled-H hospital pin from main, with provisional locations identified in the map legends. [Simulation workspace design](simulation-workspace-design.md)
+
 ## 2026-11-21 00:27 +08:00 — Limit overflow to local shortage or probability-ranked placement
 
 Use two overflow options in Historical replay and Future forecast. Each barangay’s alternative hospitals follow its selected first-hospital probabilities. Remove the optimizer option and its workspace comparison. [Rules and API changes](first-admission-matrix.md#using-the-chain-in-the-simulation)
@@ -19,6 +23,22 @@ Use the dated PhilHealth hospital inventory for fixed simulation totals. Start b
 ## 2026-11-20 22:01 +08:00 — Initial dengue bed reservations
 
 Simulation → Bed capacity shows a whole-bed reservation for every hospital. The editable default reserves 10% of staffed beds for dengue. Imported totals follow the default, while explicit imported or manually edited splits take priority. Both simulation modes use the displayed starting reservations. [Capacity assumptions and import rules](simulation-workspace-design.md#layout-and-interaction)
+
+## 2026-11-20 +08:00 — New hospital pin
+
+At the user's request the hospital pin (`public/brand/hospital-pin.svg`, shared by
+Dashboard, Simulation and their map keys) was redesigned:
+- shape: a classic teardrop (round head, straight sides meeting at a sharp point);
+- colour: solid deep teal, with a white "H" inside a thin white circle. The H is
+  drawn as a path, not text, so it does not depend on fonts;
+- size: 25×35 px on both maps (previously 28×34);
+  the pulse scales from the tip and the map-key icons match the new shape.
+
+The amber dot was removed: it marked every pin as a provisional location, and all
+46 are provisional, so it distinguished nothing. The caveat stays in the hover and
+screen-reader labels ("Provisional point") and the map keys ("provisional point,
+location not verified" on Simulation; "provisional points" on Dashboard). The
+Simulation hint and Help now say "H pins are hospitals".
 
 ## 2026-11-20 20:49 +08:00 — Explain Markov bed allocation on Research
 

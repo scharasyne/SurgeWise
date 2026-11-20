@@ -148,7 +148,7 @@ export default function Dashboard() {
           <summary><Hospital className="db-legend-key" size={15} aria-hidden="true" />Map key <ChevronDown size={12} aria-hidden="true" /></summary>
           <div className="db-legend-body">
             {showBoundaries && <span><i className="db-area-swatch" />Selected geography / NCR boundaries</span>}
-            {showHospitals && area === 'QUEZON_CITY' && <span><i className="db-hospital-swatch" aria-hidden="true" />{facilityError ? 'QC hospital layer unavailable' : loadingFacilities ? 'QC hospital points · validating' : 'Hospital pins + amber dot · provisional'}</span>}
+            {showHospitals && area === 'QUEZON_CITY' && <span><i className="db-hospital-swatch" aria-hidden="true" />{facilityError ? 'QC hospital layer unavailable' : loadingFacilities ? 'QC hospital points · validating' : 'Hospital pins · provisional points'}</span>}
             {!showBoundaries && (!showHospitals || area !== 'QUEZON_CITY') && <span>Basemap only</span>}
             <p>Inventory: PhilHealth · 30 Sep 2026</p>
             {buildings3d && <p>3D: generalized OSM buildings, where mapped</p>}

@@ -1,9 +1,11 @@
 # Simulation session handoff
 
-Updated 2026-11-21 00:27 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-21 00:51 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
 
 ## Hospital choice and overflow
+
+Dashboard and Simulation share the circled-H hospital pin from main. Their legends identify the hospital points as provisional.
 
 Both tabs now offer local shortage recording and probability-ranked overflow. The latter reserves first-choice staffed placements, then tries the highest-ranked available hospital for each originating barangay. Hospital-choice comparisons hold that overflow policy fixed. The location of a full hospital no longer determines where the workspace sends overflow. [Model, tie rules and saved fields](first-admission-matrix.md#using-the-chain-in-the-simulation)
 

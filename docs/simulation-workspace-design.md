@@ -68,7 +68,7 @@ a place reveals its relevant links. The optional all-connections layer remains
 available in Layers.
 
 Dashboard and Simulation now call the same hospital-marker factory and use one
-shared style and SVG. The cross pin is a provisional inventory point on both
+shared style and SVG. The H pin is a provisional inventory point on both
 pages; Simulation adds assumed demand and capacity in its inspector. The pin's
 outer white border is removed. Both pins and numbered markers breathe subtly;
 motion is purely cosmetic and has no live-status or disease-spread meaning.
@@ -136,7 +136,7 @@ the initial cohort fades once. No context-arrival camera refit or hover guide
 line is drawn. Actual source coordinates are unchanged.
 
 `SIMULATION_LINES` defines the exact renderer and legend colors/dash styles.
-Legend entries include annual rank, amber provisional hospital dot, unranked
+Legend entries include annual rank, the hospital pin (provisional point, location not verified), unranked
 linked/selected barangays, neutral polygons, selected outline, proximity,
 saved-day placements, holding and nearest-ranked context. Placement entries are
 withheld at day zero. An expansion-boundary entry appears only for a saved
