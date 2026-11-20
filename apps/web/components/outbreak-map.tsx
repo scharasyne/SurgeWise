@@ -216,16 +216,14 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     const draw = (fraction: number) => {
       const values = interpolateCaseValues(start, target, fraction);
       displayedCases.current = values;
+      // Every barangay with a saved value is shaded; the preview (no snapshot) stays neutral.
       const colors: unknown[] = ['match', ['get', 'ADM4_PCODE'], '__none__', NEUTRAL_FILL];
       const radii: unknown[] = ['match', ['get', 'id'], '__none__', 15];
-      for (const id of active) {
-        const value = values.get(id) ?? 0;
-        colors.push(id, snapshot ? caseColor(value, caseColorMaximum) : NEUTRAL_FILL);
-        radii.push(id, 15 + 15 * Math.sqrt(Math.min(1, value / caseColorMaximum)));
-      }
+      if (snapshot) for (const [id, value] of values) colors.push(id, caseColor(value, caseColorMaximum));
+      for (const id of active) radii.push(id, 15 + 15 * Math.sqrt(Math.min(1, (values.get(id) ?? 0) / caseColorMaximum)));
       colors.push(NEUTRAL_FILL); radii.push(15);
       instance.setPaintProperty('barangays', 'fill-color', colors as maplibregl.ExpressionSpecification);
-      instance.setPaintProperty('selected-raised', 'fill-extrusion-color', snapshot && active.has(selected) ? caseColor(values.get(selected) ?? 0, caseColorMaximum) : NEUTRAL_FILL);
+      instance.setPaintProperty('selected-raised', 'fill-extrusion-color', snapshot && values.has(selected) ? caseColor(values.get(selected) ?? 0, caseColorMaximum) : NEUTRAL_FILL);
       instance.setPaintProperty('hotspot-halo', 'circle-radius', radii as maplibregl.ExpressionSpecification);
     };
     if (!context || !snapshot || !duration) { draw(1); return; }
@@ -241,8 +239,8 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance?.getLayer('barangays')) return;
-    // Over imagery only case-colored barangays stay tinted; neutral ones become a faint veil.
-    const colored = snapshot ? [...new Set(rankedHotspotIds ?? hotspotIds ?? snapshot.hotspotIds ?? [])] : [];
+    // Over imagery case-colored barangays stay tinted; the uncolored preview is a faint veil.
+    const colored = snapshot ? snapshot.barangays.map(b => b.barangayId) : [];
     instance.setPaintProperty('barangays', 'fill-opacity', !satellite ? .63 : colored.length ? ['match', ['get', 'ADM4_PCODE'], colored, .62, .06] : .06);
     instance.setPaintProperty('boundaries', 'line-opacity', satellite ? .75 : .65);
     instance.setPaintProperty('selected-outline', 'line-color', satellite ? '#ffffff' : '#225d61');
@@ -277,7 +275,10 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     fit(!initialCameraReady.current);
     initialCameraReady.current = true;
   }, [view, ready, reducedMotion]);
-  const markerKey = hotspotIds?.join('|') ?? '';
+  // Barangays have no permanent markers (their shading carries the case burden). Small
+  // dots mark only where connection lines start: overview-link origins, barangays linked
+  // to an inspected hospital and the inspected barangay.
+  const overviewKey = showLinks && showHospitals ? (rankedHotspotIds ?? hotspotIds)?.join('|') ?? '' : '';
   const rankKey = rankedHotspotIds?.join('|') ?? '';
   const relatedBarangayKey = context && connectionFocus === 'hospital' && showConnections
     ? [...new Set(simulationConnections(context, snapshot, { selected, selectedHospital, focus: 'hospital', hotspotIds: rankedHotspotIds ?? hotspotIds, hospitalHotspot, showOverview: false }).map(c => c.barangayId))].join('|') : '';
@@ -286,7 +287,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     const instance = map.current;
     const barangayMap = new Map(context.barangays.map(b => [b.id, b]));
     const markerStore = visualMarkers.current;
-    const ids = [...new Set([...markerKey.split('|').filter(Boolean), ...relatedBarangayKey.split('|').filter(Boolean), ...(connectionFocus === 'barangay' && selected ? [selected] : [])])].filter(id => barangayMap.has(id));
+    const ids = [...new Set([...overviewKey.split('|').filter(Boolean), ...relatedBarangayKey.split('|').filter(Boolean), ...(connectionFocus === 'barangay' && selected ? [selected] : [])])].filter(id => barangayMap.has(id));
     const ranks = rankKey.split('|').filter(Boolean);
     const entries: { id: string; coordinates: [number, number]; size: number; marker: maplibregl.Marker }[] = [];
     const introduce = !introducedMarkers.current;
@@ -299,24 +300,23 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       labels.current.push(marker);
       markerStore.set(id, marker);
     };
-    // Markers added later are drawn on top: unranked first, then ranks from lowest to rank 1.
-    const drawOrder = (id: string) => { const rank = ranks.indexOf(id); return rank < 0 ? -1 : ranks.length - rank; };
-    for (const id of [...ids].sort((a, b) => drawOrder(a) - drawOrder(b))) {
+    // The inspected barangay's dot is added last so it draws on top.
+    for (const id of [...ids].sort((a, b) => Number(a === selected) - Number(b === selected))) {
       const b = barangayMap.get(id);
       if (!b) continue;
       const rank = ranks.indexOf(id);
       const button = document.createElement('button');
-      button.className = `movie-hotspot-icon${rank < 0 ? ' secondary-hotspot' : ''}`;
+      button.className = 'movie-hotspot-icon secondary-hotspot';
       button.dataset.barangayId = id;
       const symbol = document.createElement('span'); symbol.className = 'qs-ranked-symbol';
-      symbol.textContent = rank >= 0 ? String(rank + 1) : '•'; symbol.setAttribute('aria-hidden', 'true'); button.append(symbol);
+      symbol.textContent = '•'; symbol.setAttribute('aria-hidden', 'true'); button.append(symbol);
       button.setAttribute('aria-label', `Inspect modeled demand location: ${b.name}`);
       button.setAttribute('aria-pressed', String(id === selected));
       const label = document.createElement('span'); label.className = 'qs-marker-label';
       label.textContent = `${b.name} · projected window-burden rank ${rank >= 0 ? rank + 1 : 'unranked'}`;
       label.setAttribute('aria-hidden', 'true'); button.append(label);
       button.onclick = event => { event.stopPropagation(); onSelectRef.current(id); };
-      add('b-' + id, b.coordinates, rank >= 0 ? 29 : id === selected ? 21 : 16, button);
+      add('b-' + id, b.coordinates, id === selected ? 21 : 16, button);
     }
     for (const h of showHospitals ? context.hospitals : []) {
       const button = hospitalMarker(h.name, h.id === selectedHospital, reducedMotion);
@@ -327,7 +327,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     // Every marker sits exactly on its own coordinates at a fixed size, at every zoom:
     // hospital pins put their tip on the hospital's point, barangay markers are centred
     // on the barangay's point. No screen-space overlap offsets or shrinking are applied,
-    // so close markers may overlap (higher ranks are drawn on top) until you zoom in.
+    // so close markers may overlap until you zoom in.
     for (const entry of entries) {
       entry.marker.setOffset([0, 0]);
       if (entry.id.startsWith('h-')) continue;
@@ -358,7 +358,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       markerStore.clear();
       labels.current = [];
     };
-  }, [ready, context, markerKey, rankKey, relatedBarangayKey, selected, selectedHospital, connectionFocus, view, showHospitals, reducedMotion]);
+  }, [ready, context, overviewKey, rankKey, relatedBarangayKey, selected, selectedHospital, connectionFocus, view, showHospitals, reducedMotion]);
   // First-destination probabilities stay fixed throughout a saved run.
   const flowSnapshot = probabilityPlace ? null : snapshot;
   const flowHotspots = probabilityPlace ? undefined : rankedHotspotIds ?? hotspotIds;

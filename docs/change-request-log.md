@@ -1,5 +1,9 @@
 # User-requested extensions
 
+## 2026-11-21 04:56 +08:00 — Shade all barangays, remove numbered markers
+
+Only the ten ranked barangays used to be shaded, so the other 132 looked empty even when they had as many cases. Now every barangay is shaded by its modeled cases on a square-root scale across all barangays. The numbered 1–10 circles are removed; small dots remain only where connection lines start. The top-ten ranking stays in Results and overview connections. [Map semantics](simulation-workspace-design.md#map-semantics)
+
 ## 2026-11-21 02:58 +08:00 — Use the production model inside Simulation
 
 Historical replay and Future forecast use the released weekly barangay predictions to calculate dengue cases and hospital demand. [Forecast source and dates](future-seasonal-simulation.md)

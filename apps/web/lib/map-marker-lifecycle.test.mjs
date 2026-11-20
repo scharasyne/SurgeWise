@@ -42,7 +42,7 @@ function harness() {
   loaded._compile(compiled,filename);
   const render=values=>{refIndex=stateIndex=0;effects.length=0;loaded.exports.default(values);return effects;};
   const camera=()=>effects.find(e=>e.dependencies?.includes('qc')&&e.callback.toString().includes('initialCameraReady'));
-  const markerEffect=()=>effects.find(e=>e.dependencies?.filter(d=>d==='A').length>=2);
+  const markerEffect=()=>effects.find(e=>e.callback.toString().includes('hospitalMarker'));
   return{fits,markers,sources,states,listeners,render,camera,markerEffect};
 }
 
@@ -96,13 +96,21 @@ test('hover, focus and explicit inspection never draw extra marker guide lines',
   globalThis.ResizeObserver=class{observe(){}disconnect(){}};
   try{
     const h=harness();h.render(props);let cleanup=h.markerEffect().callback();
+    // Ranked barangays get no numbered markers: shading carries their burden.
+    assert.equal(h.markers.filter(m=>m.element.dataset.barangayId).length,0,'no permanent barangay markers');
+    cleanup();h.markers.length=0;
+    h.render({...props,connectionFocus:'barangay'});cleanup=h.markerEffect().callback();
     const hospital=h.markers.find(m=>m.element.dataset.facilityId==='H2');
     // The constructed barangay and both hospitals share one point; every marker still stays on it
     // (no overlap offset, no shrinking), so zooming never moves markers off their locations.
     assert.equal(h.markers.length,3);
     for (const marker of h.markers) assert.deepEqual(marker.offset,[0,0],'markers keep their location');
     const place=h.markers.find(m=>m.element.dataset.barangayId==='A');
-    assert.equal(place.element.style.width,'29px','ranked barangay markers keep their full size');
+    assert.equal(place.element.style.width,'21px','the inspected barangay gets a small dot where its lines start');
+    assert.equal(place.element.children[0].textContent,'•','no rank number is drawn');
+    cleanup();h.markers.length=0;
+    h.render({...props,selected:'',showLinks:true,connectionsEnabled:true});cleanup=h.markerEffect().callback();
+    assert.equal(h.markers.find(m=>m.element.dataset.barangayId==='A')?.element.style.width,'16px','overview-link origins get small dots');
     assert.equal(h.sources.has('marker-leaders'),false);
     hospital.element.dispatch('pointerenter');hospital.element.dispatch('focus');
     assert.equal(h.sources.has('marker-leaders'),false,'hover/focus must never expose guide lines');
