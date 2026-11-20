@@ -44,9 +44,15 @@ where mapped. These are cartographic context, not verified hospital models.
 Switching 2D/3D preserves source records, boundaries and hospital selection.
 No patient-flow or other backend calculations run in the map component.
 
-Latest user revision removes satellite and regional imagery. The experimental
+An earlier user revision removed satellite and regional imagery: the experimental
 EOX raster and optional MapTiler integration, controls and configuration example
-were removed. There is no imagery credential dependency. The distance scale has
+are gone, and there is no imagery credential dependency. User revision 2026-11-21
+adds back one option, **Satellite imagery** under Map layers (off by default),
+the same Esri World Imagery hybrid view as Simulation (`addSatelliteImagery` and
+`applyBaseMap` in `lib/dashboard-map-style.ts`, shared by both maps; no key
+needed). It shows major roads and labels over the imagery, and city outlines turn
+bright teal. Imagery is dated background with varying capture dates, not current
+conditions or verified hospital entrances; the panel and map key say so. The distance scale has
 an explicit 18px height at 10px from the bottom; the map key starts 44px above the
 bottom, leaving a 16px gap whether the key is collapsed or expanded.
 

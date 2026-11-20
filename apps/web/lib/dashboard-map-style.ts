@@ -1,4 +1,4 @@
-import type { LayerSpecification } from 'maplibre-gl';
+import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 
 /** Cartographic context only. These colors never encode disease or capacity. */
 export function dashboardLayerPaint(layer: LayerSpecification): Record<string, string | number> {
@@ -65,4 +65,28 @@ export function imageryLayerPaint(layer: LayerSpecification): Record<string, str
     if (/secondary|tertiary/.test(layer.id)) return { 'line-color': '#f4f1e8' };
   }
   return dashboardLayerPaint(layer);
+}
+
+type BaseMap = Pick<MapLibreMap, 'getStyle' | 'getLayer' | 'getSource' | 'addSource' | 'addLayer' | 'setPaintProperty' | 'setLayoutProperty'>;
+
+/** Adds the optional imagery under roads and labels (a hybrid view), hidden until chosen.
+ *  Shared by Dashboard and Simulation; call on every `style.load`. */
+export function addSatelliteImagery(map: BaseMap) {
+  const { layerId, sourceId, ...imagery } = SATELLITE_IMAGERY;
+  if (!map.getSource(sourceId)) map.addSource(sourceId, { type: 'raster', ...imagery, tiles: [...imagery.tiles] });
+  const firstRoad = map.getStyle().layers.find(layer => 'source-layer' in layer && layer['source-layer'] === 'transportation')?.id;
+  if (!map.getLayer(layerId)) map.addLayer({ id: SATELLITE_IMAGERY.layerId, type: 'raster', source: SATELLITE_IMAGERY.sourceId, layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 150 } }, firstRoad);
+}
+
+/** Switches the provider's base layers between street context and imagery (app layers are
+ *  untouched) and shows 3D or flat buildings. Flat footprints are redundant over imagery. */
+export function applyBaseMap(map: BaseMap, satellite: boolean, buildings3d: boolean) {
+  for (const layer of map.getStyle().layers) {
+    if (!('source' in layer) || layer.source !== 'openmaptiles') continue;
+    for (const [property, value] of Object.entries(satellite ? imageryLayerPaint(layer) : dashboardLayerPaint(layer))) map.setPaintProperty(layer.id, property, value);
+    if (hiddenOverImagery(layer)) map.setLayoutProperty(layer.id, 'visibility', satellite ? 'none' : 'visible');
+  }
+  if (map.getLayer(SATELLITE_IMAGERY.layerId)) map.setLayoutProperty(SATELLITE_IMAGERY.layerId, 'visibility', satellite ? 'visible' : 'none');
+  if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', buildings3d ? 'visible' : 'none');
+  if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', buildings3d || satellite ? 'none' : 'visible');
 }

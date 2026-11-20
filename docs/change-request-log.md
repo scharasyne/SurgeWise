@@ -1,5 +1,45 @@
 # User-requested extensions
 
+## 2026-11-21 +08:00 — City boundaries on Simulation, satellite imagery on Dashboard
+
+- Simulation → Map layers → **City boundaries** (off by default): NCR city outlines
+  from the same source and in the same style as Dashboard, Quezon City highlighted,
+  with a map-key entry. If the boundary file cannot load, the switch is disabled
+  and labelled unavailable. [Simulation design](simulation-workspace-design.md)
+- Dashboard → Map layers → **Satellite imagery** (off by default): the Simulation's
+  Esri World Imagery hybrid view, through code now shared by both maps. This
+  reverses the earlier removal of imagery for this one provider only; the EOX and
+  MapTiler options stay removed. Over imagery, city outlines on both maps are bright
+  teal. [Dashboard design](dashboard-workspace-design.md)
+
+## 2026-11-21 +08:00 — Simulation default view, numbers above pins, green Results panel
+
+- Default view: from a user screenshot (1917×912 window) the Simulation map opens,
+  and Reset view returns, to centre ≈121.051°E, 14.676°N at zoom ≈11.45 — about half
+  a zoom step closer than the former fit-all-of-QC view. It is stored as an area
+  (`DEFAULT_QC_VIEW`, `lib/simulation-map.ts`) whose latitude range fills the map
+  height, so other screen sizes keep the same framing; narrow screens fit Quezon
+  City's own extent so the city is not shown needlessly small.
+- Overlaps: numbered barangay markers are drawn above hospital pins; a hovered pin
+  still comes to the front so its label can be read.
+- Results panel: the remaining navy/steel-blue colours are now Simulation greens —
+  plain buttons on the Simulation page use green instead of the app-wide navy, the
+  "About" info buttons are light green icons, and the barangay bar chart, city-wide
+  bed-demand line and band, and selected-day markers use greens.
+
+## 2026-11-21 +08:00 — Hospital and barangay markers stay accurate at every zoom
+
+The user saw Simulation hospital pins and barangay markers shift when zooming and
+asked that both stay accurate regardless of zoom. Cause: after every zoom or pan,
+the screen-space overlap-avoidance layout re-ran over all markers, nudging
+overlapping markers away from their locations and shrinking crowded ones, and
+hospital pins were centred (not tipped) on their point. Now no marker is offset
+or shrunk: hospital pins use a bottom anchor (tip on the hospital's location) at
+25×35 px, like Dashboard, and barangay markers are centred on their point at their
+fixed size (29 px ranked, 21 px selected, 16 px unranked). Connection lines end at
+the markers. Close markers can overlap until you zoom in; higher-ranked barangays
+are drawn on top. The map key says so. Geographic coordinates are unchanged.
+
 ## 2026-11-21 01:22 +08:00 — Inspect weighted hospital choices before playback
 
 Rank the selected barangay’s three hospital cards by modeled first-admission probability. Show all 46 probability arrows by default on day zero and allow searches by hospital name. [Barangay hospital choices](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)

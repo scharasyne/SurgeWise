@@ -111,8 +111,21 @@ Selected links reveal outward over 650ms and use moving chevrons. Dashed teal is
 straight-line proximity, solid teal is a saved modeled placement, solid ochre
 includes holding placements, and dashed ochre is nearest-ranked context. A saved
 placement supersedes the proximity decoration on the same endpoint pair. SVG
-endpoints follow the displayed markers, including screen-space overlap offsets;
-underlying geographic coordinates are not changed. The optional all-connections
+endpoints follow the displayed markers. Since 2026-11-21 no marker is offset or
+shrunk for overlap: hospital pins put their tip on the hospital's location and
+barangay markers are centred on the barangay's point, at fixed sizes, so zooming
+never moves them off their locations. Close markers may overlap until the user
+zooms in; numbered barangay markers are drawn above hospital pins (a hovered pin
+comes to the front to show its label) and higher ranks above lower ones.
+Map layers has a **City boundaries** switch (off by default; 2026-11-21): the NCR city
+outlines from `/api/boundaries` in the Dashboard's style, with Quezon City highlighted
+(bright teal over satellite imagery). If the file cannot load, the switch is disabled
+and says the layer is unavailable; the rest of the map is unaffected.
+The opening and reset camera is the user-chosen framing `DEFAULT_QC_VIEW` in
+`lib/simulation-map.ts` (2026-11-21: centre ≈121.051°E, 14.676°N, zoom ≈11.45 on a
+716-px-tall map); its latitude range fills the map height on wide screens, and narrow
+screens fit Quezon City's own extent instead. Underlying geographic coordinates are not
+changed. The optional all-connections
 view uses this same renderer; there is no second set of source-to-source lines. Repeated clicks replay the
 reveal. Playback updates saved-day placements without restarting the common
 motion clock. Reduced motion uses full static lines and directional chevrons,
