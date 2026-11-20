@@ -86,3 +86,43 @@ For every displayed number, track its `measurementKind` (`observed`, `source_rep
 
 ## Definition of done
 Working integrated UI and backend on **dated historical data**, reproducible 1–4-week backtests without future leakage, QC-specific spatial allocation only if geographic source inputs exist, tested 28-day patient-flow and >100%-of-normal overflow scenarios, demonstrable baseline-vs-optimized simulations on identical inputs, per-number provenance/uncertainty labeling, clean loading/blocked/error states, reproducible commands, and an auditable 3-minute historical demo. See `docs/test-and-release-checklist.md` for acceptance tests and honest release labeling.
+
+## AI Wiki and test-first session workflow (2026-11-14)
+
+- Repository root: `/home/lumpia/Desktop/Workspace/SurgeWise`; `apps/` is a
+  subdirectory, not a separate repository.
+- AI Wiki vault: `/home/lumpia/Project Fieldnotes`. Before planning repository
+  changes, read the vault's `AGENTS.md`,
+  `wiki/projects/surgewise/overview.md`, the latest note under
+  `wiki/projects/surgewise/handoffs/`, and relevant project/source notes.
+  Also read this repository's `docs/SESSION_HANDOFF.md` and scoped instructions;
+  verify documented checkpoints against the current working tree.
+- The wiki is supporting memory. Repository code, pinned source artifacts and
+  freshly executed checks establish current behavior. The older scaffold/upload
+  descriptions above are historical context: the current checkout includes UPRI
+  raw inputs, processed runs and versioned simulation code. The canonical
+  PhilHealth migration exists. Inspect it rather than repeating the migration.
+  Trained local artifacts and deployed behavior still require explicit checks.
+  Preserve every scientific claim boundary and all legacy-route safety gates.
+- Routine work stays in the main session with the test-first workflow. When the
+  user says **“run the dev pipeline,”** coordinate, in order: Master Plan
+  Architect (short plan, acceptance criteria, edge cases); Test Automation
+  Engineer (focused tests using existing tools, meaningful expected failure,
+  test setup resolved); Minimal Change Engineer (minimal implementation and
+  focused checks); Test Automation Engineer (new tests and relevant existing
+  checks); Code Reviewer (read-only review of the verified diff against criteria).
+  Route proposed acceptance-test changes to the tester and actionable findings
+  to their owner; rerun affected checks and review after fixes.
+- Keep detailed pipeline handoffs in `.pipeline/<run>/` in this repository. The
+  main session owns one vault session note per run under
+  `wiki/projects/surgewise/handoffs/`, using the vault session template. Update
+  it after planning, the meaningful failing test, implementation, and verification
+  and review. Record blockers as they arise. At session end, record the checked
+  revision and working-tree state, exact test evidence, review outcome, remaining
+  uncertainty and concrete next action; update affected project notes and
+  `wiki/log.md`. Documentation-only work records applicable document checks and
+  explicitly identifies application tests as not run.
+- Follow the vault schema and maintenance commands when changing wiki content;
+  preserve raw captures and capture corrections as new dated revisions. Never
+  copy secrets or patient-level data into the vault.
+- Leave merging to the user.

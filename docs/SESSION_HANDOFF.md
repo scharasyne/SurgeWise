@@ -1,8 +1,5 @@
 # Simulation session handoff
 
-Updated 2026-11-19 04:32 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
-Preserve existing working-tree edits; do not restart the application or replace data.
-
 ## 2026-11-20 13:59 +0800 — Dev simulation interface with synthetic barangay demand
 
 The local brgy-forecasting branch fast-forwarded from 94ad7f3 to dev at 0c3f29bcbb84cea899e89216b1d756556d8026ad. The model integration and earlier working-tree changes are uncommitted. The simplified simulation settings, first-hospital policies, map flows, comparison and results export now use saved RandomForest demand for each covered barangay and source week. Admission delay determines the map's arrival mix. Assumed length of stay determines a barangay's share of a hospital's occupied-bed shortage. The full hospital-choice matrix is validated even for a partial forecast. [Contract and assumptions](synthetic-barangay-replay.md#hospital-planning)
@@ -14,6 +11,56 @@ Verification on this checkout: 114 Python tests and 94 frontend tests passed, as
 Checked `brgy-forecasting` at `94ad7f30c7ce1224641f8638b426bf06e8a2203d` plus uncommitted changes. The new default on /outbreak-response consumes the selected Drive RandomForest's saved 1–4-week outputs. All 110,688 local predictions across 196 origins matched the original CSV. Coverage varies from 135 to 142 barangays. Source targets incorporate retrospective full-year information. Forecast intervals and prospective accuracy are unknown. See [methods, acquisition and endpoint contracts](synthetic-barangay-replay.md). The original 9.1 MB joblib is present locally at `data/processed/upri_noah/synthetic-barangay-random-forest.joblib` and ignored by Git. Runtime replay uses the checked derivative.
 
 Red checks: new default route returned 404, web entry tests requested the old route, and synthetic display evidence was absent. Final checks: `.venv/bin/python -m pytest -q` (93 passed, one existing Starlette warning), compileall, diff whitespace and clean-copy web npm ci/test (92 passed), lint, production build and TypeScript all passed. A second import produced byte-identical output. Browser playback showed Payatas weeks 5–8 for the default 2025 origin. A production browser export matched the CSV on all 142 × 4 values and the 28-day sum. During hot reload on the development server the previously recorded MapLibre missing-source setData error recurred. A fresh page and the production build loaded successfully. No deployment or merge. Next: review the branch's synthetic replay in Simulation. Preserve pre-existing notebook, flood, model and document changes.
+
+
+Updated 2026-11-16 02:39:53 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+
+## Annual ranking artifact rebuild — 2026-11-15 18:18 +0800
+
+Rebuilt annual barangay XGBoost artifacts with `OMP_NUM_THREADS=2 .venv/bin/python scripts/train_qc_barangay.py` (exit 0). Existing ranking regression failed first with an artifact mismatch: JSON matched its manifest, local joblib did not. After rebuilding, `.venv/bin/python -m pytest -q services/engine/tests/test_barangay_xgboost.py services/engine/tests/test_qc_workspace.py` passed 16 tests (one existing Starlette deprecation warning). Approved all nine issue years 2018–2026: 142 records and ten candidates each, with dated cutoff checks. `verify_sources()` passed; source/software/code checks remain enforced. Both in-process and actual HTTP GET http://127.0.0.1:8000/readiness report barangayRanking.ready=true and qcWorkspaceReady=true. Overall readiness and futureWorkspaceReady remain false because the separate seasonal artifact has a software mismatch; not rebuilt in this task.
+
+Reviewed generated diff: only annual predictions/manifest regenerated (plus ignored joblib); no application code, tests, raw/reference sources or validation gates edited. XGBoost remains 3.1.3; manifest now records local NumPy 2.5.4. No fallback added. Checked revision 286fffb4da80621145d402474023bb699b31c539 on main; preserve pre-existing untracked docs/superpowers/. No commit, push, merge or deployment. Frontend/full Python suites and browser QA not run for this scoped artifact rebuild. Next: refresh local QC workspace; separately rebuild seasonal artifacts if future simulation is required. No deployed-runtime verification.
+
+## Previous checkpoint — simulation controls UX implemented, 2026-11-14
+
+That work used `feat/simulation-controls-ux`, based on `feat/light-theme` at
+`ae1d8124dbe491f0e2b85c919da0033949b89911`. Changes were uncommitted at that checkpoint.
+Preserved existing root AGENTS edits, four regenerated processed artifacts and
+prior change-request-log edits. The user approved the design and implementation.
+
+Settings and playback now share the left panel. Mode tabs stay visible, selected
+mode is emphasized, independent forms persist, and ready forms animate with
+reduced-motion support. Right views contain results/hospital inspection/export.
+User clarified whole-panel minimization into a floating card, with mode tabs and
+compact playback retained. Expanding restores settings and current state. Loading
+and errors live inside the left header; actual browser measurement confirmed
+workspace top stays 51 px before/after loading. Overlay exclusion now finds the
+floating card through the shared fullscreen container. Narrow fit padding is
+bounded. No model/calculation/API changes. Changed workspace/CSS/test files were
+formatted with temporary pinned Prettier 3.6.2; no dependency declarations changed.
+
+Verification from apps/web: focused workspace tests 10/10, map-overlay tests 2/2,
+`npm test` 14 test files passed, `npm run lint`, `npx tsc --noEmit` and
+`npm run build` all passed. Restored next-env.d.ts to .next-dev after build.
+Read-only review findings (async form animation and relocated overlay discovery)
+were fixed with red/green regression coverage. Browser IAB checks covered desktop,
+intermediate, 320 px mobile, short height, keyboard modes, scroll, per-mode values,
+manual reduced motion, final-day/export gating, hospital inspection, floating
+minimize/restore and status placement. Native fullscreen was inconclusive;
+structural test verifies its target contains controls. OS motion override is
+present in CSS but was not emulated. During code hot reload, an existing map
+setData lifecycle error appeared; full reload recovered. Fresh page interaction
+checks continued successfully. Last narrow-padding adjustment has focused
+regression/full build verification, without another browser cycle.
+
+Design and execution plan are under docs/superpowers/. Detailed evidence and
+remaining limitations are in vault handoffs/2026-11-14-simulation-controls-ux.md.
+Next action: user reviews local /outbreak-response. Leave merging to the user.
+
+Updated 2026-10-27 06:57 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+
+Updated 2026-11-19 04:32 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Preserve existing working-tree edits; do not restart the application or replace data.
 
 ## Scenario panel
 

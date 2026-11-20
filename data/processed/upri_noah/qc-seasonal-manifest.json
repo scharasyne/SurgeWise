@@ -62,9 +62,9 @@
     "WN": 52
   },
   "selectedModel": "seasonal_xgboost",
-  "trainedAt": "2026-10-25T00:14:13.709559+00:00",
-  "modelSha256": "534adfc7fca142ed78458e930eaf85235856b5155a4d2e8bf98705c2e94eb55b",
-  "validationSha256": "35b8ec4f357974660a34b1de4e95fdc981370b8c9d69a7257b16db81b2dd9756",
+  "trainedAt": "2026-11-14T05:47:25.711499+00:00",
+  "modelSha256": "7baf6d6b839bc07b6da9b513ae8054a8bdbcd3f9b2cae1e85704680bf0a47ec9",
+  "validationSha256": "d7822848dc6ae1dd6ea473a3bf22e630cf6d77ab8d242389e753ee037a730b46",
   "trainingRows": 828,
   "trainingCutoffBlock": 105351,
   "codeHashes": {
@@ -74,11 +74,11 @@
     "services/engine/domain/seasonal_validation.py": "c0b134815b204d59cb55bb824339bec1df4ba67027a72a3b70159e6743f2a04d"
   },
   "software": {
-    "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
-    "sklearn": "1.8.0",
+    "python": "3.13.13 (main, Apr 14 2026, 14:28:56) [Clang 22.1.3 ]",
+    "sklearn": "1.9.1",
     "xgboost": "3.1.3",
-    "numpy": "2.2.6",
-    "joblib": "1.5.3"
+    "numpy": "2.5.4",
+    "joblib": "1.6.0"
   },
   "transformations": [
     "Preserve raw YR/WN, cases, weather and quality flags",

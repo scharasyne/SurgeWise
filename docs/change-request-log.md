@@ -8,6 +8,7 @@ The user requested the scenario design from dev on brgy-forecasting. The default
 
 The user approved making the selected Drive RandomForest the default in this branch. Sum the covered local forecasts to supply QC simulation demand, identify partial coverage and show the 1–4-week point estimates by barangay. See [implementation and reproduction](synthetic-barangay-replay.md) and the [approved design](superpowers/specs/2026-11-19-synthetic-barangay-default-design.md).
 
+
 ## 2026-11-19 04:32 +08:00 — Simplify scenario setup
 
 Group the settings by forecast period, case forecast and hospital planning. Use “preferred hospital” throughout the interface. Mark selected tabs and duration presets with a checkmark and teal fill. Presets edit the duration, and Run simulation applies the settings. Numeric fields allow replacement of an initial zero and validate before submission. [Panel behavior](simulation-workspace-design.md#layout-and-interaction)
@@ -505,6 +506,131 @@ and the hero "Explore the NCR map" link were removed; the hero button reads
 and Research pages (badge-only logo on narrow phones). Floating cards are
 scaled to 84%, and "surge" in the headline is highlighted in powder blue
 instead of a wavy underline.
+
+## 2026-11-14 — UX implementation refinements
+
+User approved the unified-left-controls design and requested readable code
+formatting. During implementation, clarified that minimize must convert the
+entire left dock into a floating card over the map. Both mode tabs remain
+available and expand restores settings. User also requested keeping the
+loading message inside the left panel so the map/results do not move down.
+Implemented these refinements with focused regression tests, including map
+overlay exclusion and bounded fit padding for narrow screens. This changes
+presentation and interaction while retaining current calculations and API inputs.
+
+## 2026-11-14 — consolidate simulation controls on the left
+
+User requests a new branch based on feat/light-theme and a focused UX change:
+combine simulation settings with left-side playback controls, reserve the right
+panel for hospital capacity/results, keep Historical replay and Future surge
+forecast visible, emphasize the selected mode and smoothly transition its form.
+Preserve nontechnical-user readability and reduce unnecessary text.
+
+Created `feat/simulation-controls-ux` from feat/light-theme, preserving existing
+uncommitted edits. Master Plan Architect reviewed current UI and recommended one
+persistent left control panel with grouped settings. Proposed design and
+acceptance criteria: [simulation controls UX](superpowers/specs/2026-11-14-simulation-controls-ux-design.md).
+Status: design prepared for review; application implementation pending.
+
+## 2026-11-14 — withdraw weekly barangay weather-based forecasting direction
+
+User concludes that annual barangay dengue records, without observed weekly
+barangay outcomes, cannot support the proposed weekly weather-based barangay
+forecasting feature. Treat prior grouped local weather-to-weekly-case proposals,
+QC-response transfer and proportional weekly-label construction as superseded
+product directions for this redesign. Weekly weather remains valid environmental
+information, but local weekly dengue predictive performance cannot be evaluated
+with the available annual case targets.
+
+Keep weekly QC forecasting and annual barangay burden analysis at their source
+scales. Current grouped weather schedules and weather API display remain topics
+requiring revised scope; do not assume continued approval for local disease or
+hospital consequences. Existing annual-share allocations in application code
+remain in place and require an explicit later implementation decision. This
+entry records the scope decision; no application calculations changed.
+
+
+## 2026-11-14 — dengue consequences essential to grouped scenarios
+
+User confirms that estimated dengue consequences are essential to the grouped
+barangay weather feature. Weather-only comparison does not satisfy the intended
+outcome. Preserve the earlier request for both cases and hospital pressure,
+group-specific dates/durations, and rejection of annual-share synthetic weekly
+training records. A defensible local response method remains a research
+dependency. Mechanistic transmission models are candidates for feasibility
+assessment, with explicit initialization, calibration, uncertainty and local
+validation limits. No model or implementation approach approved yet.
+
+## 2026-11-14 — reject synthetic weekly barangay training records
+
+User rejects creating weekly barangay dengue estimates by proportionally
+distributing annual cases, and rejects constructing the proposed paired weekly
+barangay dengue/weather dataset. Reason: barangay case shares can vary between
+weeks. Existing implementation remains unchanged; this records a constraint for
+the redesign and research, not removal of current allocation code.
+
+User asks for defensible alternatives for grouped weather scenarios. Directions
+under discussion include evaluating weather-conditioned QC-wide forecasts
+against real weekly targets, comparing barangay weather exposures against
+seasonal references, and researching published mechanistic suitability models.
+Local weather-to-case transfer and hospital-demand conversion require explicit
+evidence/assumptions. No alternative selected or approved by this entry.
+
+## 2026-11-14 — defer nontechnical-user usability discussion
+
+User reports excessive text and technical language remain overwhelming, including
+on feat/light-theme after its attempt to remove AI-style filler and retain
+relevant information. Treat nontechnical users as an explicit design audience.
+Revisit wording, information density, essential controls and understandable
+relationships between simulation outputs in the next design discussion.
+User requests saving this feedback and a reminder. Reminder timing is pending.
+Status: recorded for later discussion; no interface changes requested now.
+
+
+## 2026-11-14 — grouped weather scenarios and automatic weather display
+
+Design discussion specifies multiple scenario groups, each with selected
+barangays, one shared weather condition, an independent start date and duration,
+and add/remove controls. User wants both dengue-case and hospital-pressure
+results from one combined simulation. Group overlap policy, baseline details,
+response method and forecast horizon remain design decisions.
+
+User additionally requests current API weather displayed for each barangay when
+the platform opens, with forecasts for incoming weeks. Provider was initially named
+"opencrossing" and subsequently confirmed by the user as Visual Crossing. Its
+documentation supports coordinate queries, current conditions and weather
+forecasts. Barangay representative-point coverage/resolution, refresh/cache
+policy, dated input provenance and provider-to-training-data compatibility
+require evaluation. Weather forecast coverage and dengue forecast coverage must
+be explicitly defined. Existing case evidence ends in 2025; present-day dengue
+outputs require appropriate conditional/model-status labels and validation.
+
+User additionally asks whether historical API weather can support delayed
+dengue-response modeling and earlier preparedness decisions. Investigate
+preceding-weather inputs, source compatibility, historical forecast archives
+and time-correct validation. Provider documentation reports historical daily
+coverage from 1970, subject to location/variable availability; QC-specific
+coverage has not been queried.
+
+Status: requested product direction, under discovery. No weather integration,
+grouped-response model or redesigned interface implemented by this entry.
+
+## 2026-11-14 — feature scope and simulation workflow feedback
+
+User reports the `feat/light-theme` experience is overwhelming, simulation
+outputs lack a clear relationship, runs appear repetitive, mode selection is
+hard to discover, and LGU suggestions remain unavailable. Requests Master Plan
+Architect insight and explicit definitions, purpose and implementation needs
+for each feature. Restates a vision of selecting one or multiple barangays,
+setting dates and weather conditions for those selected areas, and inspecting
+the consequences over the selected time frame. Requests grounded weather
+choices and consideration of a reusable research/design-discovery skill or agent.
+
+Status: discovery and design discussion. Local weather-to-case behavior,
+selection semantics, mode navigation, action rules and research-agent scope
+require design decisions. No redesign or local-weather model has been approved
+or implemented by this entry. Earlier automatic-QC defaults describe existing
+behavior and must be reconsidered against this feedback during design.
 
 ## 2026-10-27 06:50 +08:00 — verify engine activation when the frontend opens
 

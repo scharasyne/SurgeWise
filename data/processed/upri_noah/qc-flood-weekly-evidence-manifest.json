@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "transform": {
+    "file": "align_qc_flood_reports.py",
+    "sha256": "d25bbdea1139c2cc596b23de20eecb27a94ce582616de201c645e70089058718"
+  },
+  "geography": "Quezon City, Philippines",
+  "source_workbook": {
+    "file": "Dengue_Environmental Vars_Dataset.xlsx",
+    "sheet": "QC Data",
+    "sha256": "94c65ce24e13c132007f67da9b4d10f7023e9429fff79c358b1de938f982dd78",
+    "url": "https://github.com/pelitro-rcw/dengue-environmental-dataset/blob/02926278d570db8950da368d44db544ae0097615/Dengue_Environmental%20Vars_Dataset.xlsx",
+    "license": "ODC-ODbL-1.0 (source README)",
+    "columns": [
+      "YR",
+      "WN",
+      "DC_QC",
+      "RF_NASA",
+      "RF_PAGASA",
+      "Temp_ERA5-Land",
+      "TempMax_ERA5-Land",
+      "TempMin_ERA5-Land",
+      "RH_ERA5-Land",
+      "RHMax_ERA5-Land",
+      "RHMin_ERA5-Land",
+      "Pressure_ERA5-Land",
+      "VaporPressureSat_ERA5-Land",
+      "VaporPressureAct_ERA5-Land",
+      "SH_ERA5-Land",
+      "Temp_PAGASA",
+      "RH_PAGASA",
+      "VaporPressureSat_PAGASA",
+      "VaporPressureAct_PAGASA",
+      "SH_PAGASA",
+      "FLAG_COVID",
+      "FLAG_SINGLE_CELL_RF",
+      "FLAG_PLAUSIBILITY",
+      "FLAG_PRESSURE_SH_GAP"
+    ]
+  },
+  "report_inventory": {
+    "file": "qc-flood-reports.csv",
+    "sha256": "eb41e3d31af0786020a5225fc8ebaceeb11c3635dcf4be2c466b2d7f79e6fb3d",
+    "columns": [
+      "report_id",
+      "event_date",
+      "published_date",
+      "source_type",
+      "publisher",
+      "url",
+      "location",
+      "evidence",
+      "verification_url"
+    ],
+    "records": 148,
+    "sources_by_type": {
+      "news": 107,
+      "official": 28,
+      "social": 13
+    },
+    "undated_records_excluded_from_weekly_join": 7,
+    "licensing": "Source URLs and original summaries only. Publishers retain source rights."
+  },
+  "weekly_output": {
+    "file": "qc-flood-weekly-evidence.csv",
+    "sha256": "7928d85d22d8a49b5cccbfed6e25084ae97183b0b2283926fafbc369bb8d2c2b",
+    "columns": [
+      "YR",
+      "WN",
+      "DC_QC",
+      "RF_NASA",
+      "RF_PAGASA",
+      "Temp_ERA5-Land",
+      "TempMax_ERA5-Land",
+      "TempMin_ERA5-Land",
+      "RH_ERA5-Land",
+      "RHMax_ERA5-Land",
+      "RHMin_ERA5-Land",
+      "Pressure_ERA5-Land",
+      "VaporPressureSat_ERA5-Land",
+      "VaporPressureAct_ERA5-Land",
+      "SH_ERA5-Land",
+      "Temp_PAGASA",
+      "RH_PAGASA",
+      "VaporPressureSat_PAGASA",
+      "VaporPressureAct_PAGASA",
+      "SH_PAGASA",
+      "FLAG_COVID",
+      "FLAG_SINGLE_CELL_RF",
+      "FLAG_PLAUSIBILITY",
+      "FLAG_PRESSURE_SH_GAP",
+      "provisional_block_start",
+      "provisional_block_end",
+      "flood_evidence_status",
+      "reported_qc_flood_provisional",
+      "flood_dated_report_count",
+      "flood_documented_day_count",
+      "flood_iso_disagreement_day_count",
+      "flood_source_types",
+      "flood_report_ids"
+    ],
+    "weeks": 832,
+    "coverage_by_year": {
+      "2010": {
+        "no_recovered_report": 50,
+        "official_or_news": 2
+      },
+      "2011": {
+        "no_recovered_report": 48,
+        "official_or_news": 4
+      },
+      "2012": {
+        "no_recovered_report": 50,
+        "official_or_news": 2
+      },
+      "2013": {
+        "no_recovered_report": 45,
+        "official_or_news": 7
+      },
+      "2014": {
+        "no_recovered_report": 48,
+        "official_or_news": 4
+      },
+      "2015": {
+        "no_recovered_report": 48,
+        "official_or_news": 4
+      },
+      "2016": {
+        "no_recovered_report": 49,
+        "official_or_news": 3
+      },
+      "2017": {
+        "no_recovered_report": 48,
+        "official_or_news": 4
+      },
+      "2018": {
+        "no_recovered_report": 46,
+        "official_or_news": 6
+      },
+      "2019": {
+        "no_recovered_report": 48,
+        "official_or_news": 4
+      },
+      "2020": {
+        "no_recovered_report": 48,
+        "official_or_news": 4
+      },
+      "2021": {
+        "no_recovered_report": 50,
+        "official_or_news": 2
+      },
+      "2022": {
+        "no_recovered_report": 50,
+        "official_or_news": 2
+      },
+      "2023": {
+        "no_recovered_report": 47,
+        "official_or_news": 5
+      },
+      "2024": {
+        "no_recovered_report": 47,
+        "official_or_news": 5
+      },
+      "2025": {
+        "no_recovered_report": 46,
+        "official_or_news": 6
+      }
+    },
+    "iso_disagreement_days": 21
+  },
+  "alignment": {
+    "calendar": "Provisional Jan 1 blocks, last block ends December 31",
+    "date_field": "event_date, never filled with publication date",
+    "positive": "At least one dated official or news flood observation in the block",
+    "missing": "Social-only evidence or no recovered dated evidence",
+    "archive_coverage": "Unmeasured; missing evidence cannot identify flood-free weeks.",
+    "use": "Retrospective evidence audit; report availability and week boundaries remain unresolved."
+  }
+}
