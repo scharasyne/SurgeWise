@@ -10,7 +10,7 @@ export function hospitalMarker(name: string, selected: boolean, reducedMotion = 
   const symbol = document.createElement('span');
   symbol.className = 'sw-hospital-pin-symbol'; symbol.setAttribute('aria-hidden', 'true');
   const image = document.createElement('img');
-  image.src = '/brand/hospital-pin.svg'; image.alt = ''; image.width = 28; image.height = 34; image.draggable = false;
+  image.src = '/brand/hospital-pin.svg'; image.alt = ''; image.width = 25; image.height = 35; image.draggable = false;
   symbol.append(image); button.append(symbol);
   const label = document.createElement('span');
   label.className = 'sw-hospital-pin-label'; label.textContent = `${name} · Provisional point`;

@@ -72,7 +72,7 @@
 .qs-map-key-content .qc-marker-key,.qs-map-key-content .qc-line-key { flex-direction:column;gap:8px;margin-top:12px; }
 .qc-marker-hotspot { display:inline-grid;place-items:center;flex-shrink:0;width:18px;height:18px;border-radius:50%;background:var(--qs-rank-color);color:white;font-size:11px; }
 .qc-marker-linked { display:inline-grid;place-items:center;flex-shrink:0;width:14px;height:14px;border-radius:50%;background:var(--qs-unranked-color);color:#fff;font-size:11px; }
-.qc-marker-hospital { display:inline-block;width:17px;height:21px;background:url(/brand/hospital-pin.svg) center/contain no-repeat;font-size:0; }
+.qc-marker-hospital { display:inline-block;width:16px;height:22px;background:url(/brand/hospital-pin.svg) center/contain no-repeat;font-size:0; }
 .qc-other-barangay { background:#edf1ee;border:1px solid #b9ccc2; }
 .qc-selected-barangay { background:#edf1ee;border:1.2px solid #225d61; }
 .qs-map-key-content .qc-line-key i { width:25px;height:0;flex-shrink:0; }
