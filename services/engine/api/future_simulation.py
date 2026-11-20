@@ -7,8 +7,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, model_validator
 
-from .qc_simulation import QCInput, LIMITS, compare_first_admissions
-from .research import FacilityAssumption, unavailable
+from .qc_simulation import QCInput, LIMITS, compare_first_admissions, facility_assumptions
+from .research import unavailable
 from .outbreak import OutbreakInput, inputs, create_movie
 from ..repositories.seasonal_runs import create_seasonal_run, approved_model, FOLDER, SeasonalArtifactError
 from ..domain.seasonal_forecast import XGBOOST_CANDIDATES
@@ -83,9 +83,7 @@ def future_workspace(params: FutureInput):
             growthDays=params.growthDays, shockProfile="ramp", hospitalizationRate=params.hospitalizationRate,
             lengthOfStayDays=params.lengthOfStayDays, baselineOccupancy=params.baselineOccupancy,
             admissionDelayDays=params.admissionDelayDays, surgeActivationDay=params.surgeActivationDay,
-            facilities=[FacilityAssumption(facilityId=h["id"], assumedDengueEligible=True,
-                normalCapacity=params.normalCapacity, surgeCapacity=params.surgeCapacity, holdingCapacity=params.holdingCapacity)
-                for h in geo["hospitals"]])
+            facilities=facility_assumptions(params, geo["hospitals"]))
         movie = create_movie(model)
         validation = json.loads((FOLDER / "qc-seasonal-validation.json").read_text())
         engine, manifest = approved_model()

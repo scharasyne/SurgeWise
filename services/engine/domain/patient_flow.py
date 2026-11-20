@@ -6,6 +6,12 @@ clinical eligibility is inferred from accreditation or specialty.
 import math
 
 
+def non_dengue_share(facility, occupancy):
+    """Per-hospital non-dengue share when the scenario supplies one, else the scenario-wide share."""
+    share = facility.get("baselineOccupancy")
+    return occupancy if share is None else share
+
+
 def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, activation_day=0, daily_groups=None, assignment_method="nearest"):
     if len(weekly) != 4 or any(not math.isfinite(v) or v < 0 for v in weekly):
         raise ValueError("Four finite nonnegative QC forecast blocks required")
@@ -14,6 +20,11 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
     for f in facilities:
         if any(type(f[k]) is not int or f[k] < 0 for k in ["normalCapacity", "surgeCapacity", "holdingCapacity"]) or f["normalCapacity"] == 0:
             raise ValueError("Explicit finite positive normal capacity required")
+        if type(f.get("surgeNonDengueCapacity", 0)) is not int or f.get("surgeNonDengueCapacity", 0) < 0:
+            raise ValueError("Invalid extra non-dengue beds")
+        share = f.get("baselineOccupancy")
+        if share is not None and (not isinstance(share, (int, float)) or not math.isfinite(share) or not 0 <= share <= 1):
+            raise ValueError("Invalid per-hospital non-dengue share")
     ids = {f["facilityId"] for f in facilities}
     if len(ids) != len(facilities):
         raise ValueError("Duplicate facility IDs")
@@ -45,7 +56,7 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             s["cohorts"] = [(exit_day, count) for exit_day, count in s["cohorts"] if exit_day > day]
             f = s["config"]
             extra = f["surgeCapacity"] if day >= activation_day else 0
-            residual = f["normalCapacity"] * (1 - occupancy) + extra - sum(c for _, c in s["cohorts"])
+            residual = f["normalCapacity"] * (1 - non_dengue_share(f, occupancy)) + extra - sum(c for _, c in s["cohorts"])
             promote = min(s["holding"], max(0, residual))
             s["holding"] -= promote
             if promote:
@@ -69,7 +80,7 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
                 s = by_id[ident]
                 f = s["config"]
                 extra = f["surgeCapacity"] if day >= activation_day else 0
-                residual = f["normalCapacity"] * (1 - occupancy) + extra - sum(c for _, c in s["cohorts"])
+                residual = f["normalCapacity"] * (1 - non_dengue_share(f, occupancy)) + extra - sum(c for _, c in s["cohorts"])
                 proposed = plans[group_index]["supported"][ident] if plans is not None else pending
                 placed = min(pending, max(0, residual), proposed)
                 if placed:
@@ -100,15 +111,19 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
         for s in states:
             f = s["config"]
             n, surge = f["normalCapacity"], f["surgeCapacity"] if day >= activation_day else 0
+            # Extra non-dengue beds are assumed full of other patients: they add capacity but no dengue room.
+            extra_other = f.get("surgeNonDengueCapacity", 0) if day >= activation_day else 0
+            share = non_dengue_share(f, occupancy)
             census = sum(c for _, c in s["cohorts"])
-            total = n * occupancy + census
+            total = n * share + census
             snapshots.append({**local.get(f["facilityId"], {}), "facilityId": f["facilityId"], "normalCapacity": n, "activatedSurgeCapacity": surge,
-                "supportedCapacity": n + surge, "remainingSupportedCapacity": max(0, n + surge - total),
-                "assumedNonDengueCensus": n * occupancy,
-                "normalDengueCensus": min(census, n * (1 - occupancy)),
-                "surgeDengueCensus": max(0, census - n * (1 - occupancy)), "supportedCensus": census,
+                "supportedCapacity": n + surge + extra_other, "remainingSupportedCapacity": max(0, n + surge - total),
+                "activatedNonDengueSurgeCapacity": extra_other,
+                "assumedNonDengueCensus": n * share + extra_other,
+                "normalDengueCensus": min(census, n * (1 - share)),
+                "surgeDengueCensus": max(0, census - n * (1 - share)), "supportedCensus": census,
                 "holdingCensus": s["holding"], "normalOccupancyPct": 100 * total / n,
-                "supportedOccupancyPct": 100 * total / (n + surge),
+                "supportedOccupancyPct": 100 * (total + extra_other) / (n + surge + extra_other),
                 "onSiteRelativeToNormalPct": 100 * (total + s["holding"]) / n})
         arrivals_total += arrivals
         discharged_total += discharged

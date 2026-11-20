@@ -15,3 +15,6 @@ scripts/train_qc_barangay.py text eol=lf
 services/engine/domain/barangay_forecast.py text eol=lf
 services/engine/domain/source_calendar.py text eol=lf
 services/engine/domain/seasonal_validation.py text eol=lf
+data/processed/qc_first_admission_v1/** -text
+data/processed/qc_first_admission_preference_v1/** -text
+data/reference/qc_emergency_hospital_preferences_figure4.csv -text

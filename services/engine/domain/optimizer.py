@@ -29,7 +29,8 @@ def transport_plan(demands, capacities, costs):
 def daily_plan(groups, states, admission_rate, occupancy, day, activation_day):
     ids = [s["config"]["facilityId"] for s in states]
     demand = [g["cases"] * admission_rate for g in groups]
-    support = [max(0, s["config"]["normalCapacity"] * (1 - occupancy)
+    from .patient_flow import non_dengue_share
+    support = [max(0, s["config"]["normalCapacity"] * (1 - non_dengue_share(s["config"], occupancy))
         + (s["config"]["surgeCapacity"] if day >= activation_day else 0) - sum(c for _, c in s["cohorts"])) for s in states]
     costs = [[g["facilityCostsKm"][ident] for ident in ids] for g in groups]
     supported = transport_plan(demand, support, costs)

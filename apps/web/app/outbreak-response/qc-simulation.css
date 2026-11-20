@@ -151,6 +151,70 @@
 .qs-workspace .qc-horizons button[aria-pressed='true'] {
   background:var(--sw-primary);border-color:var(--sw-primary);color:var(--sw-on-primary);font-weight:600;
 }
+/* Second tab row: scenario settings vs bed capacity (underlined, unlike the mode tabs above). */
+.qc-settings-sections { display:flex;gap:18px;flex-shrink:0;margin:8px 16px 0;border-bottom:1px solid var(--sw-border); }
+.qs-workspace .qc-settings-sections button {
+  display:flex;align-items:center;gap:6px;min-height:36px;margin-bottom:-1px;padding:0 2px;
+  border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--sw-muted);font-size:12px;font-weight:500;
+}
+.qs-workspace .qc-settings-sections button:hover { background:transparent;color:var(--sw-text-strong); }
+.qs-workspace .qc-settings-sections button[aria-selected='true'] { border-bottom-color:var(--sw-primary);color:var(--sw-primary);font-weight:600; }
+.qs-workspace .qc-capacity-summary {
+  display:flex;align-items:center;gap:10px;width:100%;margin-top:12px;padding:10px 12px;
+  border:1px solid var(--sw-border-strong);border-radius:8px;background:var(--sw-panel);color:var(--sw-primary);text-align:left;
+}
+.qs-workspace .qc-capacity-summary:hover { background:var(--sw-hover);border-color:var(--sw-link); }
+.qc-capacity-summary > span { flex:1;min-width:0; }
+.qc-capacity-summary strong { display:block;color:var(--sw-text-strong);font-size:12px;font-weight:600; }
+.qc-controls .qc-capacity-summary small { margin-top:2px;color:var(--sw-muted);font-size:11px; }
+.qc-capacity-intro { margin:2px 0 0;color:var(--sw-muted);font-size:11px;line-height:1.55; }
+.qc-capacity-totals { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 0;padding:10px 12px;border:1px solid var(--sw-border);border-radius:8px;background:var(--sw-panel); }
+.qc-capacity-totals dt { color:var(--sw-muted);font-size:10.5px; }
+.qc-capacity-totals dd { margin:2px 0 0;color:var(--sw-text-strong);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums; }
+.qc-import-actions { display:flex;flex-wrap:wrap;gap:8px;margin-top:10px; }
+.qs-workspace .qc-import-button,.qs-workspace .qc-template-button { display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:0 13px;border-radius:7px;font-size:12px;font-weight:500; }
+.qs-workspace .qc-import-button { border:1px solid var(--sw-primary);background:var(--sw-primary);color:var(--sw-on-primary,#fff); }
+.qs-workspace .qc-import-button:hover:not(:disabled) { background:var(--sw-link);border-color:var(--sw-link); }
+.qs-workspace .qc-template-button { border:1px solid var(--sw-border-strong);background:var(--sw-card);color:var(--sw-text-strong); }
+.qs-workspace .qc-template-button:hover:not(:disabled) { background:var(--sw-hover); }
+.qc-import-result { display:grid;gap:4px;margin-top:12px;padding:10px 12px;border:1px solid var(--sw-border);border-left:3px solid var(--sw-primary);border-radius:7px;background:var(--sw-panel);font-size:11px;color:var(--sw-muted); }
+.qc-import-result strong { color:var(--sw-text-strong);font-size:12px;font-weight:600;overflow-wrap:anywhere; }
+.qc-import-error { border-left-color:#b5532f;background:#fbf3ef; }
+.qc-import-error ul { margin:4px 0 0;padding-left:18px;color:#7a3b22; }
+.qc-import-result details { margin-top:4px; }
+.qc-import-result summary { color:var(--sw-link);font-size:11px; }
+.qc-import-result { min-width:0; }
+.qc-import-result details { min-width:0;overflow-x:auto; }
+.qc-import-table { width:100%;margin-top:8px;border-collapse:collapse;table-layout:fixed;font-size:11px; }
+.qc-import-table th:first-child { width:44%; }
+.qc-import-table td,.qc-import-table thead th:not(:first-child) { width:14%; }
+.qc-hospital-editor { margin-top:10px;padding:10px 12px 12px;border:1px solid var(--sw-border);border-radius:8px;background:var(--sw-panel); }
+.qc-controls .qc-hospital-editor label:first-of-type { margin-top:4px; }
+.qc-hospital-status { display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;color:var(--sw-muted);font-size:11px; }
+.qc-controls .qc-field-strong { color:var(--sw-text-strong);font-weight:700; }
+/* Dengue-share slider for one hospital's beds or holding spaces. */
+.qc-share-slider { margin-top:10px; }
+.qc-share-heading { display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12px;color:var(--sw-text); }
+.qc-share-heading strong { color:var(--sw-primary);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums; }
+.qc-controls .qc-share-slider input[type='range'] { display:block;width:100%;height:18px;min-height:0;margin:6px 0 0;padding:0;border:0;background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none; }
+.qc-share-slider input[type='range']:disabled { cursor:default;opacity:.5; }
+.qc-share-slider input[type='range']::-webkit-slider-runnable-track { height:6px;border-radius:3px;background:linear-gradient(to right,var(--sw-primary) var(--qc-share,0%),#c3d3cc var(--qc-share,0%)); }
+.qc-share-slider input[type='range']::-webkit-slider-thumb { -webkit-appearance:none;appearance:none;width:16px;height:16px;margin-top:-5px;border:2px solid var(--sw-card);border-radius:50%;background:var(--sw-primary);box-shadow:0 0 0 1px var(--sw-primary); }
+.qc-share-slider input[type='range']::-moz-range-track { height:6px;border-radius:3px;background:#c3d3cc; }
+.qc-share-slider input[type='range']::-moz-range-progress { height:6px;border-radius:3px;background:var(--sw-primary); }
+.qc-share-slider input[type='range']::-moz-range-thumb { width:12px;height:12px;border:2px solid var(--sw-card);border-radius:50%;background:var(--sw-primary);box-shadow:0 0 0 1px var(--sw-primary); }
+.qc-share-slider input[type='range']:focus-visible { outline:none; }
+.qc-share-slider input[type='range']:focus-visible::-webkit-slider-thumb { box-shadow:0 0 0 1px var(--sw-primary),0 0 0 4px #18796f40; }
+.qc-share-scale { display:flex;justify-content:space-between;gap:8px;margin-top:3px;color:var(--sw-muted);font-size:10.5px;font-variant-numeric:tabular-nums; }
+.qc-split-group + .qc-split-group { margin-top:10px;padding-top:2px;border-top:1px dashed var(--sw-border); }
+.qc-import-block { display:grid;gap:3px;margin-top:14px;padding-top:12px;border-top:1px solid var(--sw-border);font-size:11px;color:var(--sw-muted); }
+.qc-import-block strong { color:var(--sw-text-strong);font-size:12px;font-weight:600; }
+.qc-import-table tbody th { font-size:10.5px;line-height:1.35; }
+.qc-import-table th,.qc-import-table td { padding:5px 4px;border-bottom:1px solid var(--sw-border);text-align:right;font-weight:400;font-variant-numeric:tabular-nums; }
+.qc-import-table th:first-child { text-align:left;color:var(--sw-text-strong);overflow-wrap:anywhere; }
+.qc-import-table thead th { color:var(--sw-muted);font-size:10.5px; }
+.qs-workspace .qc-import-clear { justify-self:start;display:inline-flex;align-items:center;gap:5px;min-height:28px;margin-top:4px;padding:0;border:0;background:transparent;color:#9c522e;font-size:11px; }
+.qc-controls small.qc-import-note { margin-top:10px;color:var(--sw-muted);font-size:10.5px;line-height:1.55; }
 .qs-settings-scroll {
   flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 16px 18px;
   scrollbar-width:thin;scrollbar-color:var(--sw-border-strong) transparent;

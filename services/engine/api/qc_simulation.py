@@ -4,7 +4,7 @@ import json
 import hashlib
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import Field, model_validator
 
 from .research import StrictModel, FacilityAssumption, unavailable
@@ -12,6 +12,8 @@ from .outbreak import OutbreakInput, inputs, create_movie
 from ..repositories.forecast_runs import load_environmental_runs, FOLDER
 from ..domain.source_calendar import historical_window
 from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
+from ..repositories.facility import load_facilities
+from ..domain.bed_allotments import AllotmentFileError, MAX_FILE_BYTES, parse_allotments, read_table
 
 router = APIRouter(prefix="/v1")
 LIMITS = {
@@ -27,6 +29,27 @@ LIMITS = {
     "admissionDelayDays": {"min": 0, "max": 28, "units": "days"},
     "surgeActivationDay": {"min": 0, "max": 28, "units": "day index"},
 }
+
+
+class BedAllotment(StrictModel):
+    """User-imported per-hospital assumption; never verified capacity or a vacancy."""
+    facilityId: str = Field(pattern=r"^HOSP-\d{3}$")
+    dengueBeds: int = Field(strict=True, ge=0, le=10000)
+    nonDengueBeds: int = Field(strict=True, ge=0, le=10000)
+    holdingSpaces: int = Field(strict=True, ge=0, le=10000)
+    # Extra staffed beds on top of the hospital's beds; None keeps the scenario default (all for dengue).
+    extraDengueBeds: int | None = Field(default=None, strict=True, ge=0, le=10000)
+    extraNonDengueBeds: int | None = Field(default=None, strict=True, ge=0, le=10000)
+    # Part of holdingSpaces kept for non-dengue patients; dengue overflow can use only the rest.
+    nonDengueHoldingSpaces: int | None = Field(default=None, strict=True, ge=0, le=10000)
+
+    @model_validator(mode="after")
+    def check_total(self):
+        if not 1 <= self.dengueBeds + self.nonDengueBeds <= 10000:
+            raise ValueError("Each hospital needs 1-10,000 dengue plus non-dengue beds.")
+        if (self.nonDengueHoldingSpaces or 0) > self.holdingSpaces:
+            raise ValueError("Non-dengue holding spaces cannot exceed the hospital's holding spaces.")
+        return self
 
 
 class QCInput(StrictModel):
@@ -47,6 +70,7 @@ class QCInput(StrictModel):
     allocationPolicy: AllocationPolicy = "first_hospital"
     arrivalSplitPolicy: ArrivalPolicy = "markov_preference"
     compareAllocation: bool = False
+    bedAllotments: list[BedAllotment] | None = Field(default=None, max_length=46)
 
     @model_validator(mode="before")
     @classmethod
@@ -62,6 +86,8 @@ class QCInput(StrictModel):
 
     @model_validator(mode="after")
     def check_window(self):
+        if self.bedAllotments and len({a.facilityId for a in self.bedAllotments}) != len(self.bedAllotments):
+            raise ValueError("Each hospital may appear only once in bed allotments.")
         if (self.arrivalSplitPolicy in MATRICES) != (self.allocationPolicy == "first_hospital"):
             raise ValueError("Select first-hospital placement for a Markov choice policy.")
         if not 1 <= (self.endDate - self.startDate).days <= 28:
@@ -71,6 +97,46 @@ class QCInput(StrictModel):
         if self.mode == "forecast" and (self.startDate.year > 2025 or self.extraCasesPerWeek != 0):
             raise ValueError("Forecast-reference mode uses historical data through 2025 and no added shock. Choose hypothetical mode for future/off-season stress tests.")
         return self
+
+
+def facility_assumptions(params, hospitals):
+    """Uniform per-hospital capacity, replaced per hospital by any imported allotment."""
+    allotments = {a.facilityId: a for a in params.bedAllotments or []}
+    if not set(allotments).issubset({h["id"] for h in hospitals}):
+        raise HTTPException(422, detail={"code": "INVALID_BED_ALLOTMENT",
+            "message": "Bed allotments name a hospital outside the approved QC network. Import the file again."})
+    facilities = []
+    for h in hospitals:
+        a = allotments.get(h["id"])
+        if a is None:
+            facilities.append(FacilityAssumption(facilityId=h["id"], assumedDengueEligible=True,
+                normalCapacity=params.normalCapacity, surgeCapacity=params.surgeCapacity, holdingCapacity=params.holdingCapacity))
+        else:
+            total = a.dengueBeds + a.nonDengueBeds
+            facilities.append(FacilityAssumption(facilityId=h["id"], assumedDengueEligible=True, normalCapacity=total,
+                surgeCapacity=params.surgeCapacity if a.extraDengueBeds is None else a.extraDengueBeds,
+                surgeNonDengueCapacity=a.extraNonDengueBeds or 0,
+                holdingCapacity=a.holdingSpaces - (a.nonDengueHoldingSpaces or 0), baselineOccupancy=a.nonDengueBeds / total))
+    return facilities
+
+
+@router.post("/qc-simulation/bed-allotments")
+async def bed_allotments(request: Request):
+    """Read an uploaded CSV/.xlsx of per-hospital allotments and match it to the approved hospitals."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_FILE_BYTES:
+        raise HTTPException(413, detail={"code": "ALLOTMENT_FILE_TOO_LARGE", "message": "The file is larger than 1 MB."})
+    content = await request.body()
+    try:
+        hospitals = [{"id": h["id"], "name": h["name"]} for h in load_facilities()]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise unavailable() from None
+    try:
+        result = parse_allotments(read_table(content), hospitals)
+    except AllotmentFileError as error:
+        raise HTTPException(422, detail={"code": "ALLOTMENT_FILE_INVALID", "message": str(error)}) from None
+    return {**result, "hospitalCount": len(hospitals), "measurementKind": "assumption",
+        "caveat": "Imported allotments are user planning assumptions, not verified staffed beds, vacancies or PhilHealth figures."}
 
 
 def select_reference(runs, start, end=None):
@@ -106,9 +172,7 @@ def workspace(params: QCInput):
             growthDays=params.growthDays, shockProfile="ramp", hospitalizationRate=params.hospitalizationRate,
             lengthOfStayDays=params.lengthOfStayDays, baselineOccupancy=params.baselineOccupancy,
             admissionDelayDays=params.admissionDelayDays, surgeActivationDay=params.surgeActivationDay,
-            facilities=[FacilityAssumption(facilityId=h["id"], assumedDengueEligible=True,
-                normalCapacity=params.normalCapacity, surgeCapacity=params.surgeCapacity, holdingCapacity=params.holdingCapacity)
-                for h in geo["hospitals"]])
+            facilities=facility_assumptions(params, geo["hospitals"]))
         result = create_movie(model)
         core_hash = result["resultSha256"]
         # These are presentation/evidence fields from approved artifacts, never browser facts.

@@ -84,6 +84,19 @@ export interface QCControls {
   arrivalSplitPolicy?: ArrivalPolicy;
   horizonDays?: number; weatherProfile?: 'typical' | 'wetter' | 'drier' | 'hotter';
   surgeEnabled?: boolean; surgeOnsetDay?: number; surgeMultiplier?: number;
+  /** Optional user-imported per-hospital allotments (assumptions); hospitals not listed use the uniform values. */
+  bedAllotments?: BedAllotment[] | null;
+}
+export interface BedAllotment {
+  facilityId: string; dengueBeds: number; nonDengueBeds: number; holdingSpaces: number;
+  /** Extra staffed beds on top of the hospital's beds; null/absent keeps the scenario default (all for dengue). */
+  extraDengueBeds?: number | null; extraNonDengueBeds?: number | null;
+  /** Part of holdingSpaces kept for non-dengue patients; null/absent means all holding is for dengue. */
+  nonDengueHoldingSpaces?: number | null;
+}
+export interface BedAllotmentImport {
+  allotments: (BedAllotment & { name: string })[]; errors: { row: number; message: string }[];
+  hospitalsNotInFile: string[]; hospitalCount: number; measurementKind: 'assumption'; caveat: string;
 }
 export interface QCWorkspaceResult extends OutbreakMovie {
   workspaceTab?: 'future' | 'historical';
