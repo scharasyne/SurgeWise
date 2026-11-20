@@ -8,18 +8,21 @@ import { SIMULATION_LINES } from './simulation-connections.ts';
 import { SATELLITE_IMAGERY } from './dashboard-map-style.ts';
 
 test('actual map layer definitions satisfy the installed MapLibre style contract', () => {
-  const code = readFileSync(new URL('../components/outbreak-map.tsx', import.meta.url), 'utf8');
-  const file = ts.createSourceFile('outbreak-map.tsx', code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const layers = [];
-  function visit(node) {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
-      && node.expression.name.text === 'addLayer' && ts.isObjectLiteralExpression(node.arguments[0])) {
-      // Read the actual declarative layer objects; validate using MapLibre's own schema.
-      layers.push(JSON.parse(JSON.stringify(runInNewContext(`(${node.arguments[0].getText(file)})`, { SIMULATION_LINES, SATELLITE_IMAGERY }))));
-    }
-    ts.forEachChild(node, visit);
+  // Simulation layers, plus the shared satellite imagery layer (also used by Dashboard).
+  for (const path of ['../components/outbreak-map.tsx', './dashboard-map-style.ts']) {
+    const code = readFileSync(new URL(path, import.meta.url), 'utf8');
+    const file = ts.createSourceFile(path, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const visit = node => {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+        && node.expression.name.text === 'addLayer' && ts.isObjectLiteralExpression(node.arguments[0])) {
+        // Read the actual declarative layer objects; validate using MapLibre's own schema.
+        layers.push(JSON.parse(JSON.stringify(runInNewContext(`(${node.arguments[0].getText(file)})`, { SIMULATION_LINES, SATELLITE_IMAGERY }))));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
   }
-  visit(file);
   assert.ok(layers.some(layer => layer.id === 'selected-raised'));
   assert.ok(layers.some(layer => layer.id === 'front-line'));
   assert.ok(!layers.some(layer => layer.id === 'marker-leader-line'));

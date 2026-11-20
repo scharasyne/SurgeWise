@@ -4,7 +4,8 @@ import maplibregl, { type Map as MapType } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Facility, ScenarioResult } from '@/lib/types';
 import { areaBounds, type DashboardMapController, type DashboardMapStatus } from '@/lib/dashboard-map';
-import { dashboardLayerPaint } from '@/lib/dashboard-map-style';
+import { addSatelliteImagery, applyBaseMap, dashboardLayerPaint } from '@/lib/dashboard-map-style';
+import { CITY_BOUNDARY_STYLE } from '@/lib/simulation-map';
 import { hospitalMarker } from '@/lib/hospital-marker';
 
 type Props = {
@@ -15,6 +16,7 @@ type Props = {
   selectedFacilityId?: string;
   showBoundaries?: boolean;
   buildings3d?: boolean;
+  satellite?: boolean;
   activeWeek?: number;
   result?: ScenarioResult | null;
   onReady?: (controller: DashboardMapController | null) => void;
@@ -22,15 +24,15 @@ type Props = {
 };
 
 export default function NCRMap({ selectedArea, onAreaSelect, facilities, onFacilitySelect,
-  selectedFacilityId, showBoundaries = true, buildings3d = false, onReady, onStatus }: Props) {
+  selectedFacilityId, showBoundaries = true, buildings3d = false, satellite = false, onReady, onStatus }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapType | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
   const boundaries = useRef<unknown>(null);
   const callbacks = useRef({ onAreaSelect, onFacilitySelect, onReady, onStatus });
   callbacks.current = { onAreaSelect, onFacilitySelect, onReady, onStatus };
-  const selection = useRef({ selectedArea, selectedFacilityId, showBoundaries, buildings3d });
-  selection.current = { selectedArea, selectedFacilityId, showBoundaries, buildings3d };
+  const selection = useRef({ selectedArea, selectedFacilityId, showBoundaries, buildings3d, satellite });
+  selection.current = { selectedArea, selectedFacilityId, showBoundaries, buildings3d, satellite };
   const applyAppearance = useRef<(() => void) | null>(null);
   const selectedRecord = useRef<Facility | undefined>(undefined);
   // Keep the selected point inspectable even when a filter hides its marker.
@@ -77,6 +79,9 @@ export default function NCRMap({ selectedArea, onAreaSelect, facilities, onFacil
         for (const [property, value] of Object.entries(dashboardLayerPaint(layer))) map.setPaintProperty(layer.id, property, value);
         if ('source-layer' in layer && layer['source-layer'] === 'poi') map.setLayoutProperty(layer.id, 'visibility', 'none');
       }
+      // Optional satellite imagery, shared with Simulation; hidden until chosen.
+      addSatelliteImagery(map);
+      applyBaseMap(map, selection.current.satellite, selection.current.buildings3d);
     });
     map.on('load', async () => {
       window.clearTimeout(timeout);
@@ -85,10 +90,11 @@ export default function NCRMap({ selectedArea, onAreaSelect, facilities, onFacil
         map.setLayerZoomRange('building', 13, 24);
       }
       applyAppearance.current = () => {
-        const tilt = selection.current.buildings3d;
-        if (map.getLayer('building-3d')) map.setLayoutProperty('building-3d', 'visibility', tilt ? 'visible' : 'none');
-        if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', tilt ? 'none' : 'visible');
-        map.easeTo({ pitch: tilt ? 50 : 0, bearing: 0, duration: duration() });
+        const { buildings3d: tilt, satellite: imagery } = selection.current;
+        applyBaseMap(map, imagery, tilt);
+        // City outlines switch to a bright teal over imagery (as on Simulation).
+        if (map.getLayer('ncr-border')) map.setPaintProperty('ncr-border', 'line-color', imagery ? CITY_BOUNDARY_STYLE.line.satelliteColor : CITY_BOUNDARY_STYLE.line.color);
+        if (Math.round(map.getPitch()) !== (tilt ? 50 : 0)) map.easeTo({ pitch: tilt ? 50 : 0, bearing: 0, duration: duration() });
       };
       applyAppearance.current();
       try {
@@ -104,7 +110,7 @@ export default function NCRMap({ selectedArea, onAreaSelect, facilities, onFacil
           paint: { 'fill-color': ['case', ['==', ['get', 'area_id'], selection.current.selectedArea], '#32a69a', '#8ea5b0'], 'fill-opacity': ['case', ['==', ['get', 'area_id'], selection.current.selectedArea], 0.12, 0.035] } });
         map.addLayer({ id: 'ncr-border', type: 'line', source: 'ncr-boundaries',
           layout: { visibility: selection.current.showBoundaries ? 'visible' : 'none' },
-          paint: { 'line-color': '#248e86', 'line-width': ['case', ['==', ['get', 'area_id'], selection.current.selectedArea], 2.2, 0.8] } });
+          paint: { 'line-color': selection.current.satellite ? CITY_BOUNDARY_STYLE.line.satelliteColor : CITY_BOUNDARY_STYLE.line.color, 'line-width': ['case', ['==', ['get', 'area_id'], selection.current.selectedArea], 2.2, 0.8] } });
         map.on('click', 'ncr-fill', event => {
           const id = event.features?.[0]?.properties?.area_id;
           if (typeof id === 'string') callbacks.current.onAreaSelect(id);
@@ -151,7 +157,7 @@ export default function NCRMap({ selectedArea, onAreaSelect, facilities, onFacil
     }
   }, [showBoundaries]);
 
-  useEffect(() => { applyAppearance.current?.(); }, [buildings3d]);
+  useEffect(() => { applyAppearance.current?.(); }, [buildings3d, satellite]);
 
   useEffect(() => {
     const map = mapRef.current;

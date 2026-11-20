@@ -97,7 +97,12 @@ test('hover, focus and explicit inspection never draw extra marker guide lines',
   try{
     const h=harness();h.render(props);let cleanup=h.markerEffect().callback();
     const hospital=h.markers.find(m=>m.element.dataset.facilityId==='H2');
-    assert.ok(hospital.offset.some(value=>Math.abs(value)>2),'fixture must exercise an offset hospital');
+    // The constructed barangay and both hospitals share one point; every marker still stays on it
+    // (no overlap offset, no shrinking), so zooming never moves markers off their locations.
+    assert.equal(h.markers.length,3);
+    for (const marker of h.markers) assert.deepEqual(marker.offset,[0,0],'markers keep their location');
+    const place=h.markers.find(m=>m.element.dataset.barangayId==='A');
+    assert.equal(place.element.style.width,'29px','ranked barangay markers keep their full size');
     assert.equal(h.sources.has('marker-leaders'),false);
     hospital.element.dispatch('pointerenter');hospital.element.dispatch('focus');
     assert.equal(h.sources.has('marker-leaders'),false,'hover/focus must never expose guide lines');

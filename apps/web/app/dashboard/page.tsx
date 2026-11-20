@@ -3,7 +3,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode, Ref } from 'react';
-import { ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronDown, Compass, Expand, Hospital, Info, Layers, MapPin, Minus, Search, Shrink, X, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronDown, Compass, Expand, Hospital, Info, Layers, MapPin, Minus, Satellite, Search, Shrink, X, Plus } from 'lucide-react';
 import type { Facility } from '@/lib/types';
 import { loadFacilities, FACILITY_DATASET_ID } from '@/lib/facilities';
 import { areaLabel, type DashboardMapController, type DashboardMapStatus } from '@/lib/dashboard-map';
@@ -40,6 +40,8 @@ export default function Dashboard() {
   const [expanded, setExpanded] = useState(false);
   const [registryAttempt, setRegistryAttempt] = useState(0);
   const [buildings3d, setBuildings3d] = useState(false);
+  // Appended last so the existing hook order (relied on by tests) is unchanged.
+  const [satellite, setSatellite] = useState(false);
   const workspace = useRef<HTMLElement>(null);
   const controller = useRef<DashboardMapController | null>(null);
   const exploreButton = useRef<HTMLButtonElement>(null);
@@ -117,7 +119,7 @@ export default function Dashboard() {
         <NCRMap selectedArea={area} onAreaSelect={selectArea}
           facilities={showHospitals && area === 'QUEZON_CITY' ? filteredFacilities : []}
           onFacilitySelect={selectFacility} selectedFacilityId={facility?.id} showBoundaries={showBoundaries}
-          buildings3d={buildings3d}
+          buildings3d={buildings3d} satellite={satellite}
           onReady={setController} onStatus={setMapStatus} />
         <div className="db-top-controls">
           <WorkspaceSelect className="db-scope" label="Map geography" value={area} onChange={selectArea}
@@ -152,6 +154,7 @@ export default function Dashboard() {
             {!showBoundaries && (!showHospitals || area !== 'QUEZON_CITY') && <span>Basemap only</span>}
             <p>Inventory: PhilHealth · 30 Sep 2026</p>
             {buildings3d && <p>3D: generalized OSM buildings, where mapped</p>}
+            {satellite && <p>Satellite: Esri World Imagery · capture dates vary</p>}
             <button className="text-button" type="button" onClick={() => setView('evidence')}>Source details <ArrowUpRight size={12} /></button>
           </div>
         </details>
@@ -213,6 +216,8 @@ export default function Dashboard() {
             <p className="db-panel-intro">Choose the information on your map.</p>
             <label className="db-layer"><span><Layers size={18} /><span><strong>3D view</strong><small>Tilt + generalized buildings where mapped</small></span></span><input type="checkbox" checked={buildings3d} onChange={event => setBuildings3d(event.target.checked)} /><span className="db-switch" aria-hidden="true">{buildings3d && <Check size={11} />}</span></label>
             {buildings3d && <p className="db-basemap-note">Zoom in for building detail. Map shapes and heights are cartographic context, not verified hospital models.</p>}
+            <label className="db-layer"><span><Satellite size={18} /><span><strong>Satellite imagery</strong><small>Esri World Imagery · capture dates vary</small></span></span><input type="checkbox" checked={satellite} onChange={event => setSatellite(event.target.checked)} /><span className="db-switch" aria-hidden="true">{satellite && <Check size={11} />}</span></label>
+            {satellite && <p className="db-basemap-note">Imagery is dated background, not current conditions or verified hospital entrances.</p>}
             <span className="db-eyebrow db-overlay-heading">Overlays</span>
             <label className="db-layer"><span><Hospital size={18} /><span><strong>QC hospitals</strong><small>Provisional points · PhilHealth, Sep 2026</small></span></span><input type="checkbox" checked={showHospitals} onChange={event => setShowHospitals(event.target.checked)} /><span className="db-switch" aria-hidden="true">{showHospitals && <Check size={11} />}</span></label>
             {area !== 'QUEZON_CITY' && <p className="db-inline-note">Hospital points appear when QC is selected.</p>}

@@ -69,3 +69,25 @@ test('research BFF fails closed without engine and forwards typed engine errors 
     if (previous === undefined) delete process.env.ENGINE_BASE_URL; else process.env.ENGINE_BASE_URL = previous;
   }
 });
+
+test('report downloads preserve attachment bytes and forward missing-run errors', async () => {
+  const previous = process.env.ENGINE_BASE_URL;
+  const original = globalThis.fetch;
+  const path = `outbreak-scenarios/${'d'.repeat(64)}/report.pdf`;
+  const request = new Request('http://local/api/research/' + path);
+  try {
+    process.env.ENGINE_BASE_URL = 'http://engine.test';
+    const bytes = new Uint8Array([37, 80, 68, 70, 255, 0]);
+    globalThis.fetch = async () => new Response(bytes, { headers: { 'content-disposition': 'attachment; filename="test.pdf"' } });
+    const file = await GET(request, context(path));
+    assert.equal(file.headers.get('content-type'), 'application/pdf');
+    assert.match(file.headers.get('content-disposition'), /attachment/);
+    assert.deepEqual(new Uint8Array(await file.arrayBuffer()), bytes);
+    globalThis.fetch = async () => Response.json({ detail: 'unavailable' }, { status: 404 });
+    assert.equal((await GET(request, context(path))).status, 404);
+    assert.equal((await POST(new Request(request.url, { method: 'POST' }), context(path))).status, 404);
+  } finally {
+    globalThis.fetch = original;
+    if (previous === undefined) delete process.env.ENGINE_BASE_URL; else process.env.ENGINE_BASE_URL = previous;
+  }
+});

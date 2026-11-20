@@ -7,6 +7,12 @@ Preserve existing working-tree edits; do not restart the application or replace 
 
 Both simulation tabs call the production random forest. Historical replay passes QC observations through the selected issue week. Future planning applies the next weekly forecasts after the latest available observations to a hypothetical hospital timeline. The day and hospital calculations use the forecasts for the individual barangays. [Model and request format](../production/README.md)
 
+## LGU follow-up report
+
+Results overview links to a full-run briefing in a separate tab. The engine validates the saved simulation ID before generating the preview, downloadable PDF or daily hospital CSV. Each hospital appears once at its highest availability flag. [Report definitions and thresholds](simulation-workspace-design.md#lgu-simulation-report)
+
+ReportLab 4.5.1 is pinned in the engine requirements for PDF generation. Verification covered 153 engine tests, 110 frontend tests, lint, TypeScript and the production build. Chromium opened the preview and downloaded both files for historical and future 28-day runs. Each CSV had 1,288 records. In a separate probability-ranked stress run all 46 hospitals reached zero available staffed beds, with the daily classifications and holding and unplaced summaries checked against the CSV.
+
 ## Simulation map gestures
 
 The connection overlay now mounts inside MapLibre’s canvas container. Wheel and trackpad zoom over a probability arrow reach the same map handler as zoom over the basemap. The renderer removes the overlay when the layer closes. [Interaction details](simulation-workspace-design.md#layout-and-interaction)
@@ -31,9 +37,11 @@ Verification covered 101 Python tests, including every probability cell against 
 
 ## First-hospital probability arrows
 
-Selecting a barangay in Historical replay or Future forecast shows its 46 first-hospital probabilities by default, starting on day zero. The three hospital cards follow the engine’s probability ranking. Search by hospital name to read the breakdown even with the arrows hidden. Projected admissions and bed demand still appear when the timeline advances. [Example and controls](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)
+In the initial preview, selecting a barangay opens its weighted hospital rankings and search. Connection arrows become available when a submitted run returns, playback starts, or the user advances to a simulated day. The 46 first-hospital probabilities remain the default arrow choice. [Example and controls](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)
 
 ## Scenario panel
+
+In both modes, submitting a valid scenario opens Results on Overview while the engine calculates. Closing Results during that request keeps it closed when the response arrives.
 
 The scenario form now uses a start date and an editable 1–28 day duration in both modes. The duration presets update the form. Run simulation submits the changes. Hospital planning holds the patient-choice, capacity and admission assumptions. Completed future runs show the timing audit in Methods & sources. [Panel behavior](simulation-workspace-design.md#layout-and-interaction)
 

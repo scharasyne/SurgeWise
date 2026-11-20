@@ -48,8 +48,14 @@ From the repository root:
 
 ```powershell
 python -m pip install -r services/engine/requirements-dev.txt
-python -m uvicorn services.engine.main:app --reload --port 8000
+python -m uvicorn services.engine.main:app --reload --reload-dir services/engine --port 8000
 ```
+
+`--reload-dir services/engine` limits the auto-reload file watcher to the engine's
+own code. Without it, the watcher scans the whole repository, including
+`apps/web/node_modules` and the `.next` folder the web dev server keeps rewriting.
+It then uses most of a CPU core and slows engine responses enough that web
+requests can hit the 20-second proxy timeout (HTTP 503).
 
 The dashboard currently loads version-pinned public inventory directly and does not require the engine to browse hospitals. Check http://localhost:8000/readiness for engine blockers.
 

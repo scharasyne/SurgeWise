@@ -1,0 +1,30 @@
+.lgu-report { box-sizing:border-box; max-width:1120px; margin:0 auto; padding:48px clamp(16px,4vw,56px) 64px; color:#233e45; background:#fff; font:15px/1.55 'DM Sans',sans-serif; }
+.lgu-report header { padding-top:14px; border-top:5px solid #315e60; }
+.lgu-report header p { margin:.4rem 0; color:#466260; }
+.lgu-report h1 { font-size:clamp(28px,4vw,43px); line-height:1.15; margin:.3rem 0; letter-spacing:-.035em; }
+.lgu-report section { margin-top:30px; }
+.lgu-report h2 { margin:0 0 8px; font-size:21px; color:#274e50; }
+.lgu-report p { margin:7px 0 12px; }
+.lgu-actions { display:flex; flex-wrap:wrap; gap:8px; margin:20px 0; }
+.lgu-report button { display:inline-flex; align-items:center; gap:7px; padding:10px 14px; border-radius:6px; background:#fff; border:1px solid #a6bfba; color:#264c4f; font:inherit; cursor:pointer; }
+.lgu-actions button:first-child { background:#315e60; color:#fff; border-color:#315e60; }
+.lgu-report button:disabled { opacity:.65; cursor:wait; }
+.lgu-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0 0 12px; gap:1px; border:1px solid #ccdcd8; background:#ccdcd8; border-radius:6px; overflow:hidden; }
+.lgu-metrics div { background:#f2f7f5; padding:14px; }
+.lgu-metrics dt { font-size:13px; font-weight:600; }
+.lgu-report dd { margin:0; overflow-wrap:anywhere; }
+.lgu-metrics strong,.lgu-metrics small { display:block; }
+.lgu-metrics strong { font-size:25px; color:#215753; font-variant-numeric:tabular-nums; }
+.lgu-metrics small,.lgu-caption { font-size:13px; color:#4a6468; }
+.lgu-scroll { overflow:auto; border:1px solid #ccdcd8; border-radius:6px; }
+.lgu-report table { width:100%; min-width:780px; border-collapse:collapse; font-size:13px; line-height:1.4; font-variant-numeric:tabular-nums; }
+.lgu-report th,.lgu-report td { padding:9px; text-align:left; border-bottom:1px solid #dae6e2; vertical-align:top; }
+.lgu-report thead { background:#eaf2ef; color:#254e4c; }
+.lgu-report tbody th { min-width:142px; font-weight:500; }
+.lgu-flag { display:inline-block; background:#fff1d4; color:#754912; border-radius:5px; padding:3px 7px; }
+.lgu-flag[data-full=true] { background:#fce6df; color:#823a23; }
+.lgu-settings { margin:0; }
+.lgu-settings div { display:grid; grid-template-columns:minmax(130px,31%) 1fr; gap:12px; padding:7px 0; border-bottom:1px solid #dae6e2; }
+.lgu-settings dt { font-weight:600; }
+@media (max-width:720px) { .lgu-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .lgu-report { padding-top:24px; } }
+.lgu-hospital-id { display:block; color:#526a6a; font-weight:400; }

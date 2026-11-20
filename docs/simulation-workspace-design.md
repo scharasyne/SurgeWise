@@ -13,7 +13,8 @@ hospital network, source observations and API contracts are unchanged.
   this panel sits below the map. Results can be widened for tables and charts.
 - In **Set up scenario**, choose Historical replay or Future forecast. Pick a start
   date and enter a duration from 1 to 28 days, or choose a duration preset.
-  The final snapshot date updates as you edit. **Run simulation** applies the changes.
+  The final snapshot date updates as you edit. **Run simulation** applies the changes
+  and opens **Results → Overview** immediately. Invalid settings keep the setup panel open.
   A teal fill and checkmark identify the selected mode and duration.
 - Historical replay offers saved forecast periods. Future forecast uses the month
   and day in the start date for seasonal planning. Both modes retain their own
@@ -65,9 +66,9 @@ monotonically darker yellow-green/olive/ochre/orange/burnt-orange ramp. These ar
 case counts, not official risk thresholds. Neutral polygons may still have cases.
 The numbered markers identify the annual predicted-burden ranking, not cases or
 confirmed weekly outbreaks. Optional connections preserve proximity versus
-modeled placement meanings. The initial map has no connection network; selecting
-a place reveals its relevant links. The optional all-connections layer remains
-available in Layers.
+modeled placement meanings. In the initial preview, selecting a place frames
+its location and opens its details. Selected and overview connections become
+available when the user runs the scenario or explores its playback.
 
 Dashboard and Simulation now call the same hospital-marker factory and use one
 shared style and SVG. The H pin is a provisional inventory point on both
@@ -111,15 +112,29 @@ Selected links reveal outward over 650ms and use moving chevrons. Dashed teal is
 straight-line proximity, solid teal is a saved modeled placement, solid ochre
 includes holding placements, and dashed ochre is nearest-ranked context. A saved
 placement supersedes the proximity decoration on the same endpoint pair. SVG
-endpoints follow the displayed markers, including screen-space overlap offsets;
-underlying geographic coordinates are not changed. The optional all-connections
+endpoints follow the displayed markers. Since 2026-11-21 no marker is offset or
+shrunk for overlap: hospital pins put their tip on the hospital's location and
+barangay markers are centred on the barangay's point, at fixed sizes, so zooming
+never moves them off their locations. Close markers may overlap until the user
+zooms in; numbered barangay markers are drawn above hospital pins (a hovered pin
+comes to the front to show its label) and higher ranks above lower ones.
+Map layers has a **City boundaries** switch (off by default; 2026-11-21): the NCR city
+outlines from `/api/boundaries` in the Dashboard's style, with Quezon City highlighted
+(bright teal over satellite imagery). If the file cannot load, the switch is disabled
+and says the layer is unavailable; the rest of the map is unaffected.
+The opening and reset camera is the user-chosen framing `DEFAULT_QC_VIEW` in
+`lib/simulation-map.ts` (2026-11-21: centre ≈121.051°E, 14.676°N, zoom ≈11.45 on a
+716-px-tall map); its latitude range fills the map height on wide screens, and narrow
+screens fit Quezon City's own extent instead. Underlying geographic coordinates are not
+changed. The optional all-connections
 view uses this same renderer; there is no second set of source-to-source lines. Repeated clicks replay the
 reveal. Playback updates saved-day placements without restarting the common
 motion clock. Reduced motion uses full static lines and directional chevrons,
 without scheduling animation frames. Cleanup removes frames and map listeners.
 
-Selecting a barangay shows all 46 first-admission arrows by default, including
-at day zero. The inspector’s hospital name search works with the arrows shown
+After a submitted run returns, or while playing or reviewing a simulated day,
+selecting a barangay shows all 46 first-admission arrows by default. The initial
+preview shows the rankings and search. The hospital name search works with the arrows shown
 or hidden. With the arrows enabled, wheel and pinch gestures over
 a barangay-to-hospital arrow zoom the map. Hover, tap or keyboard focus on the
 arrow opens its probability breakdown. Escape dismisses the breakdown.
@@ -151,6 +166,14 @@ withheld at day zero. An expansion-boundary entry appears only for a saved
 expansion ring. No mapped-point guide entry remains because those guides are
 removed. A held placement means that some placements use holding; pins never
 encode verified vacancies or eligibility.
+
+## LGU simulation report
+
+After a run, **Results → Overview → View LGU report** opens the full saved scenario in a separate tab. The briefing covers days 1 through the final snapshot in QC local time, even when playback is paused. It includes the case and admission totals, the dates of peak staffed bed need and peak shortage, the hospital follow-up list, scenario settings and run identifiers. Peak bed counts use the sum of the whole-bed estimates at each hospital on the same day.
+
+A hospital receives **Low availability** when more than zero and at most 10 staffed dengue beds remain after placement, or **Full** when exactly zero remain. The test uses the saved value before display rounding. The watchlist shows each hospital once, with its highest flag, first flagged and first full dates, days flagged, minimum availability, peak first-choice bed shortage, peak holding census and total unplaced demand. Holding spaces and beds reserved for other care are excluded from the threshold. These flags are for LGU review under the scenario assumptions.
+
+The PDF briefing and daily CSV come from the same validated saved simulation. The CSV has one record per hospital per modeled day, including sites that stayed above the threshold. Its interval and snapshot timestamps carry the QC offset. Optional counts that were unavailable in a saved run have empty CSV cells.
 
 ## Validity and verification
 

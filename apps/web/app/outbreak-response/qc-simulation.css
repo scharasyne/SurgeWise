@@ -3,7 +3,8 @@
   --sw-bg:#f1f6f4; --sw-card:#fbfdfb; --sw-panel:#f5f9f7; --sw-text-strong:#203f4b;
   --sw-text:#375968; --sw-muted:#5a747d; --sw-border:#d3e1db; --sw-border-strong:#adc8bd;
   --sw-link:#18796f; --sw-primary:#225d61; --sw-on-primary:#fff; --sw-hover:#e6f1ec;
-  --sw-selected:#e0eee7; --sw-caution-text:#825d2c; --sw-caution-bg:#f6efdc;
+  --sw-selected:#e0eee7; --sw-caution-text:#825d2c; --sw-caution-bg:#f6efdc; /* plain buttons: Simulation green, not the app-wide navy */
+  --sw-button-bg:#225d61; --sw-button-hover:#1b4c50; --sw-button-text:#fff; --sw-button-border:#225d61; --sw-button-selected:#2f7d70;
   --qs-rank-color:#9c522e; --qs-unranked-color:#768f80;
   --ws-ink:var(--sw-text-strong); --ws-line:var(--sw-border); --ws-paper:var(--sw-card); --ws-accent:var(--sw-link);
   display:flex; width:100%; height:100vh; height:100dvh; min-height:0; overflow:hidden;
@@ -75,6 +76,7 @@
 .qc-marker-hospital { display:inline-block;width:16px;height:22px;background:url(/brand/hospital-pin.svg) center/contain no-repeat;font-size:0; }
 .qc-other-barangay { background:#edf1ee;border:1px solid #b9ccc2; }
 .qc-selected-barangay { background:#edf1ee;border:1.2px solid #225d61; }
+.qc-city-boundary { background:#32a69a1f;border:2px solid #248e86; }
 .qs-map-key-content .qc-line-key i { width:25px;height:0;flex-shrink:0; }
 .qc-legend-more { margin-top:12px;border-top:1px solid var(--sw-border);padding-top:10px; }
 .qc-legend-more small { display:block;margin-top:8px; }
@@ -82,10 +84,10 @@
 .qs-workspace .maplibregl-ctrl-scale { box-sizing:border-box;height:18px;margin:0;padding:0 5px;border-color:#577486;font-size:11px;line-height:14px;background:#fbfdfde8; }
 .qs-workspace .movie-map-error { display:none; }
 /* Annual rank and hospital inventory use distinct, borderless symbols. */
-.qs-workspace .movie-hotspot-icon { position:absolute;z-index:2;width:29px;height:29px;min-height:0;display:block;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;font-size:12px; }
+.qs-workspace .movie-hotspot-icon { position:absolute;z-index:3;width:29px;height:29px;min-height:0;display:block;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;font-size:12px; }
 .qs-flow-overlay { position:absolute;z-index:1;inset:0;width:100%;height:100%;overflow:hidden;pointer-events:none; }
 .qs-ranked-symbol { display:grid;place-items:center;width:100%;height:100%;border-radius:50%;background:var(--qs-rank-color);color:#fff;font-weight:500;animation:qs-rank-breathe 3.5s ease-in-out infinite; }
-.qs-workspace .movie-hotspot-icon:hover:not(:disabled) { background:transparent;border:0;z-index:3; }
+.qs-workspace .movie-hotspot-icon:hover:not(:disabled) { background:transparent;border:0;z-index:4; }
 .qs-workspace .movie-hotspot-icon:hover .qs-ranked-symbol,.qs-workspace .movie-hotspot-icon:focus-visible .qs-ranked-symbol { animation-play-state:paused; }
 .qs-workspace .movie-hotspot-icon[aria-pressed='true'] .qs-ranked-symbol { background:#7d3e22; }
 .qs-workspace .movie-hotspot-icon.secondary-hotspot .qs-ranked-symbol { background:var(--qs-unranked-color); }
@@ -282,7 +284,7 @@
 .qc-total-text > span { display:block;color:var(--sw-muted);font-size:11px; }
 .qc-total-text > strong { display:block;margin:5px 0;font:500 24px/1.25 'Space Grotesk',sans-serif;letter-spacing:-.035em; }
 .qc-total-text small { display:block; }
-.qs-workspace .qc-info-button { min-height:26px;width:24px;padding:0;border:0;background:transparent;color:var(--sw-muted); }
+.qs-workspace .qc-info-button { min-height:26px;width:24px;padding:0;border:0;background:transparent;color:var(--sw-link); }
 .qc-total-info { grid-column:2/-1;font-size:11px;color:var(--sw-muted); }
 .qc-total-card.alert .qc-total-text > strong { color:#9c522e; }
 .qc-scenario-card { padding-bottom:16px;border-bottom:1px solid var(--sw-border); }
@@ -553,3 +555,7 @@
 .qc-controls .qc-hospital-editor .qs-field-pair > label {
   display:grid; grid-template-rows:subgrid; grid-row:span 3; align-self:stretch; margin:10px 0 0;
 }
+
+.qs-workspace .qs-report-link { display:flex; align-items:center; gap:9px; padding:10px 14px; border-radius:6px; background:#315d60; color:#fff; font-weight:600; text-decoration:none; }
+.qs-report-link svg:last-of-type { margin-left:auto; }
+.qs-workspace .qs-report-link:hover { background:#254b4e; }
