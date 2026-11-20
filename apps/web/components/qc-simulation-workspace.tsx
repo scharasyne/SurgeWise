@@ -1,12 +1,13 @@
 'use client';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   Activity,
   ArrowLeft,
   BedDouble,
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
@@ -30,13 +31,17 @@ import {
   Plus,
   Minus,
   ChevronDown,
+  ChevronUp,
   Expand,
   Shrink,
   Flag,
   ChartNoAxesCombined,
+  Satellite,
+  Upload,
 } from 'lucide-react';
 import type {
-  BedForecast,
+  BedAllotmentImport,
+  BedForecast, HospitalChoice, MovieBarangay, MovieHospital,
   MovieContext,
   QCControls,
   QCWorkspaceResult,
@@ -47,6 +52,7 @@ import {
   validateDateWindow,
 } from '@/lib/playback';
 import { addDateDays, CASE_BANDS } from '@/lib/case-bands';
+import { probabilityFacts, probabilityNote } from '@/lib/hospital-probabilities';
 import { SIMULATION_LINES } from '@/lib/simulation-connections';
 import WorkspaceLoader from '@/components/workspace-loader';
 import {
@@ -55,6 +61,7 @@ import {
   type EngineConnectionStatus,
 } from '@/lib/engine-connection';
 import WorkspaceSelect from '@/components/workspace-select';
+import HospitalSearch from '@/components/hospital-search';
 import type { SimulationMapController, SimulationMapStatus } from '@/lib/simulation-map';
 
 const OutbreakMap = dynamic(() => import('@/components/outbreak-map'), {
@@ -66,6 +73,7 @@ const PhilippinesOverview = dynamic(
 );
 const format = (n: number | undefined | null) =>
   n == null ? '—' : n.toLocaleString('en-PH', { maximumFractionDigits: 1 });
+const formatFractional = (n: number) => n > 0 && n < 0.01 ? '<0.01' : n.toLocaleString('en-PH', { maximumFractionDigits: 2 });
 const range = (r: { lowerCases: number; upperCases: number } | undefined) =>
   r ? `${format(r.lowerCases)}–${format(r.upperCases)}` : 'Unavailable';
 const factorName: Record<string, string> = {
@@ -86,6 +94,8 @@ type DetailTab =
   | 'compare'
   | 'methods';
 type PanelView = 'scenario' | 'results' | 'hospitals' | 'layers' | null;
+/** Editable fields of one hospital's bed allotment in the Bed capacity tab. */
+type HospitalBedField = 'totalBeds' | 'dengueBeds' | 'nonDengueBeds' | 'holdingTotal' | 'dengueHolding' | 'nonDengueHolding';
 const GUIDE_STORAGE_KEY = 'surgewise.qc-guide-dismissed';
 const GLOSSARY = {
   expected: [
@@ -123,6 +133,18 @@ const GLOSSARY = {
 } as const;
 function InspectorFacts({ rows }: { rows: Array<[string, ReactNode]> }) {
   return <dl className="qs-inspector-facts">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
+}
+function HospitalProbabilityPicker({ origin, choices, hospitals, distanceOnly }: {
+  origin: MovieBarangay; choices: HospitalChoice[]; hospitals: MovieHospital[]; distanceOnly: boolean;
+}) {
+  const [id, setId] = useState('');
+  const choice = choices.find(row => row.facilityId === id);
+  return <div className="qs-probability-picker">
+    <WorkspaceSelect label="Inspect probability by hospital" value={id} onChange={setId}
+      options={[{ value: '', label: 'Inspect by hospital name' }, ...hospitals.map(h => ({ value: h.id, label: h.name }))]} />
+    {choice && <div role="status"><InspectorFacts rows={probabilityFacts(choice)} />
+      <small>{probabilityNote(choice, origin, distanceOnly)}</small></div>}
+  </div>;
 }
 const percent = (value: number | undefined | null) => value == null ? 'Unavailable' : `${format(value)}%`;
 function BedUse({ forecast, day, occupancyPct }: { forecast?: BedForecast; day: number; occupancyPct?: number }) {
@@ -212,6 +234,20 @@ export default function QCSimulationWorkspace() {
   const [buildings3d, setBuildings3d] = useState(false);
   const [showHospitals, setShowHospitals] = useState(true);
   const [locatorOpen, setLocatorOpen] = useState(false);
+  // Appended last so the existing hook order (relied on by tests) is unchanged.
+  const [satellite, setSatellite] = useState(false);
+  const [timelineHidden, setTimelineHidden] = useState(false);
+  const [numberDrafts, setNumberDrafts] = useState<Partial<Record<keyof QCControls, string>>>({});
+  const [startDateDraft, setStartDateDraft] = useState<string | null>(null);
+  const [usesWeather, setUsesWeather] = useState(true);
+  const [showProbabilities, setShowProbabilities] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<'scenario' | 'capacity'>('scenario');
+  const [allotmentImport, setAllotmentImport] = useState<{ status: 'idle' | 'loading' | 'error' | 'done'; fileName?: string; message?: string; result?: BedAllotmentImport }>({ status: 'idle' });
+  const [capacityHospital, setCapacityHospital] = useState('');
+  const [hospitalDraft, setHospitalDraft] = useState<{ field: HospitalBedField; text: string } | null>(null);
+  // The exact slider percent per hospital; beds are whole numbers, so several percents can round to the same count.
+  const [sharePercent, setSharePercent] = useState<{ hospital: string; beds?: number; holding?: number }>({ hospital: '' });
+  const allotmentFile = useRef<HTMLInputElement>(null);
   const workspace = useRef<HTMLElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const panelTrigger = useRef<HTMLElement | null>(null);
@@ -230,7 +266,7 @@ export default function QCSimulationWorkspace() {
   const reducedRef = useRef(false);
   const tabRef = useRef<WorkspaceTab>('historical');
   const savedForms = useRef<Partial<Record<WorkspaceTab, QCControls>>>({});
-  const controlsScroll = useRef<HTMLDivElement>(null);
+  const controlsScroll = useRef<HTMLFormElement>(null);
   const calculate = useCallback(
     async (
       values?: QCControls,
@@ -251,6 +287,9 @@ export default function QCSimulationWorkspace() {
       setLoading(true);
       setData(null);
       setContext(null);
+      setShowProbabilities(false);
+      setNumberDrafts({});
+      setStartDateDraft(null);
       setControls(values ?? null);
       setPlaying(false);
       setDay(0);
@@ -272,8 +311,10 @@ export default function QCSimulationWorkspace() {
         savedForms.current[targetTab] = result.controlValues;
         if (result.historicalWindows)
           setHistoricalWindows(result.historicalWindows);
-        if (result.futureForecast)
+        if (result.futureForecast) {
           setPlanningAsOf(result.futureForecast.asOfDate);
+          setUsesWeather(result.futureForecast.usesWeather !== false);
+        }
         setSelected(result.periodSummary.barangays[0].barangayId);
         setHospital('');
         setShowHotspotDetails(false);
@@ -368,7 +409,7 @@ export default function QCSimulationWorkspace() {
   function switchTab(next: WorkspaceTab) {
     if (next === tabRef.current) return;
     controlsScroll.current?.scrollTo({ top: 0 });
-    if (controls) savedForms.current[tabRef.current] = controls;
+    if (controls && !dateError) savedForms.current[tabRef.current] = controls;
     tabRef.current = next;
     setTab(next);
     void calculate(savedForms.current[next], false, next);
@@ -400,39 +441,55 @@ export default function QCSimulationWorkspace() {
       ))
     : 28;
   function updateDays(days: number) {
-    const next = windowControls(
-      Math.min(28, Math.max(1, Math.round(days || 1)))
-    );
+    const next = windowControls(days);
     if (next) update(next);
   }
   function updateStart(start: string) {
-    if (!start) {
-      update({ startDate: '' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+      setStartDateDraft(start);
+      update({});
       return;
     }
+    setStartDateDraft(null);
     const next = windowControls(
       Number.isFinite(selectedDays) && selectedDays > 0 ? selectedDays : 28,
       start
     );
     if (next) update(next);
   }
-  function chooseHorizon(days: number) {
-    if (!controls?.startDate) return;
-    const next = windowControls(days);
-    if (!next) return;
-    setControls(next);
-    void calculate(next, !reduced);
+  const earliestStart = tab === 'future' ? planningAsOf : '2024-01-29';
+  const latestStart = tab === 'future' ? '2035-12-31' : '2025-12-31';
+  function dateProblem() {
+    if (!controls) return null;
+    if (startDateDraft !== null) return 'Enter a valid start date.';
+    if ((earliestStart && controls.startDate < earliestStart) || controls.startDate > latestStart) {
+      return earliestStart
+        ? `Choose a start date from ${formatScenarioDate(earliestStart)} to ${formatScenarioDate(latestStart)}.`
+        : `Choose a start date by ${formatScenarioDate(latestStart)}.`;
+    }
+    if (tab === 'historical' && historicalWindows.length &&
+      !historicalWindows.some(w => w.startDate <= controls.startDate && controls.endDate <= w.endDate)) {
+      return 'Choose a start date and duration within a saved forecast period.';
+    }
+    return validateDateWindow(controls.startDate, controls.endDate);
+  }
+  const dateError = dateProblem();
+
+  function formIsReady() {
+    if (controlsScroll.current?.checkValidity() === false || dateError) {
+      setPanelView('scenario');
+      requestAnimationFrame(() => controlsScroll.current?.reportValidity());
+      return false;
+    }
+    return true;
   }
   function runSimulation() {
-    if (!controls) return;
-    if (validateDateWindow(controls.startDate, controls.endDate)) {
-      setError(validateDateWindow(controls.startDate, controls.endDate)!); return;
-    }
+    if (!controls || !formIsReady()) return;
     setPanelView(null);
     void calculate({ ...controls, compareAllocation: false }, !reduced);
   }
   function compareAllocations() {
-    if (!controls) return;
+    if (!controls || !formIsReady()) return;
     void calculate({ ...controls, compareAllocation: true }, false).then(result => {
       if (!result) return;
       setDay(result.durationDays); setDetailTab('compare'); setPanelView('results');
@@ -513,6 +570,7 @@ export default function QCSimulationWorkspace() {
       ]
     : nearest;
   function inspectHospital(id: string) {
+    setShowProbabilities(false);
     setHospital(id);
     setShowHotspotDetails(false);
     setPanelView('hospitals');
@@ -557,19 +615,27 @@ export default function QCSimulationWorkspace() {
         ? `Stress overlay · +${format(controls.extraCasesPerWeek)} cases/week`
         : 'Data-based historical forecast replay';
   const comparison = scenario?.allocationComparison;
+  const chainComparison = scenario?.firstAdmissionComparison;
+  const firstHospital = controls?.allocationPolicy === 'first_hospital';
+  const staffedBeds = firstHospital ? snapshot?.bedForecast?.hospitalBedsRequired : snapshot?.bedForecast?.staffedBedsRequired;
+  const dailyShortfalls = new Map(snapshot?.barangays.map(b => [b.barangayId, b.expectedBedsShort]));
+  const selectedShortfall = dailyShortfalls.get(selected);
+  const preferredHospital = context?.hospitals.find(h => h.id === area?.mappedFavoriteHospitalId);
+  const shortHospitals = (snapshot?.facilities ?? []).filter(f => (f.bedForecast?.additionalStaffedBedsNeeded ?? 0) > 0)
+    .sort((a, b) => b.bedForecast!.additionalStaffedBedsNeeded - a.bedForecast!.additionalStaffedBedsNeeded);
   const detailTabs: { id: DetailTab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'hotspots', label: 'Ranked barangays' },
-    { id: 'place-beds', label: 'Beds near selected place' },
+    { id: 'place-beds', label: 'Bed demand by barangay' },
     { id: 'city-beds', label: 'City-wide bed demand' },
     { id: 'barangays', label: 'All barangays' },
-    ...(comparison
+    ...(comparison || chainComparison
       ? [{ id: 'compare' as const, label: 'Policy comparison' }]
       : []),
     { id: 'methods', label: 'Methods & sources' },
   ];
   const activeDetail: DetailTab =
-    detailTab === 'compare' && !comparison ? 'overview' : detailTab;
+    detailTab === 'compare' && !comparison && !chainComparison ? 'overview' : detailTab;
   const panelProps = (id: DetailTab) => ({
     role: 'region', id: `qc-detail-panel-${id}`,
     'aria-label': detailTabs.find(item => item.id === id)?.label,
@@ -597,32 +663,213 @@ export default function QCSimulationWorkspace() {
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  const numeric = (
-    key: keyof QCControls,
-    label: string,
-    minimum: number,
-    maximum: number,
-    units: string,
-    step = 1,
-    scale = 1
-  ) =>
-    controls && (
+  function numeric(key: keyof QCControls, label: string, minimum: number, maximum: number, units: string, step = 1, scale = 1) {
+    if (!controls) return null;
+    const horizon = key === 'horizonDays';
+    const value = horizon ? selectedDays : Number(controls[key]) * scale;
+    const draft = numberDrafts[key];
+    const helpId = `scenario-${key}-hint`;
+    return (
       <label className="qc-number-field" key={key}>
         <span>{label}</span>
-        <input
-          aria-label={label}
-          type="number"
-          min={minimum}
-          max={maximum}
-          step={step}
-          value={Number(controls[key]) * scale}
-          onChange={(e) => update({ [key]: Number(e.target.value) / scale })}
-        />
-        <small>
-          {minimum.toLocaleString()}–{maximum.toLocaleString()} {units}
-        </small>
+        <input aria-label={label} type="number" min={minimum} max={maximum} step={step} required
+          aria-describedby={helpId} aria-invalid={draft !== undefined || undefined}
+          value={draft ?? (Number.isFinite(value) ? Number(value.toFixed(8)) : '')}
+          onFocus={event => event.currentTarget.select()}
+          onChange={event => {
+            const input = event.currentTarget;
+            const text = input.value.replace(/^0+(?=\d)/, '');
+            // Browsers keep "02" when its numeric value already equals React's value.
+            if (text !== input.value) input.value = text;
+            const valid = text !== '' && input.validity.valid;
+            setNumberDrafts(previous => {
+              const next = { ...previous };
+              if (valid) delete next[key]; else next[key] = text;
+              return next;
+            });
+            if (!valid) update({});
+            else if (horizon) updateDays(Number(text));
+            else update({ [key]: Number(text) / scale });
+          }} />
+        <small id={helpId}>{draft !== undefined ? 'Enter ' : ''}{minimum.toLocaleString()}–{maximum.toLocaleString()} {units}</small>
       </label>
     );
+  }
+  // Bed capacity is entered as a per-hospital split. The engine's existing inputs stay the
+  // source of truth: total = normalCapacity, non-dengue share = baselineOccupancy.
+  const hospitalCount = context?.hospitals.length;
+  const dengueBedsPerSite = controls ? controls.normalCapacity * (1 - controls.baselineOccupancy) : 0;
+  const nonDengueBedsPerSite = controls ? controls.normalCapacity * controls.baselineOccupancy : 0;
+  const bedCount = (value: number) => Math.round(value * 100) / 100;
+  // Imported per-hospital allotments replace the uniform split for the hospitals they list.
+  const allotments = controls?.bedAllotments ?? [];
+  const allotmentById = new Map(allotments.map(a => [a.facilityId, a]));
+  const networkBeds = context && controls ? context.hospitals.reduce((sum, h) => {
+    const a = allotmentById.get(h.id);
+    return {
+      dengue: sum.dengue + (a ? a.dengueBeds : dengueBedsPerSite),
+      nonDengue: sum.nonDengue + (a ? a.nonDengueBeds : nonDengueBedsPerSite),
+      holding: sum.holding + (a ? a.holdingSpaces : controls.holdingCapacity),
+    };
+  }, { dengue: 0, nonDengue: 0, holding: 0 }) : undefined;
+  const hospitalsUsingDefaults = context ? context.hospitals.filter(h => !allotmentById.has(h.id)).length : undefined;
+  const networkExtraBeds = context && controls ? context.hospitals.reduce((sum, h) => {
+    const a = allotmentById.get(h.id);
+    return sum + (a?.extraDengueBeds ?? controls.surgeCapacity) + (a?.extraNonDengueBeds ?? 0);
+  }, 0) : undefined;
+  // One hospital's values: its own allotment, or the defaults (rounded to whole beds) until edited.
+  function hospitalBeds(id: string) {
+    const a = allotmentById.get(id);
+    const dengue = Math.round(dengueBedsPerSite);
+    return {
+      facilityId: id,
+      dengueBeds: a?.dengueBeds ?? dengue,
+      nonDengueBeds: a?.nonDengueBeds ?? (controls ? controls.normalCapacity - dengue : 0),
+      holdingSpaces: a?.holdingSpaces ?? controls?.holdingCapacity ?? 0,
+      nonDengueHoldingSpaces: a?.nonDengueHoldingSpaces ?? 0,
+      // Extra staffed beds are not edited here; keep any imported values, otherwise the scenario default.
+      extraDengueBeds: a?.extraDengueBeds ?? null,
+      extraNonDengueBeds: a?.extraNonDengueBeds ?? null,
+    };
+  }
+  // A total and its dengue / non-dengue split: editing the total keeps the dengue part
+  // (capped at the new total); editing one part sets the other to the remainder.
+  function splitValue(field: HospitalBedField, value: number, total: number, dengue: number) {
+    if (field === 'totalBeds' || field === 'holdingTotal') { const d = Math.min(dengue, value); return { dengue: d, other: value - d }; }
+    if (field === 'dengueBeds' || field === 'dengueHolding') return value <= total ? { dengue: value, other: total - value } : null;
+    return value <= total ? { dengue: total - value, other: value } : null;
+  }
+  function setHospitalBed(field: HospitalBedField, text: string) {
+    if (!controls || !capacityHospital) return;
+    const value = Number(text);
+    const current = hospitalBeds(capacityHospital);
+    const next = { ...current };
+    let valid = text !== '' && Number.isInteger(value) && value >= 0 && value <= 10000;
+    if (valid && ['totalBeds', 'dengueBeds', 'nonDengueBeds'].includes(field)) {
+      const split = splitValue(field, value, current.dengueBeds + current.nonDengueBeds, current.dengueBeds);
+      if (split) { next.dengueBeds = split.dengue; next.nonDengueBeds = split.other; }
+      valid = !!split && next.dengueBeds + next.nonDengueBeds >= 1;
+    } else if (valid) {
+      const dengueHolding = current.holdingSpaces - current.nonDengueHoldingSpaces;
+      const split = splitValue(field, value, current.holdingSpaces, dengueHolding);
+      if (split) { next.holdingSpaces = split.dengue + split.other; next.nonDengueHoldingSpaces = split.other; }
+      valid = !!split;
+    }
+    if (!valid) {
+      setHospitalDraft({ field, text });
+      update({});
+      return;
+    }
+    setHospitalDraft(null);
+    update({ bedAllotments: [...allotments.filter(a => a.facilityId !== capacityHospital), next].sort((a, b) => a.facilityId.localeCompare(b.facilityId)) });
+  }
+  // Slider for the dengue share of a hospital's beds or holding spaces: 60% of 100 beds = 60 dengue + 40 non-dengue.
+  function shareSlider(kind: 'beds' | 'holding') {
+    if (!capacityHospital) return null;
+    const b = hospitalBeds(capacityHospital);
+    const total = kind === 'beds' ? b.dengueBeds + b.nonDengueBeds : b.holdingSpaces;
+    const dengue = kind === 'beds' ? b.dengueBeds : b.holdingSpaces - b.nonDengueHoldingSpaces;
+    const chosen = sharePercent.hospital === capacityHospital ? sharePercent[kind] : undefined;
+    // Keep the chosen percent while it still produces the current counts; typing a count moves the slider instead.
+    const percent = chosen !== undefined && Math.round((total * chosen) / 100) === dengue ? chosen
+      : total > 0 ? Math.round((dengue / total) * 100) : 0;
+    const label = kind === 'beds' ? 'Share of beds for dengue' : 'Share of holding spaces for dengue';
+    return (
+      <div className="qc-share-slider">
+        <div className="qc-share-heading"><span>{label}</span><strong>{percent}%</strong></div>
+        <input type="range" aria-label={label} min={0} max={100} step={1} value={percent} disabled={total === 0}
+          aria-valuetext={`${percent}% for dengue: ${dengue} of ${total}`}
+          style={{ '--qc-share': `${percent}%` } as CSSProperties}
+          onChange={event => {
+            const next = Number(event.target.value);
+            setSharePercent(previous => ({ ...(previous.hospital === capacityHospital ? previous : { hospital: capacityHospital }), [kind]: next }));
+            setHospitalBed(kind === 'beds' ? 'dengueBeds' : 'dengueHolding', String(Math.round((total * next) / 100)));
+          }} />
+        <div className="qc-share-scale" aria-hidden="true"><span>Dengue {dengue}</span><span>Non-dengue {total - dengue}</span></div>
+      </div>
+    );
+  }
+  function resetHospital() {
+    const rest = allotments.filter(a => a.facilityId !== capacityHospital);
+    setHospitalDraft(null);
+    update({ bedAllotments: rest.length ? rest : null });
+  }
+  function hospitalField(field: HospitalBedField, label: string, hint: string, strong = false) {
+    if (!capacityHospital) return null;
+    const b = hospitalBeds(capacityHospital);
+    const totalBeds = b.dengueBeds + b.nonDengueBeds;
+    const values: Record<HospitalBedField, number> = {
+      totalBeds, dengueBeds: b.dengueBeds, nonDengueBeds: b.nonDengueBeds,
+      holdingTotal: b.holdingSpaces, dengueHolding: b.holdingSpaces - b.nonDengueHoldingSpaces, nonDengueHolding: b.nonDengueHoldingSpaces,
+    };
+    const max = field === 'dengueBeds' || field === 'nonDengueBeds' ? totalBeds
+      : field === 'dengueHolding' || field === 'nonDengueHolding' ? b.holdingSpaces : 10000;
+    const draft = hospitalDraft?.field === field ? hospitalDraft.text : undefined;
+    const helpId = `hospital-${field}-hint`;
+    return (
+      <label className="qc-number-field">
+        <span className={strong ? 'qc-field-strong' : undefined}>{label}</span>
+        <input aria-label={label} type="number" min={field === 'totalBeds' ? 1 : 0} max={max} step={1} required
+          aria-describedby={helpId} aria-invalid={draft !== undefined || undefined}
+          value={draft ?? values[field]} onFocus={event => event.currentTarget.select()}
+          onChange={event => setHospitalBed(field, event.currentTarget.value)} />
+        <small id={helpId}>{draft !== undefined ? 'Enter a whole number · ' : ''}{hint}</small>
+      </label>
+    );
+  }
+  async function importAllotments(file: File) {
+    setAllotmentImport({ status: 'loading', fileName: file.name });
+    try {
+      const response = await fetch('/api/bed-allotments', { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data) {
+        setAllotmentImport({ status: 'error', fileName: file.name, message: data?.detail?.message ?? data?.error ?? `Import failed (${response.status}).` });
+        return;
+      }
+      const result = data as BedAllotmentImport;
+      if (result.errors.length || !result.allotments.length) {
+        // Nothing is applied from a file with problems, so no row is silently dropped.
+        setAllotmentImport({ status: 'error', fileName: file.name, result,
+          message: result.errors.length ? `${result.errors.length} ${result.errors.length === 1 ? 'row needs' : 'rows need'} fixing. Nothing was applied.` : 'The file has no hospital rows. Nothing was applied.' });
+        return;
+      }
+      update({ bedAllotments: result.allotments.map(a => ({ facilityId: a.facilityId, dengueBeds: a.dengueBeds, nonDengueBeds: a.nonDengueBeds, holdingSpaces: a.holdingSpaces,
+        extraDengueBeds: a.extraDengueBeds ?? null, extraNonDengueBeds: a.extraNonDengueBeds ?? null,
+        nonDengueHoldingSpaces: a.nonDengueHoldingSpaces ?? null })) });
+      setHospitalDraft(null);
+      setAllotmentImport({ status: 'done', fileName: file.name, result });
+    } catch {
+      setAllotmentImport({ status: 'error', fileName: file.name, message: 'Could not reach the simulation engine. Try again.' });
+    }
+  }
+  function clearAllotments() {
+    update({ bedAllotments: null });
+    setAllotmentImport({ status: 'idle' });
+  }
+  function downloadAllotmentTemplate() {
+    if (!context || !controls) return;
+    // Neutralise spreadsheet formulas and quote separators in names.
+    const cell = (value: string | number) => {
+      let text = String(value);
+      if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+      return /[",;\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const rows = [...context.hospitals].sort((a, b) => a.id.localeCompare(b.id)).map(h => {
+      const b = hospitalBeds(h.id);
+      return [h.id, h.name, b.dengueBeds, b.nonDengueBeds, b.holdingSpaces, b.holdingSpaces - b.nonDengueHoldingSpaces, b.nonDengueHoldingSpaces];
+    });
+    const csv = [['facility_id', 'hospital_name', 'dengue_beds', 'non_dengue_beds', 'holding_spaces', 'dengue_holding_spaces', 'non_dengue_holding_spaces'], ...rows].map(row => row.map(cell).join(',')).join('\r\n');
+    const link = document.createElement('a');
+    // A byte-order mark lets Excel open the UTF-8 file with the right characters.
+    link.href = URL.createObjectURL(new Blob(['﻿' + csv + '\r\n'], { type: 'text/csv;charset=utf-8' }));
+    link.download = 'surgewise-bed-allotments.csv';
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }
+  function chooseSettingsSection(section: 'scenario' | 'capacity') {
+    setSettingsSection(section);
+    controlsScroll.current?.scrollTo({ top: 0 });
+  }
   // Summary card for the right panel: icon, label, one big value, a short note and an optional explanation toggle.
   function summaryCard(
     id: string,
@@ -688,10 +935,11 @@ export default function QCSimulationWorkspace() {
     try { if (workspace.current.requestFullscreen) await workspace.current.requestFullscreen(); } catch { /* In-app fullscreen remains available. */ }
     expandedRef.current = true; setExpanded(true); setPanelView(null);
   }
+  const timing = data?.futureForecast?.parameterAudit;
   const peakDay = data?.bedProjection?.peakDayIndex;
   const canJumpToPeak = !!scenario && Number.isInteger(peakDay) && peakDay! >= 1 && peakDay! <= (data?.durationDays ?? 0);
   const mapControlsDisabled = mapStatus === 'loading' || mapStatus === 'unavailable';
-  const panelTitles = { scenario: 'Scenario', results: 'Results', hospitals: inspectedHospital ? 'Hospital details' : 'Barangay details', layers: 'Map layers' };
+  const panelTitles = { scenario: 'Set up scenario', results: 'Results', hospitals: inspectedHospital ? 'Hospital details' : 'Barangay details', layers: 'Map layers' };
   const settings = (<><div
               className="qc-workspace-tabs"
               role="tablist"
@@ -702,6 +950,7 @@ export default function QCSimulationWorkspace() {
                   key={value}
                   id={`qc-tab-${value}`}
                   role="tab"
+                  type="button" className="text-button"
                   aria-selected={tab === value}
                   aria-controls="qc-tab-panel"
                   tabIndex={tab === value ? 0 : -1}
@@ -726,12 +975,37 @@ export default function QCSimulationWorkspace() {
                     document.getElementById(`qc-tab-${next}`)?.focus();
                   }}
                 >
-                  {value === 'historical'
-                    ? 'Historical replay'
-                    : 'Future surge forecast'}
+                  {tab === value && <Check size={14} strokeWidth={2.5} aria-hidden="true" />}
+                  {value === 'historical' ? 'Historical replay' : 'Future forecast'}
                 </button>
               ))}
-            </div><div ref={controlsScroll} className="qs-settings-scroll qc-controls"><div
+            </div>
+            <div className="qc-settings-sections" role="tablist" aria-label="Scenario settings sections">
+              {(['scenario', 'capacity'] as const).map(value => (
+                <button key={value} type="button" className="text-button" id={`qc-section-${value}`} role="tab" aria-selected={settingsSection === value}
+                  aria-controls={`qc-section-panel-${value}`} tabIndex={settingsSection === value ? 0 : -1} onClick={() => chooseSettingsSection(value)}
+                  onKeyDown={event => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                    event.preventDefault();
+                    const next = event.key === 'Home' ? 'scenario' : event.key === 'End' ? 'capacity' : value === 'scenario' ? 'capacity' : 'scenario';
+                    chooseSettingsSection(next);
+                    document.getElementById(`qc-section-${next}`)?.focus();
+                  }}>
+                  {value === 'scenario' ? <><SlidersHorizontal size={14} aria-hidden="true" />Scenario</> : <><BedDouble size={14} aria-hidden="true" />Bed capacity</>}
+                </button>
+              ))}
+            </div>
+            <form ref={controlsScroll} className="qs-settings-scroll qc-controls" id="qc-settings-form"
+              onSubmit={event => { event.preventDefault(); runSimulation(); }}
+              onInvalid={event => {
+                const target = event.target as HTMLElement;
+                // Show the tab holding an invalid field so the browser can point to it.
+                if (target.closest('#qc-section-panel-capacity')) setSettingsSection('capacity');
+                else if (target.closest('#qc-section-panel-scenario')) setSettingsSection('scenario');
+                const section = target.closest('details');
+                if (section) section.open = true;
+              }}>
+              <div
                 key={`${tab}-${controls ? 'ready' : 'pending'}`}
                 id="qc-tab-panel"
                 className="qc-mode-form"
@@ -741,347 +1015,231 @@ export default function QCSimulationWorkspace() {
               >
                 {controls ? (
                   <>
+                    <div role="tabpanel" id="qc-section-panel-scenario" aria-labelledby="qc-section-scenario" hidden={settingsSection !== 'scenario'}>
                     <fieldset className="qc-fieldset">
-                      <legend>Dates</legend>
-                      {tab === 'future' && (
-                        <label>
-                          Season / planning month
-                          <input
-                            aria-label="Planning month"
-                            type="month"
-                            min={planningAsOf?.slice(0, 7)}
-                            max="2035-12"
-                            value={controls.startDate.slice(0, 7)}
-                            onChange={(event) => {
-                              if (!event.target.value) return;
-                              const requested = `${event.target.value}-01`;
-                              updateStart(
-                                planningAsOf && requested < planningAsOf
-                                  ? planningAsOf
-                                  : requested
-                              );
-                            }}
-                          />
-                          <small>
-                            Sets the start date. The simulation still covers the
-                            selected 1–28 days, not an entire calendar month.
-                          </small>
-                        </label>
-                      )}
-                      <label>
-                        From · QC local date
-                        <input
-                          aria-label="Forecast start date"
-                          type="date"
-                          min={tab === 'future' ? planningAsOf : '2024-01-29'}
-                          max={tab === 'future' ? '2035-12-31' : '2025-12-31'}
-                          value={controls.startDate}
-                          onChange={(e) => updateStart(e.target.value)}
-                        />
-                      </label>
-                      <label>
-                        Number of forecast days
-                        <input
-                          aria-label="Forecast horizon in days"
-                          type="number"
-                          min={1}
-                          max={28}
-                          step={1}
-                          value={
-                            Number.isFinite(selectedDays) ? selectedDays : 1
-                          }
-                          onChange={(e) => updateDays(Number(e.target.value))}
-                        />
-                        <small>
-                          Any whole number from 1–28; e.g. 2, 12, 14 or 28.
-                        </small>
-                      </label>
-                      <div className="qc-horizons-label">
-                        Quick picks · run immediately
-                      </div>
-                      <div className="qc-horizons">
-                        {[2, 7, 12, 14, 28].map((h) => (
-                          <button
-                            key={h}
-                            aria-pressed={data?.durationDays === h}
-                            onClick={() => chooseHorizon(h)}
-                            disabled={loading}
-                          >
-                            {h} days
-                          </button>
-                        ))}
-                      </div>
-                      <label>
-                        To · final snapshot
-                        <input
-                          aria-label="Forecast end date"
-                          type="date"
-                          min={
-                            controls.startDate
-                              ? addDateDays(controls.startDate, 1)
-                              : undefined
-                          }
-                          max={
-                            controls.startDate
-                              ? addDateDays(controls.startDate, 28)
-                              : undefined
-                          }
-                          value={controls.endDate}
-                          readOnly={tab === 'future'}
-                          onChange={(e) => update({ endDate: e.target.value })}
-                        />
-                        <small>
-                          {tab === 'future'
-                            ? 'Computed from start date + forecast days.'
-                            : '1–28 elapsed days; daily interval [start, end).'}
-                        </small>
-                      </label>
+                      <legend><CalendarDays aria-hidden="true" size={16} /> Forecast period</legend>
                       {tab === 'historical' && historicalWindows.length > 0 && (
-                        <label>
-                          Available historical forecast targets
-                          <WorkspaceSelect label={"Available historical forecast window"} value={String("")} onChange={value => {
-                              if (value)
-                                updateStart(value);
-                            }} options={[{ value: String(""), label: ["Choose a covered start date"].join(' ') },...((historicalWindows.map((window) => (
-                              { value: String(window.startDate), label: [String(window.startDate),"to",String(window.endDate),"(end exclusive)"].join(' ') }
-                            ))) ?? [])]} />
-                          <small>
-                            Selected dates must fit inside one saved forecast
-                            window. Another month’s forecast is never
-                            substituted.
-                          </small>
+                        <label>Saved forecast period
+                          <WorkspaceSelect label="Saved forecast period"
+                            value={historicalWindows.findLast(w => w.startDate <= controls.startDate && controls.endDate <= w.endDate)?.startDate ?? ''}
+                            onChange={value => { if (value) updateStart(value); }}
+                            options={[{ value: '', label: 'Choose a period' }, ...historicalWindows.map(w => ({
+                              value: w.startDate, label: `${formatScenarioDate(w.startDate)} – ${formatScenarioDate(addDateDays(w.endDate, -1))}`,
+                            }))]} />
                         </label>
                       )}
+                      <div className="qs-field-pair qs-date-pair">
+                        <label>Start date
+                          <input aria-label="Start date" type="date" required
+                            min={earliestStart} max={latestStart}
+                            value={startDateDraft ?? controls.startDate} onChange={e => updateStart(e.target.value)} />
+                        </label>
+                        {numeric('horizonDays', 'Duration', 1, 28, 'days')}
+                      </div>
+                      <div className="qc-horizons" role="group" aria-label="Duration presets">
+                        {[2, 7, 12, 14, 28].map(days => {
+                          const active = numberDrafts.horizonDays === undefined && selectedDays === days;
+                          return <button className="text-button" type="button" key={days} aria-pressed={active}
+                            disabled={loading} onClick={() => {
+                              setNumberDrafts(previous => { const next = { ...previous }; delete next.horizonDays; return next; });
+                              updateDays(days);
+                            }}>{active && <Check aria-hidden="true" size={12} />}{days} days</button>;
+                        })}
+                      </div>
+                      {dateError ? <p className="qs-input-error" role="status">{dateError}</p> :
+                        numberDrafts.horizonDays === undefined && controls.endDate && <p className="qs-window-note">Final snapshot <strong>{formatScenarioDate(controls.endDate)}</strong></p>}
                     </fieldset>
+
                     <fieldset className="qc-fieldset">
-                      <legend>Scenario</legend>
-                      {tab === 'historical' && (
-                        <label>
-                          Historical scenario
-                          <WorkspaceSelect label={"Scenario mode"} value={String(controls.mode)} onChange={value =>
-                              update({
-                                mode: value as QCControls['mode'],
-                                extraCasesPerWeek:
-                                  value === 'forecast' ? 0 : 700,
-                              })} options={[{ value: String("forecast"), label: ["Data-based historical forecast replay"].join(' ') },{ value: String("hypothetical_shock"), label: ["Stress overlay on historical period"].join(' ') }]} />
-                          <small>
-                            Training data: 2010–2025. Replay reference origins:
-                            2024–2025.
-                          </small>
-                        </label>
-                      )}
-                      {tab === 'historical' &&
-                        controls.mode === 'hypothetical_shock' && (
-                          <div className="qc-hypothetical">
-                            Added cases are assumptions, separate from the
-                            environmental forecast.
-                            {numeric(
-                              'extraCasesPerWeek',
-                              'Additional cases at full intensity',
-                              0,
-                              100000,
-                              'cases/week',
-                              50
-                            )}
-                            {numeric(
-                              'growthDays',
-                              'Ramp to full intensity',
-                              1,
-                              28,
-                              'days'
-                            )}
-                          </div>
-                        )}
-                      {tab === 'future' && (
+                      <legend><TrendingUp aria-hidden="true" size={16} /> Case forecast</legend>
+                      {tab === 'historical' ? (
                         <>
-                          <label>
-                            Weather / season assumption
-                            <WorkspaceSelect label={"Historical weather profile"} disabled={data?.futureForecast?.usesWeather === false} value={String(controls.weatherProfile ?? 'typical')} onChange={value =>
-                                update({
-                                  weatherProfile: value as QCControls['weatherProfile'],
-                                })} options={[{ value: String("typical"), label: ["Typical historical seasonal weather"].join(' ') },{ value: String("wetter"), label: ["Wetter historical analog"].join(' ') },{ value: String("drier"), label: ["Drier historical analog"].join(' ') },{ value: String("hotter"), label: ["Hotter historical analog"].join(' ') }]} />
-                            <small>
-                              {data?.futureForecast?.usesWeather === false
-                                ? 'The selected XGBoost configuration uses seasonal features only. Changing weather profiles does not change its cases.'
-                                : 'Derived from past within-season weather; not a weather forecast.'}
-                            </small>
+                          <label>Case scenario
+                            <WorkspaceSelect label="Case scenario" value={controls.mode} onChange={value =>
+                              update({ mode: value as QCControls['mode'], extraCasesPerWeek: value === 'forecast' ? 0 : 700 })}
+                              options={[{ value: 'forecast', label: 'Historical forecast' },
+                                { value: 'hypothetical_shock', label: 'Historical forecast with added cases' }]} />
                           </label>
-                          <div className="qc-hypothetical">
-                            <label className="qc-surge-toggle">
-                              <input
-                                type="checkbox"
-                                checked={controls.surgeEnabled ?? true}
-                                onChange={(e) =>
-                                  update({ surgeEnabled: e.target.checked })
-                                }
-                              />{' '}
-                              Simulate a surge
-                            </label>
-                            {controls.surgeEnabled && (
-                              <>
-                                {numeric(
-                                  'surgeMultiplier',
-                                  'Peak case multiplier',
-                                  1,
-                                  10,
-                                  '× seasonal baseline',
-                                  0.1
-                                )}
-                                {numeric(
-                                  'surgeOnsetDay',
-                                  'Surge starts on day',
-                                  0,
-                                  Math.max(0, selectedDays - 1),
-                                  'day index'
-                                )}
-                                {numeric(
-                                  'growthDays',
-                                  'Ramp to peak multiplier',
-                                  1,
-                                  28,
-                                  'days'
-                                )}
-                                <p>
-                                  Surge timing and intensity are assumptions,
-                                  not a predicted probability of an outbreak.
-                                </p>
-                              </>
-                            )}
+                          {controls.mode === 'hypothetical_shock' && <div className="qs-field-pair">
+                            {numeric('extraCasesPerWeek', 'Extra weekly cases at peak', 0, 100000, 'cases/week')}
+                            {numeric('growthDays', 'Time to peak', 1, 28, 'days')}
+                          </div>}
+                        </>
+                      ) : (
+                        <>
+                          <label>Weather assumption
+                            <WorkspaceSelect label="Weather assumption" disabled={!usesWeather}
+                              value={controls.weatherProfile ?? 'typical'} onChange={value => update({ weatherProfile: value as QCControls['weatherProfile'] })}
+                              options={[{ value: 'typical', label: 'Typical for this season' }, { value: 'wetter', label: 'Wetter than typical' },
+                                { value: 'drier', label: 'Drier than typical' }, { value: 'hotter', label: 'Hotter than typical' }]} />
+                            <small>{!usesWeather ? 'This model uses seasonal patterns only.' : 'Based on past weather for the selected dates.'}</small>
+                          </label>
+                          <div className="qs-surge-box">
+                            <label className="qc-surge-toggle"><input type="checkbox" checked={controls.surgeEnabled ?? true}
+                              onChange={e => update({ surgeEnabled: e.target.checked })} /> Add a hypothetical surge</label>
+                            {controls.surgeEnabled && <div className="qs-field-pair">
+                              {numeric('surgeMultiplier', 'Peak case multiplier', 1, 10, '× baseline', 0.1)}
+                              {numeric('surgeOnsetDay', 'Days before surge starts', 0, Math.max(0, selectedDays - 1), 'days')}
+                              {numeric('growthDays', 'Time to peak', 1, 28, 'days')}
+                            </div>}
                           </div>
-                          {data?.futureForecast?.parameterAudit && (
-                            <details className="qc-hypothetical qc-audit">
-                              <summary>
-                                Calculated window & surge timing
-                              </summary>
-                              <p>
-                                Calculated window:{' '}
-                                {data.futureForecast.parameterAudit.horizonDays}{' '}
-                                days, [
-                                {data.futureForecast.parameterAudit.startDate},{' '}
-                                {
-                                  data.futureForecast.parameterAudit
-                                    .endDateExclusive
-                                }
-                                ).
-                                {data.futureForecast.parameterAudit
-                                  .surgeOnsetDate
-                                  ? ` Added surge begins in the interval starting ${data.futureForecast.parameterAudit.surgeOnsetDate}; maximum applied multiplier ${format(data.futureForecast.parameterAudit.maximumAppliedMultiplier)}×. ${data.futureForecast.parameterAudit.fullMultiplierReached ? 'The requested peak is reached.' : 'The window ends before the requested peak is reached.'}`
-                                  : ' No added case surge.'}
-                                {` Staffed surge beds activate at snapshot ${data.futureForecast.parameterAudit.staffedSurgeActivationSnapshotDate}${data.futureForecast.parameterAudit.staffedSurgeActivationWithinWindow ? '.' : ', outside this window.'} Admission delay ${data.futureForecast.parameterAudit.admissionDelayDays} days; stay ${data.futureForecast.parameterAudit.lengthOfStayDays} days.`}
-                                <small>
-                                  The seasonal curve repeats using evidence
-                                  through 2025; future annual growth and
-                                  outbreak probability are not modeled. Maximum
-                                  source-year gap:{' '}
-                                  {
-                                    data.futureForecast.parameterAudit
-                                      .sourceYearGap
-                                  }
-                                  .{' '}
-                                  {data.futureForecast.parameterAudit
-                                    .centralGapEvaluated
-                                    ? 'Seasonal baseline case errors were checked at this year gap; added surge is an assumption.'
-                                    : 'This weather profile/year gap has no matched evaluation.'}{' '}
-                                  {!data.futureForecast.parameterAudit
-                                    .rangeEvaluatedAtRequestedGap &&
-                                    'Range coverage is not validated for this weather/surge/year-gap combination.'}
-                                </small>
-                              </p>
-                            </details>
-                          )}
                         </>
                       )}
                     </fieldset>
+
                     <fieldset className="qc-fieldset">
-                      <legend>Hospital assumptions</legend>
-                      <label>
-                        Hospital allocation
-                        <WorkspaceSelect label={"Hospital allocation policy"} value={String(controls.allocationPolicy)} onChange={value =>
-                            update({
-                              allocationPolicy: value as QCControls['allocationPolicy'],
-                              compareAllocation: false,
-                            })} options={[{ value: String("nearest"), label: ["Nearest supported capacity baseline"].join(' ') },{ value: String("optimized"), label: ["Optimize capacity-constrained placements"].join(' ') }]} />
+                      <legend><BedDouble aria-hidden="true" size={16} /> Hospital planning</legend>
+                      <label>When a hospital is full
+                        <WorkspaceSelect label="When a hospital is full" value={controls.allocationPolicy} onChange={value =>
+                          update({ allocationPolicy: value as QCControls['allocationPolicy'], compareAllocation: false,
+                            arrivalSplitPolicy: value === 'first_hospital' ? 'markov_preference' : 'nearest_three_equal' })}
+                          options={[
+                            { value: 'first_hospital', label: 'Record the shortage at that hospital' },
+                            { value: 'nearest', label: 'Try the nearest hospital with space' },
+                            { value: 'optimized', label: 'Optimize placements across hospitals' },
+                          ]} />
                       </label>
-                      <label>
-                        Assumed arrival split
-                        <WorkspaceSelect label={"Hospital arrival split"} value={String(controls.arrivalSplitPolicy ?? 'nearest_three_equal')} onChange={value =>
-                            update({
-                              arrivalSplitPolicy: value as QCControls['arrivalSplitPolicy'],
-                              compareAllocation: false,
-                            })} options={[{ value: String("nearest_three_equal"), label: ["Divide equally across three nearest sites"].join(' ') },{ value: String("nearest"), label: ["Nearest site first"].join(' ') }]} />
-                        <small>
-                          Expected-value choice assumption, not measured patient
-                          preference. Full hospitals can divert demand.
-                        </small>
+                      <label>How patients choose a hospital
+                        <WorkspaceSelect label="How patients choose a hospital" value={controls.arrivalSplitPolicy ?? 'nearest_three_equal'} onChange={value =>
+                          update({ arrivalSplitPolicy: value as QCControls['arrivalSplitPolicy'], compareAllocation: false })}
+                          options={firstHospital ? [
+                            { value: 'markov_preference', label: 'Distance and preferred hospital' },
+                            { value: 'markov_proximity', label: 'Distance only' },
+                          ] : [
+                            { value: 'nearest_three_equal', label: 'Equal shares at the three nearest hospitals' },
+                            { value: 'nearest', label: 'Nearest hospital first' },
+                          ]} />
+                        {firstHospital && <small>{controls.arrivalSplitPolicy === 'markov_preference'
+                          ? 'In 14 barangays, the mapped preferred hospital gets 1.5× weight. The other 128 use distance alone.'
+                          : 'Each additional 3 km halves a hospital’s weight.'}</small>}
                       </label>
+                      <button type="button" className="text-button qc-capacity-summary" onClick={() => chooseSettingsSection('capacity')}>
+                        <BedDouble size={16} aria-hidden="true" />
+                        <span><strong>Bed capacity</strong><small>{allotments.length && networkBeds
+                          ? `Imported for ${allotments.length} hospitals · ${bedCount(networkBeds.dengue).toLocaleString()} dengue · ${bedCount(networkBeds.nonDengue).toLocaleString()} non-dengue beds in total`
+                          : `${bedCount(controls.normalCapacity)} beds per hospital · ${bedCount(dengueBedsPerSite)} dengue · ${bedCount(nonDengueBedsPerSite)} non-dengue`}</small></span>
+                        <ChevronRight size={14} aria-hidden="true" />
+                      </button>
                       <details className="qc-assumptions">
-                        <summary>Capacity and patient assumptions</summary>
-                        <p>
-                          All 46 sites are assumed eligible in this planning
-                          network. Actual staffed/dengue beds remain unknown.
-                        </p>
-                        {numeric(
-                          'normalCapacity',
-                          'Normal staffed beds / site',
-                          1,
-                          10000,
-                          'assumed beds'
-                        )}
-                        {numeric(
-                          'surgeCapacity',
-                          'Supported surge beds / site',
-                          0,
-                          10000,
-                          'assumed beds'
-                        )}
-                        {numeric(
-                          'holdingCapacity',
-                          'Unstaffed holding spaces / site',
-                          0,
-                          10000,
-                          'spaces'
-                        )}
-                        {numeric(
-                          'hospitalizationRate',
-                          'Admission fraction',
-                          0,
-                          100,
-                          '%',
-                          1,
-                          100
-                        )}
-                        {numeric(
-                          'baselineOccupancy',
-                          'Non-dengue occupancy',
-                          0,
-                          100,
-                          '%',
-                          1,
-                          100
-                        )}
-                        {numeric(
-                          'lengthOfStayDays',
-                          'Length of stay',
-                          1,
-                          30,
-                          'days'
-                        )}
-                        {numeric(
-                          'admissionDelayDays',
-                          'Admission delay',
-                          0,
-                          28,
-                          'days'
-                        )}
-                        {numeric(
-                          'surgeActivationDay',
-                          'Surge activation',
-                          0,
-                          28,
-                          'day index'
-                        )}
+                        <summary>Admissions and length of stay</summary>
+                        <div className="qs-field-pair">
+                          {numeric('hospitalizationRate', 'Cases admitted', 0, 100, '%', 1, 100)}
+                          {numeric('admissionDelayDays', 'Delay before admission', 0, 28, 'days')}
+                          {numeric('lengthOfStayDays', 'Hospital stay', 1, 30, 'days')}
+                        </div>
                       </details>
                     </fieldset>
+                    </div>
+                    <div role="tabpanel" id="qc-section-panel-capacity" aria-labelledby="qc-section-capacity" hidden={settingsSection !== 'capacity'}>
+                    <fieldset className="qc-fieldset">
+                      <legend><BedDouble aria-hidden="true" size={16} /> Bed totals</legend>
+                      {hospitalCount !== undefined && networkBeds && (
+                        <dl className="qc-capacity-totals">
+                          <div><dt>All {hospitalCount} hospitals</dt><dd>{bedCount(networkBeds.dengue + networkBeds.nonDengue).toLocaleString()} beds</dd></div>
+                          <div><dt>For dengue</dt><dd>{bedCount(networkBeds.dengue).toLocaleString()}</dd></div>
+                          <div><dt>For non-dengue</dt><dd>{bedCount(networkBeds.nonDengue).toLocaleString()}</dd></div>
+                          <div><dt>Holding spaces</dt><dd>{bedCount(networkBeds.holding).toLocaleString()}</dd></div>
+                          <div><dt>Extra staffed beds</dt><dd>{bedCount(networkExtraBeds ?? 0).toLocaleString()}</dd></div>
+                        </dl>
+                      )}
+                    </fieldset>
+                    <fieldset className="qc-fieldset">
+                      <legend><MapPin aria-hidden="true" size={16} /> Hospital-specific beds</legend>
+                      <p className="qc-capacity-intro">
+                        Give one hospital its own beds, extra staffed beds and
+                        holding spaces, or import a file to set many at once.
+                      </p>
+                      <div className="qs-field-label">Hospital
+                        <HospitalSearch label="Hospital to adjust" value={capacityHospital} disabled={!context}
+                          onChange={value => { setCapacityHospital(value); setHospitalDraft(null); }}
+                          options={[...(context?.hospitals ?? [])]
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map(h => ({ id: h.id, name: h.name, note: allotmentById.has(h.id) ? 'Has its own values' : undefined }))} />
+                      </div>
+                      {capacityHospital && (
+                        <div className="qc-hospital-editor">
+                          <p className="qc-hospital-status">
+                            {allotmentById.has(capacityHospital) ? 'Using its own values.' : 'Using the defaults until you change a value.'}
+                            {allotmentById.has(capacityHospital) && (
+                              <button type="button" className="text-button qc-import-clear" onClick={resetHospital}><RotateCcw size={12} aria-hidden="true" />Use defaults</button>
+                            )}
+                          </p>
+                          <div className="qc-split-group">
+                            {hospitalField('totalBeds', 'Total beds', 'staffed beds at this hospital', true)}
+                            {shareSlider('beds')}
+                            <div className="qs-field-pair">
+                              {hospitalField('dengueBeds', 'Beds for dengue', 'open to dengue patients')}
+                              {hospitalField('nonDengueBeds', 'Beds for non-dengue', 'used by other patients')}
+                            </div>
+                          </div>
+                          <div className="qc-split-group">
+                            {hospitalField('holdingTotal', 'Total holding spaces', 'temporary, unstaffed', true)}
+                            {shareSlider('holding')}
+                            <div className="qs-field-pair">
+                              {hospitalField('dengueHolding', 'Holding for dengue', 'for dengue overflow')}
+                              {hospitalField('nonDengueHolding', 'Holding for non-dengue', 'kept for other patients')}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div className="qc-import-block">
+                        <strong>Import many hospitals</strong>
+                        <span>CSV or Excel (.xlsx). Importing replaces every hospital-specific value.</span>
+                        <div className="qc-import-actions">
+                          <button type="button" className="text-button qc-import-button" disabled={allotmentImport.status === 'loading'} onClick={() => allotmentFile.current?.click()}>
+                            <Upload size={15} aria-hidden="true" />{allotmentImport.status === 'loading' ? 'Importing…' : 'Import CSV or Excel'}
+                          </button>
+                          <button type="button" className="text-button qc-template-button" disabled={!context} onClick={downloadAllotmentTemplate}>
+                            <Download size={15} aria-hidden="true" />Download template
+                          </button>
+                          <input ref={allotmentFile} className="qs-sr-only" type="file" tabIndex={-1} aria-hidden="true"
+                            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void importAllotments(file); }} />
+                        </div>
+                      </div>
+                      <div aria-live="polite">
+                        {allotmentImport.status === 'error' && (
+                          <div className="qc-import-result qc-import-error" role="alert">
+                            <strong>{allotmentImport.fileName}</strong>
+                            <span>{allotmentImport.message}</span>
+                            {!!allotmentImport.result?.errors.length && (
+                              <ul>
+                                {allotmentImport.result.errors.slice(0, 8).map(item => <li key={item.row}>Row {item.row}: {item.message}</li>)}
+                                {allotmentImport.result.errors.length > 8 && <li>…and {allotmentImport.result.errors.length - 8} more rows.</li>}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                        {allotments.length > 0 && (
+                          <div className="qc-import-result">
+                            <strong>{allotmentImport.status === 'done' && allotmentImport.fileName ? `${allotmentImport.fileName} imported` : 'Hospital-specific values'}</strong>
+                            <span>{allotments.length} {allotments.length === 1 ? 'hospital has its' : 'hospitals have their'} own values{hospitalsUsingDefaults ? ` · ${hospitalsUsingDefaults} use the defaults` : ''}</span>
+                            <details>
+                              <summary>View these hospitals</summary>
+                              <table className="qc-import-table">
+                                <thead><tr><th scope="col">Hospital</th><th scope="col">Total beds</th><th scope="col">Dengue</th><th scope="col">Non-dengue</th><th scope="col">Holding</th></tr></thead>
+                                <tbody>
+                                  {allotments.map(a => {
+                                    const b = hospitalBeds(a.facilityId);
+                                    return <tr key={a.facilityId}><th scope="row">{context?.hospitals.find(h => h.id === a.facilityId)?.name ?? a.facilityId}</th><td>{(b.dengueBeds + b.nonDengueBeds).toLocaleString()}</td><td>{b.dengueBeds.toLocaleString()}</td><td>{b.nonDengueBeds.toLocaleString()}</td><td>{b.holdingSpaces.toLocaleString()}</td></tr>;
+                                  })}
+                                </tbody>
+                              </table>
+                            </details>
+                            <button type="button" className="text-button qc-import-clear" onClick={clearAllotments}><X size={13} aria-hidden="true" />Clear all hospital-specific values</button>
+                          </div>
+                        )}
+                      </div>
+                      <small className="qc-import-note">
+                        Columns: facility_id (or hospital_name), dengue_beds,
+                        non_dengue_beds, holding_spaces, and optionally
+                        dengue_holding_spaces and non_dengue_holding_spaces. Whole numbers
+                        only. Start from the template to get every hospital&apos;s
+                        ID. These are planning assumptions, not verified beds or
+                        vacancies.
+                      </small>
+                    </fieldset>
+                    </div>
                   </>
                 ) : (
                   <p role="status">
@@ -1090,18 +1248,19 @@ export default function QCSimulationWorkspace() {
                       : 'Model data unavailable.'}
                   </p>
                 )}
-              </div></div><footer className="qc-controls-footer">
+              </div>
+            </form>
+            <footer className="qc-controls-footer">
             {controls && (
               <div className={`qc-run-bar${stale ? ' stale' : ''}`}>
                 {stale && (
                   <p className="qc-run-hint">
-                    Settings changed · run again to update results
+                    Run to apply your changes.
                   </p>
                 )}
                 <button
-                  className="qc-primary"
-                  disabled={loading}
-                  onClick={runSimulation}
+                  className="qc-primary text-button" type="submit" form="qc-settings-form"
+                  disabled={loading || !!dateError}
                 >
                   <Play size={14} />{' '}
                   {loading ? 'Calculating…' : 'Run simulation'}
@@ -1124,7 +1283,7 @@ export default function QCSimulationWorkspace() {
                 <div className="qc-total-text">
                   <span>
                     {tab === 'future'
-                      ? 'Future surge forecast'
+                      ? 'Future forecast'
                       : 'Historical replay'}
                   </span>
                   <strong>
@@ -1137,7 +1296,7 @@ export default function QCSimulationWorkspace() {
                       ? `${selectedDays} days · `
                       : ''}
                     {scenarioDetail} ·{' '}
-                    {controls?.allocationPolicy === 'optimized'
+                    {firstHospital ? 'first-hospital placement' : controls?.allocationPolicy === 'optimized'
                       ? 'optimized placement'
                       : 'nearest-capacity placement'}
                   </small>
@@ -1476,10 +1635,10 @@ export default function QCSimulationWorkspace() {
             <div {...panelProps('place-beds')}>
               <section
                 className="qc-local-bed-forecast"
-                aria-label="Surge bed forecast near selected place"
+                aria-label="Bed demand from selected barangay"
               >
                 <h2>
-                  Surge bed forecast near {area?.name ?? 'the selected place'}
+                  Bed demand from {area?.name ?? 'the selected barangay'}
                 </h2>
                 <div
                   className={`qc-surge-status${surgeActive ? ' active' : ''}`}
@@ -1506,12 +1665,14 @@ export default function QCSimulationWorkspace() {
                   training.
                 </p>
                 <p>
+                  {firstHospital && area && (preferredHospital ? `Preferred emergency hospital: ${preferredHospital.name}. ` : 'Hospital preference is unknown. This barangay uses proximity alone. ')}
                   Demand from this barangay only, divided using the configured
                   hospital-choice assumption. Required staffed beds are
                   calculated from projected cases, admission fraction, delay and
                   length of stay. Actual staffed capacity and vacancies are
                   unknown.
                 </p>
+                {selectedShortfall != null && <p><strong>{formatFractional(selectedShortfall)} expected beds short</strong> from this barangay on day {day}, across its first hospitals.</p>}
                 {selectedBedProjection ? (
                   <div className="qc-table-scroll">
                     <table>
@@ -1541,7 +1702,7 @@ export default function QCSimulationWorkspace() {
                                   {h?.name ?? row.facilityId}
                                 </button>
                               </td>
-                              <td>{format(row.share * 100)}%</td>
+                              <td>{formatFractional(row.share * 100)}%</td>
                               <td>{format(row.expectedAdmissions)}</td>
                               <td>
                                 {format(row.baselinePeakStaffedBedsRequired)}
@@ -1565,9 +1726,9 @@ export default function QCSimulationWorkspace() {
                 {selectedBedProjection && (
                   <div
                     className="qc-nearby-bed-use"
-                    aria-label="Predicted bed demand percentage at nearby hospitals"
+                    aria-label="Bed demand at the three highest-share destinations"
                   >
-                    {selectedBedProjection.hospitals.map((row) => {
+                    {selectedBedProjection.hospitals.slice(0, 3).map((row) => {
                       const h = context?.hospitals.find(
                         (h) => h.id === row.facilityId
                       );
@@ -1582,7 +1743,7 @@ export default function QCSimulationWorkspace() {
                             {h?.name ?? row.facilityId}
                           </button>
                           <p>
-                            Assumed arrival split: {format(row.share * 100)}%
+                            Assumed arrival split: {formatFractional(row.share * 100)}%
                             from this place. This is not bed utilization.
                           </p>
                           <BedUse
@@ -1606,8 +1767,7 @@ export default function QCSimulationWorkspace() {
                   </div>
                 )}
                 <small>
-                  For three sites, equal shares mean one third each before
-                  capacity diversions. Hospital cards include all barangays’
+                  Hospital cards include all barangays’
                   demand; local rows above show only this place. Site-specific
                   staffing rounds up to whole beds. These are demand estimates,
                   not available beds.
@@ -1722,12 +1882,21 @@ export default function QCSimulationWorkspace() {
                 </svg>
                 <p>
                   Day {day}:{' '}
-                  {format(snapshot?.bedForecast?.staffedBedsRequired)} staffed
+                  {format(staffedBeds)} staffed
                   dengue beds required;{' '}
-                  {format(snapshot?.bedForecast?.additionalStaffedBedsNeeded)}{' '}
-                  additional beds vs assumed supported capacity. This is demand
-                  before capacity rejection, not actual vacant beds.
+                  {format(snapshot?.bedForecast?.hospitalBedsShort)}{' '}
+                  additional staffed beds needed across hospitals. Each site’s shortage is rounded up separately.
                 </p>
+                {snapshot && <section aria-label="Hospital bed shortages">
+                  <h3>Hospital bed shortages{firstHospital ? '' : ' before diversion'} · day {day}</h3>
+                  {shortHospitals.length ? <div className="qc-table-scroll"><table><thead><tr>
+                    <th>Hospital</th><th>Expected beds needed</th><th>Assumed dengue slots</th><th>In supported beds</th><th>Beds short</th>
+                  </tr></thead><tbody>{shortHospitals.map(f => <tr key={f.facilityId}>
+                    <td><button onClick={() => inspectHospital(f.facilityId)}>{context?.hospitals.find(h => h.id === f.facilityId)?.name ?? f.facilityId}</button></td>
+                    <td>{format(f.bedForecast?.expectedBeds)}</td><td>{format(f.bedForecast?.assumedSupportedDengueCapacity)}</td>
+                    <td>{format(f.supportedCensus)}</td><td><strong>{format(f.bedForecast?.additionalStaffedBedsNeeded)}</strong></td></tr>)}</tbody></table></div>
+                    : <p>Assumed dengue slots cover expected bed demand at every hospital today.</p>}
+                </section>}
                 <p>
                   Initial dengue census is assumed zero. Real staffed
                   beds/current occupancy and observed hospital admissions are
@@ -1759,6 +1928,7 @@ export default function QCSimulationWorkspace() {
                         <th>Observed annual cases</th>
                         <th>Expected window cases</th>
                         <th>Conditional case range</th>
+                        {firstHospital && <th>Attributed beds short · day {day}</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -1768,6 +1938,7 @@ export default function QCSimulationWorkspace() {
                           const b = context!.barangays.find(
                             (b) => b.id === row.barangayId
                           )!;
+                          const bedsShort = dailyShortfalls.get(row.barangayId);
                           return (
                             <tr
                               key={b.id}
@@ -1784,6 +1955,7 @@ export default function QCSimulationWorkspace() {
                               </td>
                               <td>{format(row.cumulativeCases)}</td>
                               <td>{range(row.caseRange)}</td>
+                              {firstHospital && <td>{bedsShort == null ? '—' : formatFractional(bedsShort)}</td>}
                             </tr>
                           );
                         })}
@@ -1795,6 +1967,13 @@ export default function QCSimulationWorkspace() {
                 )}
               </section>
             </div>
+            {chainComparison && <div {...panelProps('compare')}><section className="qc-comparison">
+              <h2>First-hospital bed shortages</h2>
+              <p>Both runs use the same forecast, hospital capacities and length of stay. Only the hospital-choice weights change.</p>
+              <div className="qc-table-scroll"><table><thead><tr><th>Hospital choice</th><th>Peak beds short</th><th>First day at peak shortage</th><th>Peak expected beds</th></tr></thead>
+                <tbody>{chainComparison.map(row => <tr key={row.arrivalSplitPolicy}><td>{row.arrivalSplitPolicy === 'markov_preference' ? 'Distance and preferred hospital' : 'Distance only'}</td>
+                  <td>{format(row.peakBedsShort)}</td><td>{row.peakShortageDate ? formatScenarioDate(row.peakShortageDate) : 'No shortage'}</td><td>{format(row.peakExpectedBeds)}</td></tr>)}</tbody>
+              </table></div></section></div>}
             {comparison && (
               <div {...panelProps('compare')}>
                 <section className="qc-comparison">
@@ -1845,6 +2024,17 @@ export default function QCSimulationWorkspace() {
                   <>
                     <p>{data.futureForecast.stalenessCaveat}</p>
                     <p>{data.futureForecast.weatherCaveat}</p>
+                    {timing && <details className="qc-environment">
+                      <summary>Forecast period and surge timing</summary>
+                      <p>{timing.horizonDays} elapsed days from {formatScenarioDate(timing.startDate)} to the final snapshot on {formatScenarioDate(timing.endDateExclusive)}.</p>
+                      <p>{timing.surgeOnsetDate
+                        ? `The added surge starts on ${formatScenarioDate(timing.surgeOnsetDate)}. The largest multiplier applied is ${format(timing.maximumAppliedMultiplier)}×. ${timing.fullMultiplierReached ? 'The requested peak falls within this period.' : 'The period ends before the requested peak.'}`
+                        : 'This run has no added case surge.'}</p>
+                      <p>Extra staffed beds are scheduled for {formatScenarioDate(timing.staffedSurgeActivationSnapshotDate)}{timing.staffedSurgeActivationWithinWindow ? '.' : ', outside this period.'} The assumed admission delay is {timing.admissionDelayDays} days and the stay is {timing.lengthOfStayDays} days.</p>
+                      <p>The seasonal pattern repeats from historical evidence. The largest gap from the source data is {timing.sourceYearGap} years. {timing.centralGapEvaluated
+                        ? 'The seasonal baseline was evaluated at this gap.'
+                        : 'This weather profile and year gap have no matched evaluation.'} {!timing.rangeEvaluatedAtRequestedGap && 'Range coverage is unverified for this combination of weather, surge and year gap.'}</p>
+                    </details>}
                     <p>
                       Selection: {data.futureForecast.selection.criterion}.
                       Calibration MAE: XGBoost{' '}
@@ -2124,9 +2314,22 @@ export default function QCSimulationWorkspace() {
               </section>
             </div>
           </section>);
+  const probabilityPlace = firstHospital && showProbabilities && showHotspotDetails && showHospitals && !hospital
+    ? selectedBedProjection : undefined;
   const selectedPlace = area && !inspectedHospital && (showHotspotDetails || panelView === 'hospitals') ? (
     <section className="qs-inspector-block" aria-label="Selected hotspot details" aria-live="polite">
+      {selectedShortfall != null && <p className="qs-inspector-note"><strong>{formatFractional(selectedShortfall)} expected beds short</strong> attributable to this barangay on day {day}. Each hospital’s gap is shared in proportion to its modeled arrivals.</p>}
       <div className="qs-place-heading"><span>{markerHotspotIds?.includes(area.id) ? 'Annual high-burden candidate' : 'Selected barangay · outside the top candidates'}</span><h3>{area.name}</h3></div>
+      {firstHospital && <div className="qs-choice-control">
+        <label><input type="checkbox" checked={!!probabilityPlace} disabled={!selectedBedProjection}
+          onChange={event => {
+            setShowProbabilities(event.target.checked);
+            if (event.target.checked) { setShowHospitals(true); setShowHotspotDetails(true); }
+          }} /> Show all {context?.hospitals.length} hospital probabilities</label>
+        <small>{selectedBedProjection ? 'Hover, tap or focus an arrow to see how its probability was calculated.' : 'Advance the timeline to see first-hospital choices.'}</small>
+        {probabilityPlace && context && <HospitalProbabilityPicker key={area.id} origin={area} choices={probabilityPlace.hospitals}
+          hospitals={context.hospitals} distanceOnly={scenario?.bedProjection?.arrivalSplitPolicy === 'markov_proximity'} />}
+      </div>}
       <h4>Projected cases</h4>
       <InspectorFacts rows={[
         ['Full selected window', format(selectedPeriod?.cumulativeCases)],
@@ -2198,6 +2401,7 @@ export default function QCSimulationWorkspace() {
             <BedUse forecast={stat?.bedForecast} day={day} occupancyPct={stat?.supportedOccupancyPct} />
             <section className="qs-inspector-section"><h4>Scenario capacity · day {day}</h4>
               <InspectorFacts rows={[
+                ['Additional beds needed today', format(stat?.bedForecast?.additionalStaffedBedsNeeded)],
                 ['Assumed normal capacity', format(stat?.normalCapacity)],
                 ['Activated surge capacity', format(stat?.activatedSurgeCapacity)],
                 ['Residual supported slots', format(stat?.remainingSupportedCapacity)],
@@ -2214,7 +2418,6 @@ export default function QCSimulationWorkspace() {
                 ['No-added-surge bed need', format(stat?.bedForecast?.baselineStaffedBedsRequired)],
                 ['Extra beds due to surge', format(stat?.bedForecast?.additionalStaffedBedsDueToSurge)],
                 ['Low–high case sensitivity', `${format(stat?.bedForecast?.lowerStaffedBedsRequired)}–${format(stat?.bedForecast?.upperStaffedBedsRequired)}`],
-                ['Local additional beds', format(stat?.bedForecast?.additionalStaffedBedsNeeded)],
                 ['Window peak staffing need', format(peak?.peakStaffedBedsRequired)],
                 ['Window peak extra from surge', format(peak?.additionalStaffedBedsDueToSurge)],
               ]} />
@@ -2230,10 +2433,11 @@ export default function QCSimulationWorkspace() {
           const stat = snapshot?.facilities.find(item => item.facilityId === row.facilityId);
           return <section key={row.facilityId} className="qs-inspector-section"><h4>{context?.hospitals.find(h => h.id === row.facilityId)?.name ?? row.facilityId}</h4>
             <InspectorFacts rows={[
-              ['Assumed arrival share', `${format(row.share * 100)}%`],
+              ['Assumed arrival share', `${formatFractional(row.share * 100)}%`],
               ['Expected admissions from this place', format(row.expectedAdmissions)],
               ['Peak staffed beds from this place', format(row.peakStaffedBedsRequired)],
               ['Extra beds from surge', format(row.additionalStaffedBedsDueToSurge)],
+              ['Hospital-wide beds short today', format(stat?.bedForecast?.additionalStaffedBedsNeeded)],
               ['Hospital-wide beds needed', format(stat?.bedForecast?.expectedBeds)],
               ['Assumed dengue slots', format(stat?.bedForecast?.assumedSupportedDengueCapacity)],
               ['Hospital-wide demand percentage', percent(stat?.bedForecast?.demandUtilizationPct)],
@@ -2253,14 +2457,14 @@ export default function QCSimulationWorkspace() {
           <div className="qs-map-stage">
             <OutbreakMap context={context} snapshot={snapshot ?? null} maximum={data?.mapScaleMaxDailyCases ?? 1}
               selected={selected} selectedHospital={hospital} hotspotIds={markerHotspotIds} rankedHotspotIds={rankedHotspotIds}
-              hospitalHotspot={hospitalHotspot} caseMetric={caseMetric} caseColorMaximum={caseColorMaximum}
+              probabilityPlace={probabilityPlace} distanceOnly={scenario?.bedProjection?.arrivalSplitPolicy === 'markov_proximity'} hospitalHotspot={hospitalHotspot} caseMetric={caseMetric} caseColorMaximum={caseColorMaximum}
               connectionFocus={hospital ? 'hospital' : showHotspotDetails ? 'barangay' : null} inspectionVersion={hospitalInspection}
               animationDurationMs={Math.min(650, 800 / speed)} onSelect={inspectHotspot} onHospital={inspectHospital}
               playing={playing} reducedMotion={reduced} showLinks={links} view={view} buildings3d={buildings3d}
-              showHospitals={showHospitals} onReady={setMapController} onStatus={setMapStatus} />
+              showHospitals={showHospitals} satellite={satellite} onReady={setMapController} onStatus={setMapStatus} />
             <div className="qs-topbar">
               <button ref={scenarioTrigger} type="button" className="text-button qs-scenario-trigger" data-map-overlay aria-label="Edit simulation scenario" aria-controls="qs-context-panel" aria-expanded={panelView === 'scenario'} onClick={() => panelView === 'scenario' ? closePanel() : openPanel('scenario')}>
-                <SlidersHorizontal size={17} aria-hidden="true" /><span><strong>{tab === 'historical' ? 'Historical replay' : 'Future surge forecast'}</strong><small>Quezon City · {Number.isFinite(selectedDays) ? `${selectedDays} days` : 'Choose dates'}</small></span><ChevronDown size={13} aria-hidden="true" />
+                <SlidersHorizontal size={17} aria-hidden="true" /><span><strong>{tab === 'historical' ? 'Historical replay' : 'Future forecast'}</strong><small>Quezon City · {Number.isFinite(selectedDays) ? `${selectedDays} days` : 'Choose dates'}</small></span><ChevronDown size={13} aria-hidden="true" />
               </button>
               <button type="button" className="text-button qs-results-trigger" data-map-overlay aria-label="Open simulation results" aria-controls="qs-context-panel" aria-expanded={panelView === 'results'} onClick={() => panelView === 'results' ? closePanel() : openPanel('results')}><ChartNoAxesCombined size={16} aria-hidden="true" /><span>Results</span></button>
             </div>
@@ -2279,6 +2483,10 @@ export default function QCSimulationWorkspace() {
               <button type="button" className="text-button qs-map-button qs-zoom" aria-label="Zoom in" disabled={mapControlsDisabled} onClick={() => mapController.current?.zoomIn()}><Plus size={18} /><span className="qs-control-tooltip">Zoom in</span></button>
               <button type="button" className="text-button qs-map-button qs-zoom" aria-label="Zoom out" disabled={mapControlsDisabled} onClick={() => mapController.current?.zoomOut()}><Minus size={18} /><span className="qs-control-tooltip">Zoom out</span></button>
             </div>
+            <button type="button" className="text-button qs-timeline-toggle" data-map-overlay aria-controls="qs-timeline" aria-expanded={!timelineHidden} aria-label={timelineHidden ? 'Show timeline and playback' : 'Hide timeline and playback'} onClick={() => setTimelineHidden(v => !v)}>
+              {timelineHidden ? <><ChevronUp size={15} aria-hidden="true" /><span>Show timeline</span><small>Day {day} / {data?.durationDays ?? '—'}{playing ? ' · Playing' : ''}</small></> : <ChevronDown size={15} aria-hidden="true" />}
+              {!timelineHidden && <span className="qs-control-tooltip">Hide timeline</span>}
+            </button>
             <details className="qs-map-key" data-map-overlay><summary><span className="qs-rank-swatch">1</span> Map key <ChevronDown size={12} aria-hidden="true" /></summary><div className="qc-map-legend qs-map-key-content">
                 <strong>
                   {scenario
@@ -2323,12 +2531,12 @@ export default function QCSimulationWorkspace() {
                   <span><i className="qc-selected-barangay" aria-hidden="true" />Selected barangay boundary</span>
                 </div>
                 <div className="qc-line-key">
-                  {[SIMULATION_LINES.proximity,
-                    ...(scenario ? [SIMULATION_LINES.placement, SIMULATION_LINES.holding] : []),
-                    SIMULATION_LINES['hospital-context'],
+                  {[...(probabilityPlace ? [SIMULATION_LINES.probability] : [SIMULATION_LINES.proximity,
+                    ...(scenario ? [context?.firstAdmissionOriginShares ? { ...SIMULATION_LINES.placement, label: 'Up to three largest placement flows per selection' } : SIMULATION_LINES.placement, SIMULATION_LINES.holding] : []),
+                    SIMULATION_LINES['hospital-context']]),
                     ...(snapshot?.expansionRing?.length ? [SIMULATION_LINES.front] : []),
                   ].map(line => <span key={line.kind} data-line-kind={line.kind}><i aria-hidden="true" style={{ borderTop: `${line.width}px ${line.dash.length ? 'dashed' : 'solid'} ${line.color}` }} />{line.label}</span>)}
-                  <small>Click a marker to reveal its links. All hospital connections in Layers adds overview lines. Chevrons point from barangays toward hospitals.</small>
+                  <small>Click a marker to reveal its links. Chevrons point from barangays toward hospitals.</small>
                   {!scenario && <small>Modeled placement lines appear only after advancing to a day with saved placements.</small>}
                 </div>
                 <details className="qc-legend-more">
@@ -2364,7 +2572,7 @@ export default function QCSimulationWorkspace() {
                 </details>
               </div></details>
           </div>
-          <section className="qs-timeline" role="group" aria-label="Simulation timeline and playback">
+          <section id="qs-timeline" className="qs-timeline" role="group" aria-label="Simulation timeline and playback" hidden={timelineHidden}>
             <div className="qs-timeline-heading"><span className="qs-research-status">Research scenario · Assumed capacity</span><button ref={guideTrigger} type="button" className="text-button qs-help" aria-label="How to use this page" aria-expanded={showGuide} onClick={openGuide}><CircleHelp size={15} />Help</button></div>
             <div className="qs-transport">
               <button type="button" className="text-button qs-play" aria-label={playing ? 'Pause simulation' : 'Play simulation'} disabled={!data} onClick={() => { if (data && day === data.durationDays) setDay(0); setPlaying(v => !v); }}>{playing ? <Pause size={17} /> : <Play size={17} />}{playing ? 'Pause' : 'Play'}</button>
@@ -2383,21 +2591,23 @@ export default function QCSimulationWorkspace() {
             </div>
             <div className="qs-live-totals" aria-label="Selected-day summary">
               <div><span>Projected cases so far</span><strong>{format(snapshot?.cumulativeCases)}</strong><small>{snapshot?.caseRange ? `Experimental range ${range(snapshot.caseRange)}` : `Cases · accumulated to day ${day}`}</small></div>
-              <div><span>Beds needed now</span><strong>{format(snapshot?.bedForecast?.staffedBedsRequired)}</strong><small>Staffed beds required · assumed admissions</small></div>
-              <div><span>Unplaced demand to date</span><strong>{format(snapshot?.cumulativeUnresolved)}</strong><small>Expected patients · cumulative</small></div>
+              <div><span>Total beds needed</span><strong>{format(staffedBeds)}</strong><small>{firstHospital ? 'Dengue demand, rounded up at each hospital' : 'Staffed beds required · assumed admissions'}</small></div>
+              {firstHospital
+                ? <div><span>Additional beds needed</span><strong>{format(snapshot?.bedForecast?.hospitalBedsShort)}</strong><small>{snapshot?.bedForecast?.hospitalBedsShort === 0 ? 'Assumed capacity covers demand at every hospital' : 'Shortfall after counting each hospital’s assumed capacity'}</small></div>
+                : <div><span>Unplaced demand to date</span><strong>{format(snapshot?.cumulativeUnresolved)}</strong><small>Expected patients · cumulative</small></div>}
               <button type="button" className="text-button qs-more-results" onClick={() => openDetail('overview')}>View results <ChevronRight size={14} /></button>
             </div>
             {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Numbered markers show annual burden rank; cross pins are hospitals.</p>}
           </section>
         </section>
         <aside id="qs-context-panel" className="qs-context-panel" hidden={!panelView} aria-labelledby="qs-panel-title" data-reduced-motion={reduced}>
-          <div className="qs-panel-header"><div><span>SurgeWise / Simulation</span><h2 ref={panelHeading} tabIndex={-1} id="qs-panel-title">{panelView ? panelTitles[panelView] : 'Simulation'}</h2></div><div>
+          <div className="qs-panel-header"><div>{panelView !== 'scenario' && <span>SurgeWise / Simulation</span>}<h2 ref={panelHeading} tabIndex={-1} id="qs-panel-title">{panelView ? panelTitles[panelView] : 'Simulation'}</h2></div><div>
             {panelView === 'results' && <button type="button" className="text-button qs-panel-icon" aria-label={wideResults ? 'Narrow results panel' : 'Expand results panel'} aria-pressed={wideResults} onClick={() => setWideResults(v => !v)}>{wideResults ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>}
             <button type="button" className="text-button qs-panel-icon" aria-label="Close simulation panel" onClick={closePanel}><X size={18} /></button></div></div>
           <div className="qs-panel-body" hidden={panelView !== 'scenario'} aria-label="Simulation controls">{settings}</div>
           <div className="qs-panel-body qs-results-body" hidden={panelView !== 'results'} aria-label="Simulation results">
             <div className="qs-result-tools"><WorkspaceSelect label="Result view" value={activeDetail} options={detailTabs.map(item => ({ value: item.id, label: item.label }))} onChange={value => setDetailTab(value as DetailTab)} /><button type="button" className="text-button qs-export" disabled={!scenario} onClick={download} aria-label="Export simulation results"><Download size={15} />Export</button></div>
-            <div className="qs-analysis-scroll">{overview}{activeDetail === 'overview' && <div className="qs-result-actions"><button type="button" className="text-button" disabled={!controls || loading} onClick={compareAllocations}>Compare allocation policies <ArrowLeft size={13} /></button><button type="button" className="text-button" onClick={() => openDetail('city-beds')}>Explore daily bed demand <ChevronRight size={13} /></button></div>}
+            <div className="qs-analysis-scroll">{overview}{activeDetail === 'overview' && <div className="qs-result-actions"><button type="button" className="text-button" disabled={!controls || loading} onClick={compareAllocations}>{firstHospital ? 'Compare hospital-choice assumptions' : 'Compare allocation policies'} <ArrowLeft size={13} /></button><button type="button" className="text-button" onClick={() => openDetail('city-beds')}>Explore daily bed demand <ChevronRight size={13} /></button></div>}
               {activeDetail === 'overview' && <div className="qc-playback-panel">
               <div className="qc-chart-heading">
                 <strong>
@@ -2538,9 +2748,10 @@ export default function QCSimulationWorkspace() {
             <label className="qs-field-label">Color barangays by<WorkspaceSelect label="Map case measure" value={caseMetric} onChange={value => setCaseMetric(value as 'daily' | 'cumulative')} options={[{value:'cumulative',label:'Accumulated projected cases'},{value:'daily',label:'Daily projected cases'}]} /></label>
             <label className="qs-layer"><span><MapPin size={17} /><span>Hospital pins<small>PhilHealth inventory · provisional points</small></span></span><input type="checkbox" checked={showHospitals} onChange={event => setShowHospitals(event.target.checked)} /></label>
             <label className="qs-layer"><span><Layers size={17} /><span>3D view<small>Generalized buildings where mapped</small></span></span><input type="checkbox" checked={buildings3d} onChange={event => setBuildings3d(event.target.checked)} /></label>
-            <label className="qs-layer"><span><Activity size={17} /><span>All hospital connections<small>Show beyond the selected place or hospital</small></span></span><input type="checkbox" checked={links} onChange={event => setLinks(event.target.checked)} /></label>
+            <label className="qs-layer"><span><Satellite size={17} /><span>Satellite imagery<small>Esri World Imagery · capture dates vary</small></span></span><input type="checkbox" checked={satellite} onChange={event => setSatellite(event.target.checked)} /></label>
+            <label className="qs-layer"><span><Activity size={17} /><span>Overview connections<small>Nearby hospitals and daily placements across ranked barangays</small></span></span><input type="checkbox" checked={links} onChange={event => setLinks(event.target.checked)} /></label>
             <label className="qs-layer"><span><Pause size={17} /><span>Reduced motion<small>Static colors and manual playback</small></span></span><input type="checkbox" checked={reduced} onChange={event => { setReduced(event.target.checked); if(event.target.checked) setPlaying(false); }} /></label>
-            <p className="qs-layer-note">Colors show projected case counts, not official outbreak thresholds. Uncolored barangays may still have cases. Building geometry and hospital entrances are unverified context.</p>
+            <p className="qs-layer-note">Colors show projected case counts, not official outbreak thresholds. Uncolored barangays may still have cases. Building geometry and hospital entrances are unverified context. Satellite imagery is dated background, not current conditions.</p>
             <details className="qs-national-context" onToggle={event => setLocatorOpen(event.currentTarget.open)}><summary>Philippines locator</summary>{locatorOpen && <PhilippinesOverview />}</details>
             <button type="button" className="text-button qs-source-link" onClick={() => openDetail('methods')}>Run assumptions & sources <ChevronRight size={14} /></button>
           </div>

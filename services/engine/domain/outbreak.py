@@ -12,7 +12,7 @@ from .bed_forecast import add_bed_forecasts
 from .hospital_demand import hospital_shares
 from .source_calendar import align_historical_run
 
-VERSION = "dated-calendar-surge-capacity-v3"
+VERSION = "qc-first-admission-bed-allocation-v4"
 
 
 def expansion_ring(center, radius_km):
@@ -142,7 +142,7 @@ def allocated_forecast_trajectory(run, context, config, duration):
     return days
 
 
-def build_movie(run, context, config):
+def build_movie(run, context, config, first_admission_shares=None):
     duration = (config["endDate"] - config["startDate"]).days
     if config.get("autoHotspots") and not run.get("dailyPredictions"):
         run = align_historical_run(run, config["startDate"], duration)
@@ -152,16 +152,32 @@ def build_movie(run, context, config):
     hospital_map = {h["id"]: h for h in context["hospitals"]}
     eligible = {f["facilityId"] for f in config["facilities"]}
     barangay_map = {b["id"]: b for b in context["barangays"]}
-    orders = {b["id"]: sorted(eligible, key=lambda h: (distance_km(b["coordinates"], hospital_map[h]["coordinates"]), h))
-              for b in context["barangays"]}
     split_policy = config.get("arrivalSplitPolicy", "nearest")
-    groups = [[{"originId": b["barangayId"], "cases": b["expectedCases"] * share,
-                "facilityOrder": [ident, *[h for h in orders[b["barangayId"]] if h != ident]]}
-               for b in d["barangays"] for ident, share in hospital_shares(orders[b["barangayId"]], split_policy)] for d in days]
-    if config.get("allocationPolicy") == "optimized":
-        # Equal-choice subgroups share the same origin/costs. Aggregate them for
-        # the capacity LP; this is mathematically equivalent and avoids tripling
-        # the problem size. Choice shares still define unconstrained bed demand.
+    policy = config.get("allocationPolicy", "nearest")
+    if policy == "first_hospital":
+        if first_admission_shares is None or not config.get("autoHotspots"):
+            raise ValueError("First-hospital placement needs validated QC choices and fixed barangay forecast weights")
+        shares = first_admission_shares
+        # Automatic QC forecasts use the same origin weights on every date. Aggregate
+        # first destinations before applying capacity, sharing placement proportionally
+        # among origins at a hospital. No barangay gets priority from CSV row order.
+        contribution = {h: {} for h in eligible}
+        for origin, options in shares.items():
+            for h, probability in options:
+                contribution[h][origin] = barangay_map[origin]["weight"] * probability
+        fractions = {h: math.fsum(parts.values()) for h, parts in contribution.items()}
+        groups = [[{"originId": None, "cases": d["expectedCases"] * fractions[h], "facilityOrder": [h]}
+                   for h in sorted(eligible)] for d in days]
+        origin_mix = {h: {b: w / fractions[h] for b, w in parts.items() if w > 0} for h, parts in contribution.items()}
+        context = {**context, "firstAdmissionOriginShares": origin_mix}
+    else:
+        orders = {b["id"]: sorted(eligible, key=lambda h: (distance_km(b["coordinates"], hospital_map[h]["coordinates"]), h))
+                  for b in context["barangays"]}
+        shares = {b: hospital_shares(order, split_policy) for b, order in orders.items()}
+        groups = [[{"originId": b["barangayId"], "cases": b["expectedCases"] * share,
+                    "facilityOrder": [ident, *[h for h in orders[b["barangayId"]] if h != ident]]}
+                   for b in d["barangays"] for ident, share in shares[b["barangayId"]]] for d in days]
+    if policy == "optimized":
         groups = [[{"originId": b["barangayId"], "cases": b["expectedCases"], "facilityOrder": orders[b["barangayId"]]}
                    for b in d["barangays"]] for d in days]
         for groups_for_day in groups:
@@ -236,8 +252,9 @@ def build_movie(run, context, config):
         d["assignments"] = list(merged_routes.values())
         for route in d["assignments"]:
             route["distanceKm"] = distance_km(barangay_map[route["barangayId"]]["coordinates"], hospital_map[route["facilityId"]]["coordinates"])
-    bed_projection = add_bed_forecasts(flow[:duration + 1], days, run, context, config, orders)
-    return {"days": flow[:duration + 1], "context": context, "durationDays": duration, "bedProjection": bed_projection,
+    bed_projection = add_bed_forecasts(flow[:duration + 1], days, run, context, config, shares)
+    return {"assignmentEncoding": "hospital_totals_with_origin_shares" if first_admission_shares is not None else "origin_hospital_routes",
+        "days": flow[:duration + 1], "context": context, "durationDays": duration, "bedProjection": bed_projection,
         "progressionMethod": ("dated_QC_forecast_allocated_by_xgboost_annual_burden_shares" if context.get("hotspotRanking") else "dated_QC_forecast_allocated_by_prior_annual_barangay_shares") if config.get("autoHotspots") else "explicit_hypothetical_radial_shock",
         "mapScaleMaxDailyCases": max(b["expectedCases"] for d in days[:duration] for b in d["barangays"]),
         "measurementKind": "modeled_allocation", "capacityMeasurementKind": "assumption",

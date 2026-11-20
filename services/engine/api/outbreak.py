@@ -14,7 +14,8 @@ from pydantic import Field, model_validator
 
 from .research import StrictModel, FacilityAssumption, forecast, annual_data, unavailable
 from ..domain import outbreak, patient_flow, spatial, optimizer, bed_forecast, hospital_demand, barangay_forecast, source_calendar, seasonal_forecast
-from ..repositories import seasonal_runs
+from ..repositories import seasonal_runs, first_admission
+from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
 from ..domain.outbreak import make_context, build_movie, VERSION
 from ..repositories.facility import load_facilities, DATASET_ID, HOSPITAL_SHA256
 from ..repositories.forecast_runs import FOLDER, load_runs, load_environmental_runs
@@ -22,7 +23,7 @@ from ..upri_data import ROOT, sha256
 from ..repositories.barangay_runs import BarangayRankingUnavailable
 
 router = APIRouter(prefix="/v1")
-_CODE_MODULES = [("outbreak", outbreak), ("patient_flow", patient_flow), ("spatial", spatial),
+_CODE_MODULES = [("first_admission", first_admission), ("outbreak", outbreak), ("patient_flow", patient_flow), ("spatial", spatial),
     ("optimizer", optimizer), ("bed_forecast", bed_forecast), ("hospital_demand", hospital_demand),
     ("barangay_forecast", barangay_forecast), ("source_calendar", source_calendar),
     ("seasonal_forecast", seasonal_forecast), ("seasonal_runs", seasonal_runs)]
@@ -56,8 +57,8 @@ class OutbreakInput(StrictModel):
     forecastRunId: str = Field(min_length=1, max_length=120)
     scenarioKind: Literal["hypothetical_shock", "historical_replay"]
     autoHotspots: bool = False
-    allocationPolicy: Literal["nearest", "optimized"] = "nearest"
-    arrivalSplitPolicy: Literal["nearest", "nearest_three_equal"] = "nearest"
+    allocationPolicy: AllocationPolicy = "nearest"
+    arrivalSplitPolicy: ArrivalPolicy = "nearest"
     surgeEnabled: bool = False
     surgeOnsetDay: int = Field(default=0, strict=True, ge=0, le=27)
     surgeMultiplier: float = Field(default=1, ge=1, le=10)
@@ -88,6 +89,10 @@ class OutbreakInput(StrictModel):
             raise ValueError("Historical reference mode cannot contain a hypothetical added shock.")
         if self.surgeEnabled and self.surgeOnsetDay >= (self.endDate - self.startDate).days:
             raise ValueError("Surge onset must be within the selected future window.")
+        if (self.arrivalSplitPolicy in MATRICES) != (self.allocationPolicy == "first_hospital"):
+            raise ValueError("Markov destination choice requires first-hospital placement.")
+        if self.allocationPolicy == "first_hospital" and (not self.autoHotspots or len(self.facilities) != 46):
+            raise ValueError("First-admission chains require the full 46-site QC barangay forecast.")
         return self
 
 
@@ -121,6 +126,14 @@ def context(ident: str):
         raise unavailable() from None
 
 
+def approved_matrix(policy, geo, ids, manifest):
+    try:
+        return first_admission.load_matrix(policy, geo["barangays"], ids, manifest["outputs"][first_admission.GEOMETRY_PATH])
+    except (OSError, ValueError) as error:
+        raise HTTPException(503, detail={"code": "FIRST_ADMISSION_MATRIX_UNAVAILABLE",
+            "message": "The QC first-admission matrix is missing or failed validation. Restore the approved probability table."}) from error
+
+
 @router.post("/outbreak-scenarios")
 def create_movie(params: OutbreakInput):
     try:
@@ -151,6 +164,15 @@ def create_movie(params: OutbreakInput):
             "spatialForecastSha256": geo["hotspotRanking"]["artifactSha256"] if geo.get("hotspotRanking") else None,
             "referenceSourceSha256": run["sourceSha256"], "sourceHashes": manifest["outputs"],
             "codeHashes": dict(_LOADED_CODE_HASHES)}
+        shares = proximity_shares = None
+        if params.arrivalSplitPolicy in MATRICES:
+            shares, favorites = approved_matrix(params.arrivalSplitPolicy, geo, ids, manifest)
+            proximity_shares = shares if params.arrivalSplitPolicy == "markov_proximity" else approved_matrix(
+                "markov_proximity", geo, ids, manifest)[0]
+            identity["firstAdmissionProximitySha256"] = MATRICES["markov_proximity"][1]
+            geo["barangays"] = [{**b, "mappedFavoriteHospitalId": favorites[b["id"]]} for b in geo["barangays"]]
+            identity["firstAdmissionPreferenceSha256"] = first_admission.PREFERENCE_HASH
+            identity["firstAdmissionMatrixSha256"] = MATRICES[params.arrivalSplitPolicy][1]
         ident = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         folder = FOLDER / "scenarios/movies"
         target = folder / (ident + ".json")
@@ -158,10 +180,12 @@ def create_movie(params: OutbreakInput):
             return saved_movie(ident)
         config = params.model_dump()
         config["facilities"] = sorted(config["facilities"], key=lambda f: f["facilityId"])
-        result = {"schemaVersion": "1.0", "scenarioId": ident, **identity, **build_movie(run, geo, config),
+        result = {"schemaVersion": "1.1" if shares else "1.0", "scenarioId": ident, **identity, **build_movie(run, geo, config, shares),
             "runTimestamp": datetime.now(timezone.utc).isoformat(), "seed": None,
             "randomness": "Deterministic expected values; no stochastic draws", "geography": "QUEZON_CITY",
             "units": {"cases": "expected reported cases per daily interval", "patients": "expected patients", "distance": "km straight line"}}
+        if proximity_shares is not None:
+            first_admission.add_choice_breakdowns(result["bedProjection"]["placePeaks"], geo, proximity_shares, params.arrivalSplitPolicy)
         result["resultSha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, allow_nan=False).encode()).hexdigest()
         folder.mkdir(parents=True, exist_ok=True)
         temp = folder / (uuid4().hex + ".tmp")
@@ -203,6 +227,17 @@ def saved_movie(ident: str):
                 raise ValueError("Seasonal model/forecast version changed")
         # Revalidate all canonical inputs, including polygon and annual table hashes.
         _, current_context, manifest = inputs(result["parameters"]["forecastRunId"], date.fromisoformat(result["parameters"]["startDate"]).year, result["parameters"].get("autoHotspots", False))
+        policy = result["parameters"].get("arrivalSplitPolicy")
+        if policy in MATRICES:
+            approved_matrix(policy, current_context, [h["id"] for h in current_context["hospitals"]], manifest)
+            if "firstAdmissionProximitySha256" in result:
+                if policy != "markov_proximity":
+                    approved_matrix("markov_proximity", current_context, [h["id"] for h in current_context["hospitals"]], manifest)
+                if result["firstAdmissionProximitySha256"] != MATRICES["markov_proximity"][1]:
+                    raise ValueError("Saved distance-only matrix version mismatch")
+            if (result.get("firstAdmissionMatrixSha256") != MATRICES[policy][1]
+                    or result.get("firstAdmissionPreferenceSha256") != first_admission.PREFERENCE_HASH):
+                raise ValueError("Saved first-admission matrix version mismatch")
         if result.get("spatialForecastSha256") != (current_context["hotspotRanking"]["artifactSha256"] if current_context.get("hotspotRanking") else None):
             raise ValueError("Saved spatial model version mismatch")
         if result["sourceHashes"] != manifest["outputs"] or result["scenarioId"] != ident:

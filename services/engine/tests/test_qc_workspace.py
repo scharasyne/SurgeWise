@@ -162,7 +162,8 @@ def test_qc_api_bounds_automatic_location_and_fair_comparison(result):
         {"endDate": controls["startDate"]}, {"growthDays": 0}, {"holdingCapacity": -1}]:
         response = client.post("/v1/qc-simulation", json={**controls, **patch})
         assert response.status_code == 422, response.text
-    response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "compareAllocation": True})
+    response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "allocationPolicy": "nearest",
+        "arrivalSplitPolicy": "nearest_three_equal", "compareAllocation": True})
     assert response.status_code == 200, response.text
     data = response.json()
     assert len(data["days"]) == 8

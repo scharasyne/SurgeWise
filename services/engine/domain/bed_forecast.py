@@ -1,6 +1,5 @@
 """Case-to-admission/LOS bed demand, separate from staffed placements and vacancies."""
 import math
-from .hospital_demand import hospital_shares
 
 
 def needed(value):
@@ -18,7 +17,7 @@ def rolling_bed_demand(arrivals, los):
     return [sum(arrivals[max(0, d - los + 1):d + 1]) for d in range(len(arrivals))]
 
 
-def add_bed_forecasts(flow, case_days, run, context, config, orders):
+def add_bed_forecasts(flow, case_days, run, context, config, shares):
     """Unconstrained need before capacity rejection; ranges condition on q/LOS/catchment."""
     q, delay, los = config["hospitalizationRate"], config["admissionDelayDays"], config["lengthOfStayDays"]
     n = len(flow)
@@ -30,7 +29,6 @@ def add_bed_forecasts(flow, case_days, run, context, config, orders):
     low_by_hospital = {f["facilityId"]: [0.0] for f in config["facilities"]}
     high_by_hospital = {f["facilityId"]: [0.0] for f in config["facilities"]}
     baseline_by_hospital = {f["facilityId"]: [0.0] for f in config["facilities"]}
-    shares = {b["id"]: hospital_shares(orders[b["id"]], config.get("arrivalSplitPolicy", "nearest")) for b in context["barangays"]}
     for i, d in enumerate(case_days[:n - 1]):
         if run.get("dailyPredictions"):
             baseline = run["dailyPredictions"][i]
@@ -77,21 +75,45 @@ def add_bed_forecasts(flow, case_days, run, context, config, orders):
             "additionalBedsUpperScenario": needed(max(0, high - capacity)) if bounds_available else None,
             "measurementKind": "modeled_allocation",
             "rangeKind": "Case-range sensitivity with fixed admission fraction, delay, LOS and capacity; not validated bed-occupancy intervals."}
+    # Per-hospital non-dengue share when imported allotments supply one, else the scenario-wide share.
+    non_dengue_shares = {f["facilityId"]: config["baselineOccupancy"] if f.get("baselineOccupancy") is None else f["baselineOccupancy"]
+                         for f in config["facilities"]}
     for day in flow:
         i = day["dayIndex"]
-        capacity = sum(f["normalCapacity"] * (1 - config["baselineOccupancy"]) + f["activatedSurgeCapacity"] for f in day["facilities"])
+        capacity = sum(f["normalCapacity"] * (1 - non_dengue_shares[f["facilityId"]]) + f["activatedSurgeCapacity"] for f in day["facilities"])
         day["bedForecast"] = prediction(central[i], lo_curve[i], hi_curve[i], capacity)
         day["bedForecast"].update({"baselineExpectedBeds": baseline_network[i],
             "baselineStaffedBedsRequired": needed(baseline_network[i]),
             "additionalStaffedBedsDueToSurge": surge_staffing(central[i], baseline_network[i])})
         for facility in day["facilities"]:
             central_hospital, low_hospital, high_hospital = hospital_curves[facility["facilityId"]]
-            supported = facility["normalCapacity"] * (1 - config["baselineOccupancy"]) + facility["activatedSurgeCapacity"]
+            supported = facility["normalCapacity"] * (1 - non_dengue_shares[facility["facilityId"]]) + facility["activatedSurgeCapacity"]
             facility["bedForecast"] = prediction(central_hospital[i], low_hospital[i], high_hospital[i], supported)
             facility["bedForecast"].update({"baselineExpectedBeds": baseline_curves[facility["facilityId"]][i],
                 "baselineStaffedBedsRequired": needed(baseline_curves[facility["facilityId"]][i]),
                 "additionalStaffedBedsDueToSurge": surge_staffing(central_hospital[i], baseline_curves[facility["facilityId"]][i]),
-                "catchmentMethod": config.get("arrivalSplitPolicy", "nearest") + "; assumed choice shares before diversions, not observed admissions."})
+                "catchmentMethod": config.get("arrivalSplitPolicy", "nearest") + " (assumed first-destination shares)"})
+        forecasts = [f["bedForecast"] for f in day["facilities"]]
+        day["bedForecast"]["hospitalBedsRequired"] = sum(f["staffedBedsRequired"] for f in forecasts)
+        day["bedForecast"]["hospitalBedsShort"] = sum(f["additionalStaffedBedsNeeded"] for f in forecasts)
+        day["bedForecast"]["hospitalsShort"] = sum(f["additionalStaffedBedsNeeded"] > 0 for f in forecasts)
+        if "firstAdmissionOriginShares" in context:
+            network = day["bedForecast"]
+            network["pooledAdditionalStaffedBedsNeeded"] = network["additionalStaffedBedsNeeded"]
+            network["additionalStaffedBedsNeeded"] = network["hospitalBedsShort"]
+            network["additionalBedsUpperScenario"] = sum(f["additionalBedsUpperScenario"] for f in forecasts) if bounds_available else None
+            # Attribute fractional bed demand before rounding. A whole staffed bed is
+            # counted at the hospital only, even when several barangays contribute.
+            by_origin = {b: 0.0 for b in by_id}
+            for f in day["facilities"]:
+                h, forecast = f["facilityId"], f["bedForecast"]
+                gap = max(0, forecast["expectedBeds"] - forecast["assumedSupportedDengueCapacity"])
+                if gap:
+                    for origin, fraction in context["firstAdmissionOriginShares"][h].items():
+                        by_origin[origin] += gap * fraction
+            for b in day["barangays"]:
+                b["expectedBedsShort"] = by_origin[b["barangayId"]]
+    shortage_peak = max(flow, key=lambda d: d["bedForecast"]["hospitalBedsShort"])
     peak = max(flow, key=lambda d: (d["bedForecast"]["staffedBedsRequired"], -d["dayIndex"]))
     place_peaks = []
     for b in context["barangays"]:
@@ -106,6 +128,8 @@ def add_bed_forecasts(flow, case_days, run, context, config, orders):
              "additionalStaffedBedsDueToSurge": max(surge_staffing(value * share, baseline * share) for value, baseline in zip(curve, base_curve))}
             for ident, share in shares[b["id"]]]})
     return {"peakDate": peak["date"], "peakDayIndex": peak["dayIndex"], **peak["bedForecast"],
+        "peakHospitalBedsShort": shortage_peak["bedForecast"]["hospitalBedsShort"],
+        "peakHospitalShortageDate": shortage_peak["date"] if shortage_peak["bedForecast"]["hospitalBedsShort"] else None,
         "baselinePeakStaffedBedsRequired": needed(max(baseline_network)),
         "peakAdditionalStaffedBedsDueToSurge": max(d["bedForecast"]["additionalStaffedBedsDueToSurge"] for d in flow),
         "peakDemandUtilizationPct": max((d["bedForecast"]["demandUtilizationPct"] for d in flow if d["bedForecast"]["demandUtilizationPct"] is not None), default=None),

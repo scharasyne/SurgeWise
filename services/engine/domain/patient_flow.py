@@ -6,6 +6,12 @@ clinical eligibility is inferred from accreditation or specialty.
 import math
 
 
+def non_dengue_share(facility, occupancy):
+    """Per-hospital non-dengue share when the scenario supplies one, else the scenario-wide share."""
+    share = facility.get("baselineOccupancy")
+    return occupancy if share is None else share
+
+
 def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, activation_day=0, daily_groups=None, assignment_method="nearest"):
     if len(weekly) != 4 or any(not math.isfinite(v) or v < 0 for v in weekly):
         raise ValueError("Four finite nonnegative QC forecast blocks required")
@@ -14,6 +20,11 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
     for f in facilities:
         if any(type(f[k]) is not int or f[k] < 0 for k in ["normalCapacity", "surgeCapacity", "holdingCapacity"]) or f["normalCapacity"] == 0:
             raise ValueError("Explicit finite positive normal capacity required")
+        if type(f.get("surgeNonDengueCapacity", 0)) is not int or f.get("surgeNonDengueCapacity", 0) < 0:
+            raise ValueError("Invalid extra non-dengue beds")
+        share = f.get("baselineOccupancy")
+        if share is not None and (not isinstance(share, (int, float)) or not math.isfinite(share) or not 0 <= share <= 1):
+            raise ValueError("Invalid per-hospital non-dengue share")
     ids = {f["facilityId"] for f in facilities}
     if len(ids) != len(facilities):
         raise ValueError("Duplicate facility IDs")
@@ -22,9 +33,12 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             raise ValueError("Exactly 28 daily group arrays required")
         for groups in daily_groups:
             for group in groups:
-                if not math.isfinite(group["cases"]) or group["cases"] < 0 or set(group["facilityOrder"]) != ids or len(group["facilityOrder"]) != len(ids):
+                order = group["facilityOrder"]
+                valid_order = (len(order) == 1 and order[0] in ids if assignment_method == "first_hospital"
+                               else set(order) == ids and len(order) == len(ids))
+                if not math.isfinite(group["cases"]) or group["cases"] < 0 or not valid_order:
                     raise ValueError("Invalid spatial demand or hospital ordering")
-    if assignment_method not in {"nearest", "optimized"} or (assignment_method == "optimized" and daily_groups is None):
+    if assignment_method not in {"nearest", "optimized", "first_hospital"} or (assignment_method != "nearest" and daily_groups is None):
         raise ValueError("Invalid assignment method or missing spatial costs")
     states = [{"config": f, "cohorts": [], "holding": 0.0} for f in facilities]
     arrivals_total = discharged_total = unmet_total = 0.0
@@ -42,13 +56,15 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             s["cohorts"] = [(exit_day, count) for exit_day, count in s["cohorts"] if exit_day > day]
             f = s["config"]
             extra = f["surgeCapacity"] if day >= activation_day else 0
-            residual = f["normalCapacity"] * (1 - occupancy) + extra - sum(c for _, c in s["cohorts"])
+            residual = f["normalCapacity"] * (1 - non_dengue_share(f, occupancy)) + extra - sum(c for _, c in s["cohorts"])
             promote = min(s["holding"], max(0, residual))
             s["holding"] -= promote
             if promote:
                 s["cohorts"].append((day + los, promote))
         remaining, assignments = 0.0, []
         by_id = {s["config"]["facilityId"]: s for s in states}
+        local = {ident: {"firstAdmissionsToday": 0.0, "supportedPlacementsToday": 0.0,
+                         "holdingPlacementsToday": 0.0, "unplacedToday": 0.0} for ident in ids} if assignment_method == "first_hospital" else {}
         plans = None
         if assignment_method == "optimized" and groups:
             from .optimizer import daily_plan
@@ -64,7 +80,7 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
                 s = by_id[ident]
                 f = s["config"]
                 extra = f["surgeCapacity"] if day >= activation_day else 0
-                residual = f["normalCapacity"] * (1 - occupancy) + extra - sum(c for _, c in s["cohorts"])
+                residual = f["normalCapacity"] * (1 - non_dengue_share(f, occupancy)) + extra - sum(c for _, c in s["cohorts"])
                 proposed = plans[group_index]["supported"][ident] if plans is not None else pending
                 placed = min(pending, max(0, residual), proposed)
                 if placed:
@@ -82,20 +98,32 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
                 if held:
                     routes.setdefault(ident, {"supportedPlacements": 0.0, "holdingPlacements": 0.0})["holdingPlacements"] += held
             remaining += pending
+            if local:
+                ident = group["facilityOrder"][0]
+                placed_here = routes.get(ident, {})
+                local[ident]["firstAdmissionsToday"] += group["cases"] * admission_rate
+                local[ident]["supportedPlacementsToday"] += placed_here.get("supportedPlacements", 0.0)
+                local[ident]["holdingPlacementsToday"] += placed_here.get("holdingPlacements", 0.0)
+                local[ident]["unplacedToday"] += pending
+                continue
             assignments.extend({"barangayId": group["originId"], "facilityId": ident, **counts} for ident, counts in routes.items())
         snapshots = []
         for s in states:
             f = s["config"]
             n, surge = f["normalCapacity"], f["surgeCapacity"] if day >= activation_day else 0
+            # Extra non-dengue beds are assumed full of other patients: they add capacity but no dengue room.
+            extra_other = f.get("surgeNonDengueCapacity", 0) if day >= activation_day else 0
+            share = non_dengue_share(f, occupancy)
             census = sum(c for _, c in s["cohorts"])
-            total = n * occupancy + census
-            snapshots.append({"facilityId": f["facilityId"], "normalCapacity": n, "activatedSurgeCapacity": surge,
-                "supportedCapacity": n + surge, "remainingSupportedCapacity": max(0, n + surge - total),
-                "assumedNonDengueCensus": n * occupancy,
-                "normalDengueCensus": min(census, n * (1 - occupancy)),
-                "surgeDengueCensus": max(0, census - n * (1 - occupancy)), "supportedCensus": census,
+            total = n * share + census
+            snapshots.append({**local.get(f["facilityId"], {}), "facilityId": f["facilityId"], "normalCapacity": n, "activatedSurgeCapacity": surge,
+                "supportedCapacity": n + surge + extra_other, "remainingSupportedCapacity": max(0, n + surge - total),
+                "activatedNonDengueSurgeCapacity": extra_other,
+                "assumedNonDengueCensus": n * share + extra_other,
+                "normalDengueCensus": min(census, n * (1 - share)),
+                "surgeDengueCensus": max(0, census - n * (1 - share)), "supportedCensus": census,
                 "holdingCensus": s["holding"], "normalOccupancyPct": 100 * total / n,
-                "supportedOccupancyPct": 100 * total / (n + surge),
+                "supportedOccupancyPct": 100 * (total + extra_other) / (n + surge + extra_other),
                 "onSiteRelativeToNormalPct": 100 * (total + s["holding"]) / n})
         arrivals_total += arrivals
         discharged_total += discharged

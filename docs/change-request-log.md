@@ -1,5 +1,119 @@
 # User-requested extensions
 
+## 2026-11-20 20:49 +08:00 — Explain Markov bed allocation on Research
+
+Add a QC allocation walkthrough between Barangay burden and Hospital capacity replay. Readers can select any barangay, compare its two saved first-admission probability rows, inspect the equations and follow an illustrative stay through to a staffed-bed shortfall. [Research allocation explorer](first-admission-matrix.md#research-page)
+
+## 2026-11-19 23:11 +08:00 — Inspect first-hospital probabilities on the map
+
+Add an optional view for the selected barangay showing all 46 destinations, including smaller probabilities. Hover, tap or keyboard focus shows the distance-only probability, straight-line distance, preference weight and final modeled share. [Using the map](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)
+
+## 2026-11-20 +08:00 — Bed capacity tab refinements
+
+Follow-up requests on the same branch:
+- Removed the "Default beds per hospital" inputs and the "Default extra capacity"
+  section; kept the bed totals box (now "Bed totals"). The scenario-wide defaults
+  still apply to hospitals without their own values but are not edited here.
+- The hospital picker is now a search box that suggests hospitals as you type
+  (`components/hospital-search.tsx`, matcher in `lib/hospital-search.ts`).
+- Each hospital's editor shows only total beds with dengue / non-dengue beds, and
+  total holding spaces with dengue / non-dengue holding spaces, each with a
+  dengue-share slider that moves in 1% steps (the chosen percent is kept even when
+  several percents round to the same whole-bed count). Total beds and Total
+  holding spaces labels are bold. The extra-staffed-bed fields were removed.
+- Engine: `bedAllotments[].nonDengueHoldingSpaces` (≤ holdingSpaces) keeps that
+  part of a hospital's holding spaces from dengue overflow. Import accepts
+  optional `dengue_holding_spaces` / `non_dengue_holding_spaces` columns (they
+  must add up to `holding_spaces`); the template includes them.
+
+## 2026-11-19 20:51 +08:00 — Bed capacity tab, per-hospital beds and WebP logo
+
+On `tammy-ui-improvements-1` (from `feat/markov-chains` + `dev`), the user asked for:
+1. a separate tab for splitting bed capacity into beds for dengue and non-dengue;
+2. an import button for a CSV/Excel file with each hospital's dengue beds,
+   non-dengue beds and temporary holding spaces;
+3. on the same tab, a way to pick one hospital and edit its split, plus extra
+   staffed beds on top of its capacity, split into dengue and non-dengue;
+4. the logo as WebP instead of PNG.
+
+**UI.** "Scenario | Bed capacity" tabs under the mode tabs. Bed capacity has
+default beds per hospital (split fields, split bar, network totals), default
+extra capacity, and hospital-specific beds (hospital picker, editor, import,
+template download, list of hospitals with their own values, clear all). The
+Scenario tab keeps a summary card that opens Bed capacity.
+
+**Engine.** `FacilityAssumption` gains an optional per-hospital non-dengue share
+and `surgeNonDengueCapacity`. `QCInput.bedAllotments` (max 46, unique approved
+hospital IDs) carries per-hospital dengue/non-dengue beds, holding spaces and
+optional extra dengue/non-dengue beds; hospitals not listed keep the uniform
+values. Extra non-dengue beds open with the surge beds and are assumed full of
+other patients, so they raise supported capacity and non-dengue census but
+never place dengue patients. New `POST /v1/qc-simulation/bed-allotments` parses
+CSV/.xlsx (openpyxl, already a dependency; 1 MB, 500 rows, zip-size guard) and
+matches rows by facility ID or exact name; the web app reaches it through
+`/api/bed-allotments`. All values are user planning assumptions, never verified
+beds, vacancies or PhilHealth figures.
+
+**Logo.** `public/brand/surgewise-mark.webp`, `surgewise-mark-on-dark.webp` and
+`surgewise-logo.webp` replace the PNGs (lossless, pixel-identical, 29–38%
+smaller). `app/icon.png` stays PNG: Next.js icon files must be .ico, .jpg, .png
+or .svg.
+
+Tests: `services/engine/tests/test_bed_allotments.py` (26) and updated
+`lib/workspace-visibility.test.mjs`.
+
+## 2026-11-19 04:32 +08:00 — Simplify scenario setup
+
+Group the settings by forecast period, case forecast and hospital planning. Use “preferred hospital” throughout the interface. Mark selected tabs and duration presets with a checkmark and teal fill. Presets edit the duration, and Run simulation applies the settings. Numeric fields allow replacement of an initial zero and validate before submission. [Panel behavior](simulation-workspace-design.md#layout-and-interaction)
+
+## 2026-11-19 04:06 +08:00 — Clarify bed totals in English
+
+Label the selected-day totals “Total beds needed” and “Additional beds needed.” When the shortfall is zero, explain that assumed capacity covers demand at each hospital. [Metric definitions](first-admission-matrix.md#using-the-chain-in-the-simulation)
+
+## 2026-11-19 03:54 +08:00 — First-hospital bed shortages in the QC simulator
+
+Use the two reviewed Markov chains for daily bed demand and first-hospital placement in historical and future scenarios. Show how many staffed beds are missing at each hospital, the sum across sites, and each barangay’s fractional contribution to that shortage. [Calculation and workspace controls](first-admission-matrix.md#using-the-chain-in-the-simulation)
+
+## 2026-11-19 03:30 +08:00 — Generate QC first-admission chains
+
+Generated paired offline first-admission and expected-bed tables using straight-line proximity and the reviewed emergency-preference map. The crosswalk preserves unknown and out-of-network matches. [Exports, evidence and reproduction commands](first-admission-matrix.md)
+
+## 2026-11-19 03:05 +08:00 — QC first-admission allocation decisions
+
+Recorded the agreed all-hospital proximity model, Figure 4 preference adjustment, treatment of unknown preferences, and paired bed-demand comparison. The record identifies the illustrative distance and preference parameters and the evidence for each. [Allocation decision record](hospital-allocation-decisions.md)
+
+## 2026-11-19 02:10 +08:00 — Hide/show the Simulation timeline (presentation only)
+
+The user asked for a button to hide the bottom timeline panel. A small tab with
+a down chevron now sits at the centre of the timeline's top edge ("Hide
+timeline"). Clicking it hides the timeline, playback controls, readouts and
+Help, and the map grows to fill the space. A "Show timeline · Day N / total" tab
+(with "· Playing" while playing) stays at the bottom of the map to restore it.
+Playback state is unchanged by hiding. Below 1100px the map attribution and map
+tools moved up slightly, and on phones the map key too, so the tab does not
+cover them. No data, models, engine behaviour or values changed.
+
+## 2026-11-19 02:02 +08:00 — Optional satellite imagery on the Simulation map (presentation only)
+
+On `feat/simulation-page-improvements`, the user shared a satellite-with-labels
+map and asked for that view as an option. They chose Esri World Imagery (no key;
+Esri's terms expect an ArcGIS account for commercial deployment) and the
+Simulation map only. This reverses, for Simulation only, the 2026-11-16 imagery
+removal; Dashboard stays without imagery.
+
+Layers now has a "Satellite imagery" toggle, off by default. When on, imagery
+draws under roads and labels: minor roads, rails, casings, aeroways and flat
+building footprints are hidden, major roads turn yellow, secondary roads white,
+and labels white with dark halos. Neutral barangays drop to a faint veil while
+case-colored barangays keep their colors; boundaries and the selected outline
+turn white. 3D view still works on top. Esri is credited in the attribution
+while the layer is visible. The Layers note says the imagery is dated background,
+not current conditions; it does not verify hospital entrances.
+
+Helpers are in `lib/dashboard-map-style.ts` with tests in
+`lib/satellite-imagery.test.mjs`; the map-style contract test also validates the
+raster layer. No data, models, engine behaviour or values changed.
+
 ## 2026-11-18 18:05 +08:00 — Research page redesign (presentation only)
 
 User asked for a well-structured, clean and easy-to-follow Research page that

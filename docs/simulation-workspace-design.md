@@ -11,12 +11,41 @@ hospital network, source observations and API contracts are unchanged.
 - The initial view is a map and compact bottom playback dock. One optional right
   panel hosts Scenario, Results, barangay/hospital inspection or Layers. On phones
   this panel sits below the map. Results can be widened for tables and charts.
-- Scenario retains both modes, independent form state, all 1–28-day inputs,
-  2/7/12/14/28 quick runs, covered historical windows, future month/weather/surge
-  inputs and all patient-flow, capacity and allocation assumptions.
+- In **Set up scenario**, choose Historical replay or Future forecast. Pick a start
+  date and enter a duration from 1 to 28 days, or choose a duration preset.
+  The final snapshot date updates as you edit. **Run simulation** applies the changes.
+  A teal fill and checkmark identify the selected mode and duration.
+- Historical replay offers saved forecast periods. Future forecast uses the month
+  and day in the start date for seasonal planning. Both modes retain their own
+  settings. Hospital planning groups capacity, admissions and length of stay
+  separately from the choice of hospital.
+- Since 2026-11-19 a second tab row splits the panel into **Scenario** and
+  **Bed capacity**. Bed capacity holds:
+  - **Bed totals** across all hospitals: total beds, dengue, non-dengue, holding
+    spaces and extra staffed beds (read-only);
+  - **Hospital-specific beds**: a search box suggests hospitals as you type
+    (arrow keys and Enter work). For the chosen hospital: total beds with a
+    dengue-share slider and dengue / non-dengue fields, and total holding spaces
+    with the same slider and fields. Editing a total keeps the dengue part;
+    editing one part sets the other to the remainder; the slider sets dengue to
+    that percentage of the total (rounded) and non-dengue to the rest. The
+    sliders move in 1% steps and keep the chosen percent while it still gives
+    the current counts. Total beds and Total holding spaces labels are bold.
+    **Use defaults** returns the hospital to the scenario-wide values;
+  - an import of a CSV/Excel file (template included) for many hospitals.
+    Importing replaces all hospital-specific values; a file with any invalid row
+    is rejected with row numbers and nothing is partly applied.
+  The scenario-wide defaults (20 beds, 75% non-dengue, 10 extra dengue beds from
+  day 7, 5 holding spaces) are no longer edited in the panel. Non-dengue holding
+  spaces are never used for dengue overflow. Both tab panels stay mounted.
 - Playback retains play/pause, restart, previous/next day, speed, final-day jump
   and scrubbing. A peak-demand shortcut uses the backend's saved peak day; it is
   shown after playback starts. It never derives a competing peak in the browser.
+  Since 2026-11-19 a small tab on the timeline's top edge hides the whole
+  timeline (playback, readouts and Help) to give the map more room; a "Show
+  timeline · Day N / total" tab stays at the bottom of the map to bring it back.
+  Playback keeps running while it is hidden. Below 1100px the map credit and
+  map tools sit slightly higher so the tab never covers them.
 - Three compact readouts show accumulated projected cases with experimental
   range, current staffed beds required, and cumulative unplaced demand. Full day
   totals, observed source-year counts, holding, window totals, uncertainty and
@@ -71,7 +100,13 @@ This decorative height is not a measured building or disease quantity.
 
 3D generalized OSM buildings, QC/Philippines camera views, an optional national
 locator, hospital pins, connection toggles and reduced motion are in Layers.
-There is no satellite imagery. The national locator mounts on expansion and
+An optional Satellite imagery layer (since 2026-11-19) shows Esri World Imagery
+under roads and labels, like a hybrid map: minor roads, rails, casings and flat
+buildings are hidden, major roads are highlighted, and labels turn light with
+dark halos. Neutral barangays become a faint veil over it; case-colored ones keep
+their colors. Imagery capture dates vary by place, so it is dated background, not
+current conditions, and it does not verify hospital entrances. Esri is credited
+in the map attribution while the layer is visible. Dashboard has no imagery. The national locator mounts on expansion and
 resizes with its container. Camera padding accounts for top controls without
 treating a wide status banner as a left sidebar.
 

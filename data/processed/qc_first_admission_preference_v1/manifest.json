@@ -1,0 +1,54 @@
+{
+  "scenario": "QC hypothetical first admission with Figure 4 preference v1",
+  "geography": "Quezon City",
+  "runId": "qc-weather-residual-v2-QUEZON_CITY-2025-4",
+  "startDate": "2025-01-29",
+  "endDateExclusive": "2025-02-26",
+  "hospitalDatasetId": "PHIC_QC_HOSP_2026_09_30_GEO_REVIEW_2026_10_24",
+  "hospitalRegisterAsOf": "2026-09-30",
+  "parentScenario": "QC hypothetical first admission v1",
+  "baselineManifestSha256": "1ebbdf5766ab31fb4f90ecdc7d1f473ee3053d2352772e91cc0715cc2f5041ef",
+  "baselineOutputHashes": {
+    "barangay_demand.csv": "d04e14ba3d28e6f188f717b33ebc33fb251469a0c99d47ab9e1bf5b5c8c2240a",
+    "daily_hospital_beds.csv": "d04891f16de531e3c494b289e6ffc6e265ea8ad87642cfed349babd65591168c",
+    "first_hospital_probabilities.csv": "fe0d87cb07d39246e61f283585e5afa767afe1cce89cf45ec1ad0eb7241b0135",
+    "markov_chain.csv": "71630d190671ed08d4becafe5bda72920124f21ce44101db2812210bd7cf3754"
+  },
+  "preferenceSource": "https://ncts.upd.edu.ph/tssp/wp-content/uploads/2021/12/06-TSSP2021_Study-on-GIS-based-suitability-analysis-of-hospitals-in-QC-from-transport-perspective.pdf#page=10",
+  "preferenceCrosswalkSha256": "f5416d319459add055f5aa1fec06c51e81a5813dc242702ffc78483e09413c6c",
+  "assumptions": {
+    "halfDistanceKm": 3,
+    "admissionFraction": 0.15,
+    "stayDays": 4,
+    "admissionDelayDays": 0,
+    "initialDengueCensus": 0,
+    "all46AssumedEligible": true,
+    "unconstrainedAdmission": true,
+    "distance": "Haversine km from projected polygon point-on-surface to provisional hospital point; not road distance, travel time or verified entrance.",
+    "outsideNetworkDestinationsIncluded": false,
+    "matchedFavoriteWeightMultiplier": 1.5,
+    "unknownPreferenceMultiplier": 1
+  },
+  "matchedBarangays": 14,
+  "unknownBarangays": 128,
+  "measurementKinds": {
+    "probabilities": "assumption",
+    "barangayCases": "modeled_allocation",
+    "arrivalsAndBeds": "modeled_allocation"
+  },
+  "units": {
+    "probabilities": "fraction conditional on in-network admission",
+    "modeledCases": "expected cases/day",
+    "expectedAdmissions": "expected first admissions/day",
+    "occupiedBeds": "expected end-of-day dengue census"
+  },
+  "builderSha256": "d9fe97fa49caf4ca8d77a4b76024140f06ddb6d76aa3025b07dd43dfb9d4992d",
+  "bedCalculationSha256": "37817745540880156bf704a0098afc5c9248635a1eea9efb99519e569c073de9",
+  "outputHashes": {
+    "daily_hospital_beds.csv": "ab64adae0762ced90a22d9f279d2b3da2266ec939f299a4cff91015517f97550",
+    "first_hospital_probabilities.csv": "0b50422dda48df7066f81d87738040a88bc31439e67f0429a23f8f3249467a41",
+    "markov_chain.csv": "fb3311a76cf374be68ed3c1451ca97fcf9f690ac359d2585ab00e47f926941f8",
+    "peak_bed_comparison.csv": "9874d4cf845753252092953a708c03f07dd9caef01e1c361515b3b362e66e175"
+  },
+  "generatedAt": "2026-11-18T19:29:02.984044+00:00"
+}

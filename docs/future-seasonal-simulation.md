@@ -7,11 +7,12 @@ controls into one contextual Scenario panel. See
 [simulation workspace design](simulation-workspace-design.md). The statistical
 and capacity boundaries below remain unchanged.
 
-The left sidebar at `/outbreak-response` (also reached from `/simulate`) has
-Historical replay and Future surge forecast tabs. Each retains its own controls.
-Both support whole-day horizons from 1 through 28, with 2/7/12/14/28 shortcuts.
-The future tab defaults to the current QC date, accepts later dates through 2035,
-and provides a month picker for seasonal planning, such as January 2027. Backend
+At `/outbreak-response` (also reached from `/simulate`), **Set up scenario**
+offers Historical replay and Future forecast. Each mode retains its own settings.
+Both accept 1 to 28 whole days. The 2, 7, 12, 14 and 28 day presets select a
+duration. **Run simulation** applies the settings. Future forecast defaults to
+the current QC date. Use the start date to choose a planning month and day
+through 2035. The panel shows the resulting final snapshot date. Backend
 validation derives the exclusive end from start plus horizon and rejects past dates,
 untrusted case arrays, facility registers, NCR scope and unsupported live mode.
 

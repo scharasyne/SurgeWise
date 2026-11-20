@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "methodVersion": "qc-barangay-xgboost-two-year-v1",
-  "builtAt": "2026-10-24T17:01:06.665895+00:00",
+  "builtAt": "2026-11-18T19:21:14.012506+00:00",
   "sources": {
     "repository": "pelitro-rcw/dengue-environmental-dataset",
     "referenceCommit": "02926278d570db8950da368d44db544ae0097615",
@@ -58,11 +58,11 @@
       }
     ]
   },
-  "outputSha256": "8d134e13bb991e896c0b4529c6b4e1560e8b1e81eb56ab3c18b9dbd740ee3653",
-  "modelSha256": "cf07eb70d10cd8808bf1f1b34a340ce305734047b237553c8ab2b4b91b927c06",
+  "outputSha256": "079a0f0ee5fec38a663474481d45fcef09c47c221743683160ef013338305f62",
+  "modelSha256": "7c0425791207f49ae7a29a98937025c3c6237f1aee2cb9dec4559124c49fcfd7",
   "software": {
     "xgboost": "3.1.3",
-    "numpy": "2.2.6"
+    "numpy": "2.5.4"
   },
   "codeHashes": {
     "scripts/train_qc_barangay.py": "1a2b58748164064a9f3a547dba903989055b0c574c6b995e528420abd6c0a17d",

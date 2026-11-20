@@ -127,6 +127,7 @@ function renderWorkspace(day, stateOverrides = {}) {
           }),
       };
     if (name === '@/components/workspace-select') return { default: props => React.createElement('button', { type: 'button', role: 'combobox', 'aria-label': props.label, disabled: props.disabled }, props.options.find(option => option.value === props.value)?.label ?? props.value) };
+    if (name === '@/components/hospital-search') return { default: props => React.createElement('input', { type: 'text', role: 'combobox', 'aria-label': props.label, disabled: props.disabled }) };
     if (name === '@/components/qc-workspace-sidebar')
       return { default: ({ children }) => children };
     if (name === '@/components/workspace-loader') return { default: () => null };
@@ -199,17 +200,50 @@ test('the initial view reserves the map, with one hidden contextual panel and an
   assert.equal(findElements(tree, node => node.type === 'aside').length, 1);
 });
 
-test('both modes and original inputs remain accessible in Scenario while export has one Results entry point', () => {
+test('imported allotments replace the default split only for the hospitals they list', () => {
+  // Constructed planning assumptions, not source records.
+  const hospitals = [{ id: 'HOSP-614', name: 'Alpha Hospital' }, { id: 'HOSP-615', name: 'Beta Hospital' }];
+  const bedAllotments = [{ facilityId: 'HOSP-614', dengueBeds: 30, nonDengueBeds: 10, holdingSpaces: 7 }];
+  const html = renderToStaticMarkup(renderWorkspace(1, { 3: { ...controlFixture, bedAllotments }, 4: { barangays: ['fixture-hotspot', 'outside-top-ten'].map(id => ({ id, name: id, nearestHospitals: [] })), hospitals }, 23: 'scenario' }));
+  assert.ok(html.includes('Import CSV or Excel') && html.includes('Download template'));
+  assert.ok(html.includes('1 hospital has its own values · 1 use the defaults'));
+  assert.ok(html.includes('Bed totals') && html.includes('Hospital to adjust') && !html.includes('Default beds per hospital'));
+  // Network totals: HOSP-614 imported (30/10/7, default extra 10+0) + HOSP-615 default (5/15/5, extra 10+0).
+  for (const [label, value] of [['All 2 hospitals', '60 beds'], ['For dengue', '35'], ['For non-dengue', '25'], ['Holding spaces', '12'], ['Extra staffed beds', '20']])
+    assert.ok(html.includes(`<dt>${label}</dt><dd>${value}</dd>`), label);
+  assert.match(html.replace(/<!-- -->/g, ''), /<th scope="row">Alpha Hospital<\/th><td>40<\/td><td>30<\/td><td>10<\/td><td>7<\/td>/);
+  const plain = renderToStaticMarkup(renderWorkspace(1, { 3: controlFixture, 4: { barangays: ['fixture-hotspot', 'outside-top-ten'].map(id => ({ id, name: id, nearestHospitals: [] })), hospitals }, 23: 'scenario' }));
+  assert.ok(plain.includes('Import CSV or Excel') && !plain.includes('Clear all hospital-specific values'));
+  assert.ok(plain.includes('<dt>For dengue</dt><dd>10</dd>'));
+});
+
+test('both modes and scenario assumptions remain accessible in Scenario while export has one Results entry point', () => {
   const tree = renderWorkspace(1, { 3: controlFixture, 23: 'scenario' });
   const settings = findElements(tree, node => node.props?.['aria-label'] === 'Simulation controls')[0];
   assert.equal(settings.node.props.hidden, false);
   const tabs = findElements(settings.node, node => node.props?.role === 'tab' && node.props?.id?.startsWith('qc-tab-'));
   assert.equal(tabs.length, 2); assert.equal(tabs.filter(item => item.node.props['aria-selected']).length, 1);
-  for (const label of ['Forecast start date', 'Forecast end date', 'Forecast horizon in days', 'Admission fraction', 'Length of stay', 'Non-dengue occupancy', 'Normal staffed beds / site', 'Supported surge beds / site', 'Unstaffed holding spaces / site']) {
+  assert.equal(findElements(settings.node, node => node.props?.label === 'Hospital to adjust').length, 1);
+  for (const label of ['Start date', 'Duration', 'Cases admitted', 'Hospital stay', 'Delay before admission']) {
     assert.equal(findElements(settings.node, node => node.props?.['aria-label'] === label).length, 1, label);
   }
-  assert.equal(findElements(settings.node, node => node.props?.label === 'Hospital arrival split').length, 1);
-  assert.equal(findElements(settings.node, node => node.props?.label === 'Hospital allocation policy').length, 1);
+  // Bed capacity is a second tab row; its panel stays mounted (hidden) so no input is lost.
+  const sections = findElements(settings.node, node => node.props?.role === 'tab' && node.props?.id?.startsWith('qc-section-'));
+  assert.deepEqual(sections.map(item => [item.node.props.id, item.node.props['aria-selected']]), [['qc-section-scenario', true], ['qc-section-capacity', false]]);
+  const sectionPanel = id => findElements(settings.node, node => node.props?.id === id)[0].node.props;
+  assert.equal(sectionPanel('qc-section-panel-scenario').hidden, false);
+  assert.equal(sectionPanel('qc-section-panel-capacity').hidden, true);
+  // The default split is no longer edited here; totals still come from the engine inputs (20 beds at 75% non-dengue).
+  for (const label of ['Staffed beds per hospital', 'Beds for dengue', 'Beds for non-dengue', 'Extra staffed beds', 'Days until extra beds open', 'Temporary holding spaces'])
+    assert.equal(findElements(settings.node, node => node.props?.['aria-label'] === label).length, 0, label);
+  assert.equal(findElements(settings.node, node => node.props?.label === 'How patients choose a hospital').length, 1);
+  assert.equal(findElements(settings.node, node => node.props?.label === 'When a hospital is full').length, 1);
+  const presets = findElements(settings.node, node => node.props?.['aria-pressed'] !== undefined);
+  assert.equal(presets.length, 5);
+  assert.deepEqual(presets.filter(({node}) => node.props['aria-pressed']).map(({node}) => node.key), ['14']);
+  assert.ok(presets.every(({node}) => node.props.type === 'button'));
+  const snapshot = findElements(settings.node, node => node.props?.className === 'qs-window-note')[0].node;
+  assert.match(renderToStaticMarkup(snapshot), /Jul 15, 2025/);
   const exports = findElements(tree, node => node.type === 'button' && node.props.onClick?.name === 'download');
   assert.equal(exports.length, 1);
   assert.ok(exports[0].ancestors.some(node => node.props?.['aria-label'] === 'Simulation results'));
@@ -320,6 +354,7 @@ test('switching tabs and leaving the workspace cancel requests; late old results
       };
     if (name === 'next/dynamic') return { default: () => () => null };
     if (name === '@/components/workspace-select') return { default: props => React.createElement('button', { type: 'button', role: 'combobox', 'aria-label': props.label, disabled: props.disabled }, props.options.find(option => option.value === props.value)?.label ?? props.value) };
+    if (name === '@/components/hospital-search') return { default: props => React.createElement('input', { type: 'text', role: 'combobox', 'aria-label': props.label, disabled: props.disabled }) };
     if (name === '@/components/qc-workspace-sidebar')
       return { default: ({ children }) => children };
     if (name === '@/components/workspace-loader') return { default: () => null };
@@ -424,6 +459,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
     }
     if (name === 'next/dynamic') return { default: () => () => null };
     if (name === '@/components/workspace-select') return { default: props => React.createElement('button', { type: 'button', role: 'combobox', 'aria-label': props.label, disabled: props.disabled }, props.options.find(option => option.value === props.value)?.label ?? props.value) };
+    if (name === '@/components/hospital-search') return { default: props => React.createElement('input', { type: 'text', role: 'combobox', 'aria-label': props.label, disabled: props.disabled }) };
     if (name === '@/components/qc-workspace-sidebar')
       return { default: ({ children }) => children };
     if (name === '@/components/workspace-loader') return { default: () => null };
@@ -460,7 +496,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
   function changeStart(date) {
     element(
       render(),
-      (node) => node.props?.['aria-label'] === 'Forecast start date'
+      (node) => node.props?.['aria-label'] === 'Start date'
     ).props.onChange({ target: { value: date } });
   }
   async function switchMode(mode) {
@@ -477,7 +513,22 @@ test('each mode restores its edited dates and input edits invalidate playback re
   assert.equal(states.get(2), fixture);
   element(render(), node => node.props?.['aria-label'] === 'Close simulation panel').props.onClick();
   assert.equal(states.get(23), null);
+  const capacity = () => element(render(), node => node.props?.['aria-label'] === 'Hospital stay');
+  capacity().props.onChange({ currentTarget: { value: '', validity: { valid: false } } });
+  assert.equal(capacity().props.value, '');
+  const input = { value: '02', validity: { valid: true } };
+  capacity().props.onChange({ currentTarget: input });
+  assert.equal(input.value, '2');
+  assert.equal(states.get(3).lengthOfStayDays, 2);
+  element(render(), node => node.key === '7' && node.props?.['aria-pressed'] === false).props.onClick();
+  assert.equal(states.get(3).endDate, '2025-07-08');
+  assert.equal(element(render(), node => node.key === '7' && node.type === 'button').props['aria-pressed'], true);
+  assert.deepEqual(requests, []);
+  changeStart('');
+  assert.equal(element(render(), node => node.props?.type === 'submit').props.disabled, true);
+  assert.equal(element(render(), node => node.props?.['aria-label'] === 'Duration').props.value, 7);
   changeStart('2025-08-01');
+  assert.equal(states.get(3).endDate, '2025-08-08');
   assert.equal(states.get(2), null, 'outdated results are cleared');
   assert.equal(states.get(5), 0, 'playback resets to day zero');
   assert.equal(states.get(6), false, 'playback pauses');
