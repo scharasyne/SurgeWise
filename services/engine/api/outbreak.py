@@ -89,9 +89,9 @@ class OutbreakInput(StrictModel):
             raise ValueError("Historical reference mode cannot contain a hypothetical added shock.")
         if self.surgeEnabled and self.surgeOnsetDay >= (self.endDate - self.startDate).days:
             raise ValueError("Surge onset must be within the selected future window.")
-        if (self.arrivalSplitPolicy in MATRICES) != (self.allocationPolicy == "first_hospital"):
-            raise ValueError("Markov destination choice requires first-hospital placement.")
-        if self.allocationPolicy == "first_hospital" and (not self.autoHotspots or len(self.facilities) != 46):
+        if self.allocationPolicy == "first_hospital" and self.arrivalSplitPolicy not in MATRICES:
+            raise ValueError("First-hospital placement requires Markov destination choice.")
+        if self.arrivalSplitPolicy in MATRICES and (not self.autoHotspots or len(self.facilities) != 46):
             raise ValueError("First-admission chains require the full 46-site QC barangay forecast.")
         return self
 
@@ -180,7 +180,10 @@ def create_movie(params: OutbreakInput):
             return saved_movie(ident)
         config = params.model_dump()
         config["facilities"] = sorted(config["facilities"], key=lambda f: f["facilityId"])
-        result = {"schemaVersion": "1.1" if shares else "1.0", "scenarioId": ident, **identity, **build_movie(run, geo, config, shares),
+        schema_version = "1.0"
+        if shares is not None:
+            schema_version = "1.1" if params.allocationPolicy == "first_hospital" else "1.2"
+        result = {"schemaVersion": schema_version, "scenarioId": ident, **identity, **build_movie(run, geo, config, shares),
             "runTimestamp": datetime.now(timezone.utc).isoformat(), "seed": None,
             "randomness": "Deterministic expected values; no stochastic draws", "geography": "QUEZON_CITY",
             "units": {"cases": "expected reported cases per daily interval", "patients": "expected patients", "distance": "km straight line"}}

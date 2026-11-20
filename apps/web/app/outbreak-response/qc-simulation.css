@@ -544,3 +544,13 @@
   .qs-choice-popup .maplibregl-popup-tip { display:none; }
   .qs-choice-popup .maplibregl-popup-content { min-height:0;overflow-y:auto;pointer-events:auto; }
 }
+
+.qc-reservations { margin-top: 12px; }
+.qc-reservations summary { color: var(--sw-text-strong); cursor: pointer; }
+.qc-reservation-scroll { max-height: 18rem; overflow: auto; }
+.qc-reservations thead th { position: sticky; top: 0; background: var(--sw-panel); }
+.qc-source-total { display:flex; align-items:baseline; justify-content:space-between; margin:10px 0; }
+.qc-source-total dd { margin:0; font-weight:700; font-variant-numeric:tabular-nums; }
+.qc-controls .qc-hospital-editor .qs-field-pair > label {
+  display:grid; grid-template-rows:subgrid; grid-row:span 3; align-self:stretch; margin:10px 0 0;
+}

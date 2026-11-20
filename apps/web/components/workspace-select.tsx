@@ -82,7 +82,11 @@ export default function WorkspaceSelect({ label, value, options, onChange, icon,
       {options.map((option, index) => <li id={`${id}-option-${index}`} key={option.value}
         role="option" aria-selected={option.value === value} data-active={index === active}
         onPointerMove={() => setActive(index)} onPointerDown={event => event.preventDefault()}
-        onClick={() => choose(index)}>
+        onClick={event => {
+          // A surrounding label would otherwise activate the trigger again after selection.
+          event.preventDefault();
+          choose(index);
+        }}>
         <span>{option.label}</span>{option.value === value && <Check size={14} aria-hidden="true" />}
       </li>)}
     </ul>}

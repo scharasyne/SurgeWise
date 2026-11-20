@@ -1,7 +1,17 @@
 # Simulation session handoff
 
-Updated 2026-11-20 20:49 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-20 22:57 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## Hospital choice and overflow
+
+Both simulation tabs use the selected Markov matrix with all three overflow policies. The engine reserves first-choice staffed placements before diverting any excess. Saved Markov diversion runs include first-to-receiving-site flows for the placement arrows and distance comparison. The map can show all 46 first-choice probabilities for a selected barangay. [Model and saved fields](first-admission-matrix.md#using-the-chain-in-the-simulation)
+
+Verification covered 141 backend tests, 101 web tests, TypeScript, lint and the production build. A local Chromium run submitted optimized Historical replay with **Distance only** and optimized Future forecast with **Distance and preferred hospital**. Both returned HTTP 200 with all 46 first-choice destinations per barangay.
+
+## Hospital bed reservations
+
+Simulation → Bed capacity now fixes each hospital’s simulated total to its September 2026 PhilHealth accredited count. The default 2:3 split gives 3,756 dengue beds and 5,633 other-care beds. The five temporary holding spaces per site start at two for dengue and three for other care. The repository contains the [import-ready CSV](../apps/web/public/data/qc-initial-bed-reservations.csv). Both simulation modes and the import endpoint validate totals against the approved register. [Panel and import behavior](simulation-workspace-design.md#layout-and-interaction)
 
 ## Research allocation walkthrough
 

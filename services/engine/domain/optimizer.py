@@ -26,14 +26,51 @@ def transport_plan(demands, capacities, costs):
     return np.maximum(0, result.x.reshape(n, m)).tolist()
 
 
-def daily_plan(groups, states, admission_rate, occupancy, day, activation_day):
+def overflow_plan(demand, capacity, costs, first_columns, optimize):
+    """Protect each site's first choices before routing only the excess to remaining slots."""
+    remaining = demand.copy()
+    free = capacity.copy()
+    placements = [[0.0] * len(free) for _ in remaining]
+    for i, column in enumerate(first_columns):
+        here = min(remaining[i], free[column])
+        placements[i][column] = here
+        remaining[i] -= here
+        free[column] -= here
+    if not any(remaining) or not any(free):
+        return placements
+    if optimize:
+        origins = [i for i, excess in enumerate(remaining) if excess > 0]
+        destinations = [j for j, slots in enumerate(free) if slots > 0]
+        extra = transport_plan([remaining[i] for i in origins], [free[j] for j in destinations],
+                               [[costs[i][j] for j in destinations] for i in origins])
+        for i, row in zip(origins, extra):
+            for j, placed in zip(destinations, row):
+                placements[i][j] += placed
+        return placements
+    for i, pending in enumerate(remaining):
+        for j in sorted(range(len(free)), key=lambda j: (costs[i][j], j)):
+            if pending <= 0:
+                break
+            amount = min(pending, free[j])
+            placements[i][j] += amount
+            pending -= amount
+            free[j] -= amount
+    return placements
+
+
+def daily_plan(groups, states, admission_rate, occupancy, day, activation_day, overflow_policy=None):
     ids = [s["config"]["facilityId"] for s in states]
     demand = [g["cases"] * admission_rate for g in groups]
     from .patient_flow import non_dengue_share
     support = [max(0, s["config"]["normalCapacity"] * (1 - non_dengue_share(s["config"], occupancy))
         + (s["config"]["surgeCapacity"] if day >= activation_day else 0) - sum(c for _, c in s["cohorts"])) for s in states]
     costs = [[g["facilityCostsKm"][ident] for ident in ids] for g in groups]
-    supported = transport_plan(demand, support, costs)
+    first_columns = [ids.index(g["firstFacilityId"]) for g in groups] if overflow_policy else []
+    def plan(demands, capacities):
+        if overflow_policy:
+            return overflow_plan(demands, capacities, costs, first_columns, overflow_policy == "optimized")
+        return transport_plan(demands, capacities, costs)
+    supported = plan(demand, support)
     remaining = [max(0, d - sum(row)) for d, row in zip(demand, supported)]
-    holding = transport_plan(remaining, [max(0, s["config"]["holdingCapacity"] - s["holding"]) for s in states], costs)
+    holding = plan(remaining, [max(0, s["config"]["holdingCapacity"] - s["holding"]) for s in states])
     return [{"supported": dict(zip(ids, a)), "holding": dict(zip(ids, b))} for a, b in zip(supported, holding)]

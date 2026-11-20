@@ -43,6 +43,7 @@ export interface MovieDay {
   caseRange?: CaseRange; dailyCaseRange?: Pick<CaseRange, 'lowerCases' | 'upperCases'>;
   bedForecast?: BedForecast;
   barangays: { barangayId: string; expectedBedsShort?: number; expectedCases: number; baselineCases: number; shockCases: number; cumulativeCases: number; caseRange?: Pick<CaseRange, 'lowerCases' | 'upperCases'> }[];
+  firstHospitalRoutes?: { firstFacilityId: string; facilityId: string; supportedPlacements: number; holdingPlacements: number }[];
   assignments: { barangayId: string; facilityId: string; supportedPlacements: number; holdingPlacements: number; distanceKm: number }[];
   facilities: { facilityId: string; normalCapacity: number; activatedSurgeCapacity: number; supportedCensus: number;
     firstAdmissionsToday?: number; supportedPlacementsToday?: number; holdingPlacementsToday?: number; unplacedToday?: number;
@@ -77,7 +78,7 @@ export interface BedProjection extends BedForecast {
 export interface CaseRange { lowerCases: number; upperCases: number; coverageTarget: number; calibrationSamples: number; method: string }
 export interface QCControls {
   startDate: string; endDate: string; mode: 'forecast' | 'hypothetical_shock'; extraCasesPerWeek: number;
-  growthDays: number; normalCapacity: number; surgeCapacity: number; holdingCapacity: number;
+  growthDays: number; surgeCapacity: number; holdingCapacity: number;
   hospitalizationRate: number; baselineOccupancy: number; lengthOfStayDays: number;
   admissionDelayDays: number; surgeActivationDay: number; acknowledgeAssumedCapacity: true;
   allocationPolicy: AllocationPolicy; compareAllocation: boolean;
@@ -87,11 +88,11 @@ export interface QCControls {
   /** Optional user-imported per-hospital allotments (assumptions); hospitals not listed use the uniform values. */
   bedAllotments?: BedAllotment[] | null;
 }
-export interface BedAllotment {
-  facilityId: string; dengueBeds: number; nonDengueBeds: number; holdingSpaces: number;
+export type BedAllotment = ({ staffedBeds: number } | { dengueBeds: number; nonDengueBeds: number }) & {
+  facilityId: string; holdingSpaces?: number | null;
   /** Extra staffed beds on top of the hospital's beds; null/absent keeps the scenario default (all for dengue). */
   extraDengueBeds?: number | null; extraNonDengueBeds?: number | null;
-  /** Part of holdingSpaces kept for non-dengue patients; null/absent means all holding is for dengue. */
+  /** Part of holdingSpaces kept for non-dengue patients; null/absent applies the initial 2:3 split. */
   nonDengueHoldingSpaces?: number | null;
 }
 export interface BedAllotmentImport {

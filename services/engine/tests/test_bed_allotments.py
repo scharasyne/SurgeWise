@@ -3,6 +3,7 @@
 Fixtures are constructed planning assumptions, not source observations.
 """
 import io
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 import pytest
@@ -12,17 +13,17 @@ from services.engine.api.qc_simulation import default_workspace
 from services.engine.domain.bed_allotments import AllotmentFileError, parse_allotments, read_table
 from services.engine.domain.patient_flow import simulate_flow
 
-HOSPITALS = [{"id": "HOSP-614", "name": "Alpha General Hospital"}, {"id": "HOSP-615", "name": "Beta Medical Center, Inc."},
-             {"id": "HOSP-616", "name": "Gamma Hospital"}]
+HOSPITALS = [{"id": "HOSP-614", "name": "Alpha General Hospital", "accreditedBeds": 20}, {"id": "HOSP-615", "name": "Beta Medical Center, Inc.", "accreditedBeds": 20},
+             {"id": "HOSP-616", "name": "Gamma Hospital", "accreditedBeds": 20}]
 
 
-def parse(text):
-    return parse_allotments(read_table(text.encode()), HOSPITALS)
+def parse(text, hospitals=HOSPITALS):
+    return parse_allotments(read_table(text.encode()), hospitals)
 
 
 def test_csv_rows_match_by_id_or_exact_name_and_report_missing_hospitals():
     result = parse("facility_id,hospital_name,dengue_beds,non_dengue_beds,holding_spaces\n"
-                   "hosp-614,anything,5,15,3\n,beta medical center inc,\"1,200\",800,0\n")
+                   "hosp-614,anything,5,15,3\n,beta medical center inc,\"1,200\",800,0\n", [HOSPITALS[0], dict(HOSPITALS[1], accreditedBeds=2000), HOSPITALS[2]])
     assert result["allotments"] == [
         {"facilityId": "HOSP-614", "name": "Alpha General Hospital", "dengueBeds": 5, "nonDengueBeds": 15, "holdingSpaces": 3},
         {"facilityId": "HOSP-615", "name": "Beta Medical Center, Inc.", "dengueBeds": 1200, "nonDengueBeds": 800, "holdingSpaces": 0}]
@@ -30,7 +31,7 @@ def test_csv_rows_match_by_id_or_exact_name_and_report_missing_hospitals():
 
 
 def test_header_aliases_semicolons_and_blank_rows_are_accepted():
-    result = parse("Hospital ID;Beds for dengue;Beds for non-dengue;Temporary holding spaces\n\nHOSP-616;2;8;1\n")
+    result = parse("Hospital ID;Beds for dengue;Beds for non-dengue;Temporary holding spaces\n\nHOSP-616;2;18;1\n")
     assert [a["facilityId"] for a in result["allotments"]] == ["HOSP-616"]
 
 
@@ -47,7 +48,7 @@ def test_invalid_rows_are_reported_with_row_numbers_and_never_zero_filled(row, m
 
 def test_duplicates_and_unknown_names_are_rejected():
     result = parse("facility_id,hospital_name,dengue_beds,non_dengue_beds,holding_spaces\n"
-                   "HOSP-614,,1,1,0\n,Alpha General Hospital,2,2,0\n,Nowhere Clinic,1,1,0\n")
+                   "HOSP-614,,1,19,0\n,Alpha General Hospital,2,2,0\n,Nowhere Clinic,1,1,0\n")
     assert len(result["allotments"]) == 1
     assert [e["row"] for e in result["errors"]] == [3, 4]
 
@@ -90,19 +91,19 @@ def controls():
 
 def test_qc_simulation_applies_imported_allotments_and_keeps_defaults_elsewhere(controls):
     client = TestClient(app)
-    allotment = {"facilityId": "HOSP-614", "dengueBeds": 30, "nonDengueBeds": 10, "holdingSpaces": 7}
+    allotment = {"facilityId": "HOSP-614", "dengueBeds": 30, "nonDengueBeds": 70, "holdingSpaces": 7}
     response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": [allotment]})
     assert response.status_code == 200, response.text
     data = response.json()
     facilities = {f["facilityId"]: f for f in data["days"][1]["facilities"]}
-    assert facilities["HOSP-614"]["normalCapacity"] == 40 and facilities["HOSP-614"]["assumedNonDengueCensus"] == 10
+    assert facilities["HOSP-614"]["normalCapacity"] == 100 and facilities["HOSP-614"]["assumedNonDengueCensus"] == 70
     other = facilities["HOSP-615"]
-    assert other["normalCapacity"] == controls["normalCapacity"]
-    assert other["assumedNonDengueCensus"] == controls["normalCapacity"] * controls["baselineOccupancy"]
+    assert other["normalCapacity"] == 100
+    assert other["assumedNonDengueCensus"] == 60
     holding = {f["facilityId"]: f["holdingCapacity"] for f in data["parameters"]["facilities"]}
-    assert holding["HOSP-614"] == 7 and holding["HOSP-615"] == controls["holdingCapacity"]
+    assert holding["HOSP-614"] == 3 and holding["HOSP-615"] == 2
     assert data["controlValues"]["bedAllotments"] == [{**allotment, "extraDengueBeds": None, "extraNonDengueBeds": None, "nonDengueHoldingSpaces": None}]
-    assert facilities["HOSP-614"]["bedForecast"]["assumedSupportedDengueCapacity"] == 30
+    assert facilities["HOSP-614"]["bedForecast"]["assumedSupportedDengueCapacity"] == pytest.approx(30)
 
 
 @pytest.mark.parametrize("allotments", [
@@ -118,7 +119,7 @@ def test_invalid_allotments_are_rejected_not_repaired(controls, allotments):
 
 def test_parse_endpoint_matches_the_approved_hospitals():
     client = TestClient(app)
-    response = client.post("/v1/qc-simulation/bed-allotments", content=b"facility_id,dengue_beds,non_dengue_beds,holding_spaces\nHOSP-614,5,15,3\nHOSP-001,1,1,1\n",
+    response = client.post("/v1/qc-simulation/bed-allotments", content=b"facility_id,dengue_beds,non_dengue_beds,holding_spaces\nHOSP-614,5,95,3\nHOSP-001,1,1,1\n",
                            headers={"content-type": "application/octet-stream"})
     assert response.status_code == 200, response.text
     data = response.json()
@@ -148,7 +149,7 @@ def test_extra_non_dengue_beds_add_capacity_but_no_dengue_room():
 
 
 def test_qc_simulation_applies_per_hospital_extra_beds(controls):
-    allotment = {"facilityId": "HOSP-614", "dengueBeds": 5, "nonDengueBeds": 15, "holdingSpaces": 5, "extraDengueBeds": 9, "extraNonDengueBeds": 3}
+    allotment = {"facilityId": "HOSP-614", "dengueBeds": 5, "nonDengueBeds": 95, "holdingSpaces": 5, "extraDengueBeds": 9, "extraNonDengueBeds": 3}
     response = TestClient(app).post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": [allotment]})
     assert response.status_code == 200, response.text
     data = response.json()
@@ -167,7 +168,7 @@ def test_holding_split_columns_are_parsed_and_must_add_up():
 
 
 def test_non_dengue_holding_spaces_are_not_used_for_dengue_overflow(controls):
-    allotment = {"facilityId": "HOSP-614", "dengueBeds": 5, "nonDengueBeds": 15, "holdingSpaces": 6, "nonDengueHoldingSpaces": 2}
+    allotment = {"facilityId": "HOSP-614", "dengueBeds": 5, "nonDengueBeds": 95, "holdingSpaces": 6, "nonDengueHoldingSpaces": 2}
     client = TestClient(app)
     response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": [allotment]})
     assert response.status_code == 200, response.text
@@ -175,3 +176,59 @@ def test_non_dengue_holding_spaces_are_not_used_for_dengue_overflow(controls):
     assert config["HOSP-614"]["holdingCapacity"] == 4
     too_many = {**allotment, "nonDengueHoldingSpaces": 7}
     assert client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": [too_many]}).status_code == 422
+
+
+def test_staffed_total_import_and_explicit_reservations():
+    result = parse("facility_id,staffed_beds,dengue_beds,non_dengue_beds\n"
+                   "HOSP-614,20,,\nHOSP-615,20,0,20\nHOSP-616,20,10,9\n")
+    assert result["allotments"] == [
+        {"facilityId": "HOSP-614", "name": HOSPITALS[0]["name"], "staffedBeds": 20},
+        {"facilityId": "HOSP-615", "name": HOSPITALS[1]["name"], "dengueBeds": 0, "nonDengueBeds": 20}]
+    assert [row["row"] for row in result["errors"]] == [4]
+    assert parse("facility_id,staffed_beds\nHOSP-615,20\n")["allotments"][0]["staffedBeds"] == 20
+    assert parse("facility_id,staffed_beds,dengue_beds\nHOSP-615,20,8\n")["errors"]
+
+
+@pytest.mark.parametrize("future", [False, True])
+def test_reservations_reach_hospital_bed_forecast(future):
+    path = "/v1/future-simulation" if future else "/v1/qc-simulation"
+    params = {"horizonDays": 2} if future else {"endDate": "2025-01-31"}
+    params["bedAllotments"] = [{"facilityId": "HOSP-614", "staffedBeds": 100},
+                              {"facilityId": "HOSP-615", "dengueBeds": 0, "nonDengueBeds": 100}]
+    for other_share, expected in [(None, [40, 0, 32]), (.8, [20, 0, 16])]:
+        if other_share is not None:
+            params["baselineOccupancy"] = other_share
+        response = TestClient(app).post(path, json=params)
+        assert response.status_code == 200, response.text[:500]
+        facilities = {f["facilityId"]: f for f in response.json()["days"][1]["facilities"]}
+        for h, beds in zip(["HOSP-614", "HOSP-615", "HOSP-616"], expected, strict=True):
+            assert facilities[h]["bedForecast"]["assumedSupportedDengueCapacity"] == pytest.approx(beds)
+
+
+def test_published_initial_csv_matches_default_engine_capacities_and_imports():
+    from services.engine.repositories.facility import load_facilities
+    from services.engine.api.qc_simulation import QCInput, facility_assumptions
+    hospitals = load_facilities()
+    path = Path(__file__).resolve().parents[3] / "apps/web/public/data/qc-initial-bed-reservations.csv"
+    client = TestClient(app)
+    parsed = client.post("/v1/qc-simulation/bed-allotments", content=path.read_bytes()).json()
+    assert parsed["errors"] == [] and parsed["hospitalsNotInFile"] == []
+    rows = {r["facilityId"]: r for r in parsed["allotments"]}
+    defaults = facility_assumptions(QCInput(), hospitals)
+    for site, h in zip(defaults, hospitals, strict=True):
+        r = rows[h["id"]]
+        assert r["dengueBeds"] == round(h["accreditedBeds"] * .4)
+        assert r["dengueBeds"] + r["nonDengueBeds"] == site.normalCapacity == h["accreditedBeds"]
+        assert r["nonDengueBeds"] / site.normalCapacity == site.baselineOccupancy
+        assert r["holdingSpaces"] == 5 and r["nonDengueHoldingSpaces"] == 3 and site.holdingCapacity == 2
+    assert sum(r["dengueBeds"] for r in rows.values()) == 3756
+
+
+def test_import_and_simulation_reject_modified_register_totals():
+    client = TestClient(app)
+    csv = b"facility_id,accredited_beds,dengue_beds,non_dengue_beds\nHOSP-614,20,8,12\n"
+    report = client.post("/v1/qc-simulation/bed-allotments", content=csv).json()
+    assert report["errors"][0]["row"] == 2 and "100 PhilHealth accredited beds" in report["errors"][0]["message"]
+    for entry in [{"staffedBeds": 20}, {"dengueBeds": 8, "nonDengueBeds": 12}]:
+        response = client.post("/v1/qc-simulation", json={"bedAllotments": [{"facilityId": "HOSP-614", **entry}]})
+        assert response.status_code == 422 and "100 PhilHealth" in response.json()["detail"]["message"]

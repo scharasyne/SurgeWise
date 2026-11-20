@@ -95,7 +95,7 @@ type DetailTab =
   | 'methods';
 type PanelView = 'scenario' | 'results' | 'hospitals' | 'layers' | null;
 /** Editable fields of one hospital's bed allotment in the Bed capacity tab. */
-type HospitalBedField = 'totalBeds' | 'dengueBeds' | 'nonDengueBeds' | 'holdingTotal' | 'dengueHolding' | 'nonDengueHolding';
+type HospitalBedField = 'dengueBeds' | 'nonDengueBeds' | 'holdingTotal' | 'dengueHolding' | 'nonDengueHolding';
 const GUIDE_STORAGE_KEY = 'surgewise.qc-guide-dismissed';
 const GLOSSARY = {
   expected: [
@@ -159,7 +159,7 @@ function BedUse({ forecast, day, occupancyPct }: { forecast?: BedForecast; day: 
     ]} />
     {pct != null && <div className="qc-bed-use-track" aria-hidden="true"><div style={{ width: `${Math.min(100, pct)}%` }} /></div>}
     <p>Expected dengue bed demand ÷ assumed dengue-care slots × 100. Above 100% means demand exceeds that scenario capacity, before diversions.</p>
-    {occupancyPct != null && <p>Simulated occupancy of all staffed beds: {format(occupancyPct)}%, including assumed non-dengue patients after placements. Holding is excluded.</p>}
+    {occupancyPct != null && <p>Dengue placements and beds reserved for other care together account for {format(occupancyPct)}% of staffed capacity. Holding spaces are counted separately.</p>}
     <p>Scenario estimates; actual staffed beds and occupancy are unknown.</p>
   </section>;
 }
@@ -281,6 +281,9 @@ export default function QCSimulationWorkspace() {
         }
       }
       const token = ++generation.current;
+      setAllotmentImport({ status: 'idle' });
+      setHospitalDraft(null);
+      setSharePercent({ hospital: '' });
       activeRequest.current?.abort();
       const controller = new AbortController();
       activeRequest.current = controller;
@@ -400,6 +403,7 @@ export default function QCSimulationWorkspace() {
     activeRequest.current?.abort();
     setLoading(false);
     generation.current++;
+    setAllotmentImport(previous => previous.status === 'loading' ? { status: 'idle' } : previous);
     setControls((c) => (c ? { ...c, ...patch } : c));
     setData(null);
     setPlaying(false);
@@ -617,6 +621,8 @@ export default function QCSimulationWorkspace() {
   const comparison = scenario?.allocationComparison;
   const chainComparison = scenario?.firstAdmissionComparison;
   const firstHospital = controls?.allocationPolicy === 'first_hospital';
+  const resultSplit = scenario?.bedProjection?.arrivalSplitPolicy;
+  const markovResult = resultSplit === 'markov_preference' || resultSplit === 'markov_proximity';
   const staffedBeds = firstHospital ? snapshot?.bedForecast?.hospitalBedsRequired : snapshot?.bedForecast?.staffedBedsRequired;
   const dailyShortfalls = new Map(snapshot?.barangays.map(b => [b.barangayId, b.expectedBedsShort]));
   const selectedShortfall = dailyShortfalls.get(selected);
@@ -666,7 +672,8 @@ export default function QCSimulationWorkspace() {
   function numeric(key: keyof QCControls, label: string, minimum: number, maximum: number, units: string, step = 1, scale = 1) {
     if (!controls) return null;
     const horizon = key === 'horizonDays';
-    const value = horizon ? selectedDays : Number(controls[key]) * scale;
+    const reservation = key === 'baselineOccupancy';
+    const value = horizon ? selectedDays : reservation ? (1 - controls.baselineOccupancy) * 100 : Number(controls[key]) * scale;
     const draft = numberDrafts[key];
     const helpId = `scenario-${key}-hint`;
     return (
@@ -689,63 +696,57 @@ export default function QCSimulationWorkspace() {
             });
             if (!valid) update({});
             else if (horizon) updateDays(Number(text));
-            else update({ [key]: Number(text) / scale });
+            else update({ [key]: reservation ? (100 - Number(text)) / 100 : Number(text) / scale });
           }} />
         <small id={helpId}>{draft !== undefined ? 'Enter ' : ''}{minimum.toLocaleString()}–{maximum.toLocaleString()} {units}</small>
       </label>
     );
   }
-  // Bed capacity is entered as a per-hospital split. The engine's existing inputs stay the
-  // source of truth: total = normalCapacity, non-dengue share = baselineOccupancy.
   const hospitalCount = context?.hospitals.length;
-  const dengueBedsPerSite = controls ? controls.normalCapacity * (1 - controls.baselineOccupancy) : 0;
-  const nonDengueBedsPerSite = controls ? controls.normalCapacity * controls.baselineOccupancy : 0;
-  const bedCount = (value: number) => Math.round(value * 100) / 100;
-  // Imported per-hospital allotments replace the uniform split for the hospitals they list.
   const allotments = controls?.bedAllotments ?? [];
   const allotmentById = new Map(allotments.map(a => [a.facilityId, a]));
-  const networkBeds = context && controls ? context.hospitals.reduce((sum, h) => {
+  const hospitalsUsingDefaults = hospitalCount === undefined ? undefined : hospitalCount - allotments.length;
+  function reservedDengue(total: number) {
+    return Math.round(Number((total * (1 - (controls?.baselineOccupancy ?? 0.6))).toFixed(10)));
+  }
+  function hospitalBeds(h: MovieHospital) {
     const a = allotmentById.get(h.id);
+    const total = h.accreditedBeds;
+    const holding = a?.holdingSpaces ?? controls!.holdingCapacity;
+    const dengue = a && 'dengueBeds' in a ? a.dengueBeds : reservedDengue(total);
     return {
-      dengue: sum.dengue + (a ? a.dengueBeds : dengueBedsPerSite),
-      nonDengue: sum.nonDengue + (a ? a.nonDengueBeds : nonDengueBedsPerSite),
-      holding: sum.holding + (a ? a.holdingSpaces : controls.holdingCapacity),
-    };
-  }, { dengue: 0, nonDengue: 0, holding: 0 }) : undefined;
-  const hospitalsUsingDefaults = context ? context.hospitals.filter(h => !allotmentById.has(h.id)).length : undefined;
-  const networkExtraBeds = context && controls ? context.hospitals.reduce((sum, h) => {
-    const a = allotmentById.get(h.id);
-    return sum + (a?.extraDengueBeds ?? controls.surgeCapacity) + (a?.extraNonDengueBeds ?? 0);
-  }, 0) : undefined;
-  // One hospital's values: its own allotment, or the defaults (rounded to whole beds) until edited.
-  function hospitalBeds(id: string) {
-    const a = allotmentById.get(id);
-    const dengue = Math.round(dengueBedsPerSite);
-    return {
-      facilityId: id,
-      dengueBeds: a?.dengueBeds ?? dengue,
-      nonDengueBeds: a?.nonDengueBeds ?? (controls ? controls.normalCapacity - dengue : 0),
-      holdingSpaces: a?.holdingSpaces ?? controls?.holdingCapacity ?? 0,
-      nonDengueHoldingSpaces: a?.nonDengueHoldingSpaces ?? 0,
-      // Extra staffed beds are not edited here; keep any imported values, otherwise the scenario default.
+      facilityId: h.id,
+      dengueBeds: dengue,
+      nonDengueBeds: total - dengue,
+      holdingSpaces: holding,
+      nonDengueHoldingSpaces: a?.nonDengueHoldingSpaces ?? holding - Math.round(holding * 0.4),
       extraDengueBeds: a?.extraDengueBeds ?? null,
       extraNonDengueBeds: a?.extraNonDengueBeds ?? null,
     };
   }
+  const selectedHospital = context?.hospitals.find(h => h.id === capacityHospital);
+  const hospitalRows = (controls && context ? context.hospitals : []).map(h => ({ name: h.name, ...hospitalBeds(h) }));
+  const networkBeds = hospitalRows.reduce((sum, b) => ({
+    dengue: sum.dengue + b.dengueBeds, nonDengue: sum.nonDengue + b.nonDengueBeds,
+    holding: sum.holding + b.holdingSpaces,
+    extra: sum.extra + (b.extraDengueBeds ?? controls?.surgeCapacity ?? 0) + (b.extraNonDengueBeds ?? 0),
+  }), { dengue: 0, nonDengue: 0, holding: 0, extra: 0 });
+  const selectedAllotment = allotmentById.get(capacityHospital);
+  const usesDefaultShare = !selectedAllotment || 'staffedBeds' in selectedAllotment;
   // A total and its dengue / non-dengue split: editing the total keeps the dengue part
-  // (capped at the new total); editing one part sets the other to the remainder.
+  // (capped at the new total) for explicit splits. Default splits reapply the percentage; editing one part sets the other to the remainder.
   function splitValue(field: HospitalBedField, value: number, total: number, dengue: number) {
-    if (field === 'totalBeds' || field === 'holdingTotal') { const d = Math.min(dengue, value); return { dengue: d, other: value - d }; }
+    if (field === 'holdingTotal') { const d = Math.min(dengue, value); return { dengue: d, other: value - d }; }
     if (field === 'dengueBeds' || field === 'dengueHolding') return value <= total ? { dengue: value, other: total - value } : null;
     return value <= total ? { dengue: total - value, other: value } : null;
   }
   function setHospitalBed(field: HospitalBedField, text: string) {
-    if (!controls || !capacityHospital) return;
+    if (!controls || !selectedHospital) return;
     const value = Number(text);
-    const current = hospitalBeds(capacityHospital);
+    const current = hospitalBeds(selectedHospital);
     const next = { ...current };
     let valid = text !== '' && Number.isInteger(value) && value >= 0 && value <= 10000;
-    if (valid && ['totalBeds', 'dengueBeds', 'nonDengueBeds'].includes(field)) {
+    if (valid && (field === 'dengueBeds' || field === 'nonDengueBeds')) {
       const split = splitValue(field, value, current.dengueBeds + current.nonDengueBeds, current.dengueBeds);
       if (split) { next.dengueBeds = split.dengue; next.nonDengueBeds = split.other; }
       valid = !!split && next.dengueBeds + next.nonDengueBeds >= 1;
@@ -761,17 +762,26 @@ export default function QCSimulationWorkspace() {
       return;
     }
     setHospitalDraft(null);
-    update({ bedAllotments: [...allotments.filter(a => a.facilityId !== capacityHospital), next].sort((a, b) => a.facilityId.localeCompare(b.facilityId)) });
+    const { dengueBeds, nonDengueBeds, ...rest } = next;
+    if (field === 'dengueBeds' || field === 'nonDengueBeds') {
+      update({ bedAllotments: [...allotments.filter(a => a.facilityId !== capacityHospital),
+        { ...next, holdingSpaces: selectedAllotment?.holdingSpaces, nonDengueHoldingSpaces: selectedAllotment?.nonDengueHoldingSpaces }] });
+      return;
+    }
+    const entry = usesDefaultShare
+      ? { ...rest, staffedBeds: dengueBeds + nonDengueBeds } : next;
+    update({ bedAllotments: [...allotments.filter(a => a.facilityId !== capacityHospital), entry].sort((a, b) => a.facilityId.localeCompare(b.facilityId)) });
   }
   // Slider for the dengue share of a hospital's beds or holding spaces: 60% of 100 beds = 60 dengue + 40 non-dengue.
   function shareSlider(kind: 'beds' | 'holding') {
-    if (!capacityHospital) return null;
-    const b = hospitalBeds(capacityHospital);
+    if (!selectedHospital) return null;
+    const b = hospitalBeds(selectedHospital);
     const total = kind === 'beds' ? b.dengueBeds + b.nonDengueBeds : b.holdingSpaces;
     const dengue = kind === 'beds' ? b.dengueBeds : b.holdingSpaces - b.nonDengueHoldingSpaces;
     const chosen = sharePercent.hospital === capacityHospital ? sharePercent[kind] : undefined;
     // Keep the chosen percent while it still produces the current counts; typing a count moves the slider instead.
-    const percent = chosen !== undefined && Math.round((total * chosen) / 100) === dengue ? chosen
+    const percent = kind === 'beds' && usesDefaultShare ? Math.round((1 - (controls?.baselineOccupancy ?? 0.6)) * 100)
+      : chosen !== undefined && Math.round((total * chosen) / 100) === dengue ? chosen
       : total > 0 ? Math.round((dengue / total) * 100) : 0;
     const label = kind === 'beds' ? 'Share of beds for dengue' : 'Share of holding spaces for dengue';
     return (
@@ -795,11 +805,11 @@ export default function QCSimulationWorkspace() {
     update({ bedAllotments: rest.length ? rest : null });
   }
   function hospitalField(field: HospitalBedField, label: string, hint: string, strong = false) {
-    if (!capacityHospital) return null;
-    const b = hospitalBeds(capacityHospital);
+    if (!selectedHospital) return null;
+    const b = hospitalBeds(selectedHospital);
     const totalBeds = b.dengueBeds + b.nonDengueBeds;
     const values: Record<HospitalBedField, number> = {
-      totalBeds, dengueBeds: b.dengueBeds, nonDengueBeds: b.nonDengueBeds,
+      dengueBeds: b.dengueBeds, nonDengueBeds: b.nonDengueBeds,
       holdingTotal: b.holdingSpaces, dengueHolding: b.holdingSpaces - b.nonDengueHoldingSpaces, nonDengueHolding: b.nonDengueHoldingSpaces,
     };
     const max = field === 'dengueBeds' || field === 'nonDengueBeds' ? totalBeds
@@ -809,7 +819,7 @@ export default function QCSimulationWorkspace() {
     return (
       <label className="qc-number-field">
         <span className={strong ? 'qc-field-strong' : undefined}>{label}</span>
-        <input aria-label={label} type="number" min={field === 'totalBeds' ? 1 : 0} max={max} step={1} required
+        <input aria-label={label} type="number" min={0} max={max} step={1} required
           aria-describedby={helpId} aria-invalid={draft !== undefined || undefined}
           value={draft ?? values[field]} onFocus={event => event.currentTarget.select()}
           onChange={event => setHospitalBed(field, event.currentTarget.value)} />
@@ -818,10 +828,12 @@ export default function QCSimulationWorkspace() {
     );
   }
   async function importAllotments(file: File) {
+    const token = generation.current;
     setAllotmentImport({ status: 'loading', fileName: file.name });
     try {
       const response = await fetch('/api/bed-allotments', { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file });
       const data = await response.json().catch(() => null);
+      if (token !== generation.current) return;
       if (!response.ok || !data) {
         setAllotmentImport({ status: 'error', fileName: file.name, message: data?.detail?.message ?? data?.error ?? `Import failed (${response.status}).` });
         return;
@@ -833,12 +845,16 @@ export default function QCSimulationWorkspace() {
           message: result.errors.length ? `${result.errors.length} ${result.errors.length === 1 ? 'row needs' : 'rows need'} fixing. Nothing was applied.` : 'The file has no hospital rows. Nothing was applied.' });
         return;
       }
-      update({ bedAllotments: result.allotments.map(a => ({ facilityId: a.facilityId, dengueBeds: a.dengueBeds, nonDengueBeds: a.nonDengueBeds, holdingSpaces: a.holdingSpaces,
-        extraDengueBeds: a.extraDengueBeds ?? null, extraNonDengueBeds: a.extraNonDengueBeds ?? null,
-        nonDengueHoldingSpaces: a.nonDengueHoldingSpaces ?? null })) });
+      update({ bedAllotments: result.allotments.map(a => ({
+        facilityId: a.facilityId, holdingSpaces: a.holdingSpaces, nonDengueHoldingSpaces: a.nonDengueHoldingSpaces,
+        extraDengueBeds: a.extraDengueBeds, extraNonDengueBeds: a.extraNonDengueBeds,
+        ...('staffedBeds' in a ? { staffedBeds: a.staffedBeds } : { dengueBeds: a.dengueBeds, nonDengueBeds: a.nonDengueBeds }),
+      })) });
+      setSharePercent({ hospital: '' });
       setHospitalDraft(null);
       setAllotmentImport({ status: 'done', fileName: file.name, result });
     } catch {
+      if (token !== generation.current) return;
       setAllotmentImport({ status: 'error', fileName: file.name, message: 'Could not reach the simulation engine. Try again.' });
     }
   }
@@ -855,10 +871,10 @@ export default function QCSimulationWorkspace() {
       return /[",;\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     };
     const rows = [...context.hospitals].sort((a, b) => a.id.localeCompare(b.id)).map(h => {
-      const b = hospitalBeds(h.id);
-      return [h.id, h.name, b.dengueBeds, b.nonDengueBeds, b.holdingSpaces, b.holdingSpaces - b.nonDengueHoldingSpaces, b.nonDengueHoldingSpaces];
+      const b = hospitalBeds(h);
+      return [h.id, h.name, b.dengueBeds + b.nonDengueBeds, b.dengueBeds, b.nonDengueBeds, b.holdingSpaces, b.holdingSpaces - b.nonDengueHoldingSpaces, b.nonDengueHoldingSpaces, b.extraDengueBeds ?? '', b.extraNonDengueBeds ?? ''];
     });
-    const csv = [['facility_id', 'hospital_name', 'dengue_beds', 'non_dengue_beds', 'holding_spaces', 'dengue_holding_spaces', 'non_dengue_holding_spaces'], ...rows].map(row => row.map(cell).join(',')).join('\r\n');
+    const csv = [['facility_id', 'hospital_name', 'accredited_beds', 'dengue_beds', 'non_dengue_beds', 'holding_spaces', 'dengue_holding_spaces', 'non_dengue_holding_spaces', 'extra_dengue_beds', 'extra_non_dengue_beds'], ...rows].map(row => row.map(cell).join(',')).join('\r\n');
     const link = document.createElement('a');
     // A byte-order mark lets Excel open the UTF-8 file with the right characters.
     link.href = URL.createObjectURL(new Blob(['﻿' + csv + '\r\n'], { type: 'text/csv;charset=utf-8' }));
@@ -1091,33 +1107,28 @@ export default function QCSimulationWorkspace() {
                       <legend><BedDouble aria-hidden="true" size={16} /> Hospital planning</legend>
                       <label>When a hospital is full
                         <WorkspaceSelect label="When a hospital is full" value={controls.allocationPolicy} onChange={value =>
-                          update({ allocationPolicy: value as QCControls['allocationPolicy'], compareAllocation: false,
-                            arrivalSplitPolicy: value === 'first_hospital' ? 'markov_preference' : 'nearest_three_equal' })}
+                          update({ allocationPolicy: value as QCControls['allocationPolicy'], compareAllocation: false })}
                           options={[
                             { value: 'first_hospital', label: 'Record the shortage at that hospital' },
                             { value: 'nearest', label: 'Try the nearest hospital with space' },
                             { value: 'optimized', label: 'Optimize placements across hospitals' },
                           ]} />
+                        {controls.allocationPolicy !== 'first_hospital' && <small>Patients keep their first choice when a staffed bed is available. Only overflow can go elsewhere. Holding spaces are used after staffed beds fill.</small>}
                       </label>
                       <label>How patients choose a hospital
-                        <WorkspaceSelect label="How patients choose a hospital" value={controls.arrivalSplitPolicy ?? 'nearest_three_equal'} onChange={value =>
+                        <WorkspaceSelect label="How patients choose a hospital" value={controls.arrivalSplitPolicy ?? 'markov_preference'} onChange={value =>
                           update({ arrivalSplitPolicy: value as QCControls['arrivalSplitPolicy'], compareAllocation: false })}
-                          options={firstHospital ? [
+                          options={[
                             { value: 'markov_preference', label: 'Distance and preferred hospital' },
                             { value: 'markov_proximity', label: 'Distance only' },
-                          ] : [
-                            { value: 'nearest_three_equal', label: 'Equal shares at the three nearest hospitals' },
-                            { value: 'nearest', label: 'Nearest hospital first' },
                           ]} />
-                        {firstHospital && <small>{controls.arrivalSplitPolicy === 'markov_preference'
+                        <small>{controls.arrivalSplitPolicy === 'markov_preference'
                           ? 'In 14 barangays, the mapped preferred hospital gets 1.5× weight. The other 128 use distance alone.'
-                          : 'Each additional 3 km halves a hospital’s weight.'}</small>}
+                          : 'Each additional 3 km halves a hospital’s weight.'}</small>
                       </label>
                       <button type="button" className="text-button qc-capacity-summary" onClick={() => chooseSettingsSection('capacity')}>
                         <BedDouble size={16} aria-hidden="true" />
-                        <span><strong>Bed capacity</strong><small>{allotments.length && networkBeds
-                          ? `Imported for ${allotments.length} hospitals · ${bedCount(networkBeds.dengue).toLocaleString()} dengue · ${bedCount(networkBeds.nonDengue).toLocaleString()} non-dengue beds in total`
-                          : `${bedCount(controls.normalCapacity)} beds per hospital · ${bedCount(dengueBedsPerSite)} dengue · ${bedCount(nonDengueBedsPerSite)} non-dengue`}</small></span>
+                        <span><strong>Bed capacity</strong><small>{hospitalCount === undefined ? 'Loading hospital reservations…' : `${hospitalCount} hospitals · ${networkBeds.dengue.toLocaleString()} reserved for dengue · ${networkBeds.nonDengue.toLocaleString()} for other care`}</small></span>
                         <ChevronRight size={14} aria-hidden="true" />
                       </button>
                       <details className="qc-assumptions">
@@ -1133,21 +1144,33 @@ export default function QCSimulationWorkspace() {
                     <div role="tabpanel" id="qc-section-panel-capacity" aria-labelledby="qc-section-capacity" hidden={settingsSection !== 'capacity'}>
                     <fieldset className="qc-fieldset">
                       <legend><BedDouble aria-hidden="true" size={16} /> Bed totals</legend>
-                      {hospitalCount !== undefined && networkBeds && (
+                      {numeric('baselineOccupancy', 'Default dengue reservation', 0, 100, '% of the hospital bed total')}
+                      {numeric('holdingCapacity', 'Default holding spaces per hospital', 0, 10000, 'temporary spaces')}
+                      <p className="qc-capacity-intro">Each hospital keeps its PhilHealth accredited bed total (30 Sep 2026). The simulation initially reserves 40% for dengue and 60% for other care, rounded per hospital. Actual staffing is unknown.</p>
+                      <p className="qc-capacity-intro">Holding spaces are a separate planning assumption. Each hospital starts with five temporary spaces, two for dengue and three for other care.</p>
+                      {hospitalCount !== undefined && (
                         <dl className="qc-capacity-totals">
-                          <div><dt>All {hospitalCount} hospitals</dt><dd>{bedCount(networkBeds.dengue + networkBeds.nonDengue).toLocaleString()} beds</dd></div>
-                          <div><dt>For dengue</dt><dd>{bedCount(networkBeds.dengue).toLocaleString()}</dd></div>
-                          <div><dt>For non-dengue</dt><dd>{bedCount(networkBeds.nonDengue).toLocaleString()}</dd></div>
-                          <div><dt>Holding spaces</dt><dd>{bedCount(networkBeds.holding).toLocaleString()}</dd></div>
-                          <div><dt>Extra staffed beds</dt><dd>{bedCount(networkExtraBeds ?? 0).toLocaleString()}</dd></div>
+                          <div><dt>All {hospitalCount} hospitals</dt><dd>{(networkBeds.dengue + networkBeds.nonDengue).toLocaleString()} beds</dd></div>
+                          <div><dt>Reserved for dengue</dt><dd>{networkBeds.dengue.toLocaleString()}</dd></div>
+                          <div><dt>Reserved for other care</dt><dd>{networkBeds.nonDengue.toLocaleString()}</dd></div>
+                          <div><dt>Holding spaces</dt><dd>{networkBeds.holding.toLocaleString()}</dd></div>
+                          <div><dt>Extra staffed beds</dt><dd>{networkBeds.extra.toLocaleString()}</dd></div>
                         </dl>
                       )}
+                      {hospitalRows.length > 0 && <details className="qc-reservations">
+                        <summary>View reservations for all {hospitalRows.length} hospitals</summary>
+                        <div className="qc-reservation-scroll" tabIndex={0} role="region" aria-label="Hospital bed reservations">
+                          <table className="qc-import-table">
+                            <thead><tr><th scope="col">Hospital</th><th scope="col">Accredited beds</th><th scope="col">Reserved for dengue</th><th scope="col">Reserved for other care</th></tr></thead>
+                            <tbody>{hospitalRows.map(b => <tr key={b.facilityId}><th scope="row">{b.name}</th><td>{(b.dengueBeds + b.nonDengueBeds).toLocaleString()}</td><td>{b.dengueBeds.toLocaleString()}</td><td>{b.nonDengueBeds.toLocaleString()}</td></tr>)}</tbody>
+                          </table>
+                        </div>
+                      </details>}
                     </fieldset>
                     <fieldset className="qc-fieldset">
                       <legend><MapPin aria-hidden="true" size={16} /> Hospital-specific beds</legend>
                       <p className="qc-capacity-intro">
-                        Give one hospital its own beds, extra staffed beds and
-                        holding spaces, or import a file to set many at once.
+                        Adjust one hospital’s bed reservations and temporary holding spaces, or import a file for several hospitals.
                       </p>
                       <div className="qs-field-label">Hospital
                         <HospitalSearch label="Hospital to adjust" value={capacityHospital} disabled={!context}
@@ -1156,20 +1179,20 @@ export default function QCSimulationWorkspace() {
                             .sort((a, b) => a.name.localeCompare(b.name))
                             .map(h => ({ id: h.id, name: h.name, note: allotmentById.has(h.id) ? 'Has its own values' : undefined }))} />
                       </div>
-                      {capacityHospital && (
+                      {selectedHospital && (
                         <div className="qc-hospital-editor">
                           <p className="qc-hospital-status">
-                            {allotmentById.has(capacityHospital) ? 'Using its own values.' : 'Using the defaults until you change a value.'}
+                            {allotmentById.has(capacityHospital) ? (usesDefaultShare ? 'Hospital total · default reservation percentage.' : 'Hospital-specific reservation.') : 'Using the default reservation percentage.'}
                             {allotmentById.has(capacityHospital) && (
                               <button type="button" className="text-button qc-import-clear" onClick={resetHospital}><RotateCcw size={12} aria-hidden="true" />Use defaults</button>
                             )}
                           </p>
                           <div className="qc-split-group">
-                            {hospitalField('totalBeds', 'Total beds', 'staffed beds at this hospital', true)}
+                            <dl className="qc-source-total"><dt>Accredited beds</dt><dd>{selectedHospital.accreditedBeds.toLocaleString()}</dd></dl>
                             {shareSlider('beds')}
                             <div className="qs-field-pair">
-                              {hospitalField('dengueBeds', 'Beds for dengue', 'open to dengue patients')}
-                              {hospitalField('nonDengueBeds', 'Beds for non-dengue', 'used by other patients')}
+                              {hospitalField('dengueBeds', 'Reserved for dengue', 'starting staffed dengue capacity')}
+                              {hospitalField('nonDengueBeds', 'Reserved for other care', 'set aside for other patients')}
                             </div>
                           </div>
                           <div className="qc-split-group">
@@ -1215,12 +1238,13 @@ export default function QCSimulationWorkspace() {
                             <strong>{allotmentImport.status === 'done' && allotmentImport.fileName ? `${allotmentImport.fileName} imported` : 'Hospital-specific values'}</strong>
                             <span>{allotments.length} {allotments.length === 1 ? 'hospital has its' : 'hospitals have their'} own values{hospitalsUsingDefaults ? ` · ${hospitalsUsingDefaults} use the defaults` : ''}</span>
                             <details>
-                              <summary>View these hospitals</summary>
+                              <summary>Review hospital-specific values</summary>
                               <table className="qc-import-table">
                                 <thead><tr><th scope="col">Hospital</th><th scope="col">Total beds</th><th scope="col">Dengue</th><th scope="col">Non-dengue</th><th scope="col">Holding</th></tr></thead>
                                 <tbody>
                                   {allotments.map(a => {
-                                    const b = hospitalBeds(a.facilityId);
+                                    const b = hospitalRows.find(h => h.facilityId === a.facilityId);
+                                    if (!b) return null;
                                     return <tr key={a.facilityId}><th scope="row">{context?.hospitals.find(h => h.id === a.facilityId)?.name ?? a.facilityId}</th><td>{(b.dengueBeds + b.nonDengueBeds).toLocaleString()}</td><td>{b.dengueBeds.toLocaleString()}</td><td>{b.nonDengueBeds.toLocaleString()}</td><td>{b.holdingSpaces.toLocaleString()}</td></tr>;
                                   })}
                                 </tbody>
@@ -1231,12 +1255,9 @@ export default function QCSimulationWorkspace() {
                         )}
                       </div>
                       <small className="qc-import-note">
-                        Columns: facility_id (or hospital_name), dengue_beds,
-                        non_dengue_beds, holding_spaces, and optionally
-                        dengue_holding_spaces and non_dengue_holding_spaces. Whole numbers
-                        only. Start from the template to get every hospital&apos;s
-                        ID. These are planning assumptions, not verified beds or
-                        vacancies.
+                        Match each row by facility_id or hospital_name. Enter accredited_beds alone to use the default percentage,
+                        or enter both dengue_beds and non_dengue_beds to specify the split. Each row must match its registered hospital total.
+                        Holding and extra capacity columns are optional. Counts are whole beds.
                       </small>
                     </fieldset>
                     </div>
@@ -1665,7 +1686,7 @@ export default function QCSimulationWorkspace() {
                   training.
                 </p>
                 <p>
-                  {firstHospital && area && (preferredHospital ? `Preferred emergency hospital: ${preferredHospital.name}. ` : 'Hospital preference is unknown. This barangay uses proximity alone. ')}
+                  {markovResult && area && (preferredHospital ? `Preferred emergency hospital: ${preferredHospital.name}. ` : 'Hospital preference is unknown. This barangay uses proximity alone. ')}
                   Demand from this barangay only, divided using the configured
                   hospital-choice assumption. Required staffed beds are
                   calculated from projected cases, admission fraction, delay and
@@ -2314,13 +2335,13 @@ export default function QCSimulationWorkspace() {
               </section>
             </div>
           </section>);
-  const probabilityPlace = firstHospital && showProbabilities && showHotspotDetails && showHospitals && !hospital
+  const probabilityPlace = markovResult && showProbabilities && showHotspotDetails && showHospitals && !hospital
     ? selectedBedProjection : undefined;
   const selectedPlace = area && !inspectedHospital && (showHotspotDetails || panelView === 'hospitals') ? (
     <section className="qs-inspector-block" aria-label="Selected hotspot details" aria-live="polite">
       {selectedShortfall != null && <p className="qs-inspector-note"><strong>{formatFractional(selectedShortfall)} expected beds short</strong> attributable to this barangay on day {day}. Each hospital’s gap is shared in proportion to its modeled arrivals.</p>}
       <div className="qs-place-heading"><span>{markerHotspotIds?.includes(area.id) ? 'Annual high-burden candidate' : 'Selected barangay · outside the top candidates'}</span><h3>{area.name}</h3></div>
-      {firstHospital && <div className="qs-choice-control">
+      {markovResult && <div className="qs-choice-control">
         <label><input type="checkbox" checked={!!probabilityPlace} disabled={!selectedBedProjection}
           onChange={event => {
             setShowProbabilities(event.target.checked);
