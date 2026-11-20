@@ -8,11 +8,12 @@ from shapely.geometry import Point, shape
 
 from .patient_flow import simulate_flow
 from .spatial import annual_weights
+from .ranked_placement import RankedHospitalChoice
 from .bed_forecast import add_bed_forecasts
 from .hospital_demand import hospital_shares
 from .source_calendar import align_historical_run
 
-VERSION = "qc-first-admission-bed-allocation-v5"
+VERSION = "qc-first-admission-bed-allocation-v6"
 
 
 def expansion_ring(center, radius_km):
@@ -155,7 +156,8 @@ def build_movie(run, context, config, first_admission_shares=None):
     split_policy = config.get("arrivalSplitPolicy", "nearest")
     policy = config.get("allocationPolicy", "nearest")
     markov = split_policy in ("markov_proximity", "markov_preference")
-    divert = markov and policy != "first_hospital"
+    divert = markov and policy in ("nearest", "optimized")  # Legacy distance-based scenarios.
+    ranked_choice = None
     if markov or policy == "first_hospital":
         if not markov or first_admission_shares is None or not config.get("autoHotspots"):
             raise ValueError("First-hospital placement needs validated QC choices and fixed barangay forecast weights")
@@ -169,6 +171,8 @@ def build_movie(run, context, config, first_admission_shares=None):
                 contribution[h][origin] = barangay_map[origin]["weight"] * probability
         fractions = {h: math.fsum(parts.values()) for h, parts in contribution.items()}
         origin_mix = {h: {b: w / fractions[h] for b, w in parts.items() if w > 0} for h, parts in contribution.items()}
+        if policy == "next_probability":
+            ranked_choice = RankedHospitalChoice(context["barangays"], config["facilities"], shares, origin_mix)
         destinations = {}
         for h in sorted(eligible):
             destinations[h] = {"originId": None, "facilityOrder": [h]}
@@ -196,7 +200,7 @@ def build_movie(run, context, config, first_admission_shares=None):
                 group["facilityCostsKm"] = {ident: distance_km(barangay_map[group["originId"]]["coordinates"], hospital_map[ident]["coordinates"]) for ident in eligible}
     flow = simulate_flow([p["meanCases"] for p in run["weeklyPredictions"]], config["facilities"],
         config["hospitalizationRate"], config["lengthOfStayDays"], config["baselineOccupancy"],
-        config["admissionDelayDays"], config["surgeActivationDay"], daily_groups=groups, assignment_method=policy, divert_overflow=divert)
+        config["admissionDelayDays"], config["surgeActivationDay"], daily_groups=groups, assignment_method=policy, divert_overflow=divert, ranked_choice=ranked_choice)
     cumulative = {b["id"]: 0.0 for b in context["barangays"]}
     cumulative_shock = {b["id"]: 0.0 for b in context["barangays"]}
     baseline_total = shock_total = 0.0
@@ -271,6 +275,8 @@ def build_movie(run, context, config, first_admission_shares=None):
     bed_projection = add_bed_forecasts(flow[:duration + 1], days, run, context, config, shares)
     encoding = "first_hospital_routes_with_origin_shares" if divert else (
         "hospital_totals_with_origin_shares" if markov else "origin_hospital_routes")
+    if ranked_choice is not None:
+        encoding = "hospital_totals_with_ranked_origin_placements"
     return {"assignmentEncoding": encoding,
         "days": flow[:duration + 1], "context": context, "durationDays": duration, "bedProjection": bed_projection,
         "progressionMethod": ("dated_QC_forecast_allocated_by_xgboost_annual_burden_shares" if context.get("hotspotRanking") else "dated_QC_forecast_allocated_by_prior_annual_barangay_shares") if config.get("autoHotspots") else "explicit_hypothetical_radial_shock",

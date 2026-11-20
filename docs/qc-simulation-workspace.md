@@ -99,17 +99,9 @@ The same 28-day cohort engine owns both policies. Cases are daily-disaggregated
 historical projections; admission fraction, LOS, delay, background occupancy,
 hospital eligibility and operational capacity remain explicit bounded assumptions.
 All 46 approved PhilHealth records are in the hypothetical eligible network;
-9,389 accredited beds are inventory metadata, never the default bed denominator.
+the 9,389 accredited beds provide fixed scenario totals with assumed dengue reservations.
 
-The baseline uses nearest residual supported capacity then finite holding. The
-optional transportation LP first fixes supported flow to the maximum possible
-given residual staffed capacity and minimizes expected straight-line patient-km;
-remaining demand is allocated to finite holding with the same objective. It is
-day-specific and retains cohort discharges, prior occupancy and surge activation.
-It is not a road-route solver, a clinical referral policy or a future-aware
-staff/bed procurement optimizer. The same-input comparison reports unresolved
-demand, holding, peak normal-relative occupancy and expected patient-km without
-claiming all metrics must improve or estimating causal health benefits.
+Both tabs use the selected 142 × 46 first-hospital matrix. The default records the shortage at the chosen hospital. With probability-ranked overflow, the engine allocates available first-choice staffed beds, then tries the highest-probability available sites for each origin. Temporary holding follows staffed placement. The comparison holds the overflow setting fixed and varies the hospital-choice weights. [Allocation and capacity rules](first-admission-matrix.md#using-the-chain-in-the-simulation)
 
 `GET/POST /v1/qc-simulation` resolves source runs, hotspot ranking and all hospital
 IDs server-side. The browser submits only dates and bounded scenario assumptions,
@@ -192,12 +184,7 @@ separate from the legacy explicit radial stress-test path. Tests verify invarian
 to neighbor locations, seed and iteration order. These are still modeled QC-forecast
 allocations from dated prior annual shares, not independent barangay models.
 
-Workspace defaults now assume expected arrivals divide equally across the nearest
-three eligible scenario sites (one third each when three exist), configurable
-against nearest-only arrival preference. Both hospital bed-demand curves and
-placement preferences use those shares. An optimized capacity LP can subsequently
-reroute placements; it aggregates identical-origin subgroups without changing total
-demand. Actual patient preferences/clinical eligibility remain unobserved.
+Workspace first admissions follow the selected distance-only or preference-adjusted matrix. The same shares drive first-hospital bed-demand curves and rank the alternatives for each origin if overflow placement is enabled. Actual patient preferences and clinical eligibility remain unobserved.
 
 The selected-place surge-bed table and sidebar show hospital shares, expected
 admissions, peak no-added-surge demand, peak with-surge demand and additional beds

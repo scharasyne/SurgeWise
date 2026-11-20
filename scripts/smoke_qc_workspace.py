@@ -65,8 +65,8 @@ def main():
     controls = {**data["controlValues"], "endDate": "2025-02-05", "compareAllocation": True}
     status, comparison = request("/api/research/qc-simulation", controls)
     assert status == 200 and {r["arrivalSplitPolicy"] for r in comparison["firstAdmissionComparison"]} == {"markov_preference", "markov_proximity"}
-    status, legacy = request("/api/research/qc-simulation", {**controls, "allocationPolicy": "nearest", "arrivalSplitPolicy": "nearest_three_equal"})
-    assert status == 200 and {"nearest", "optimized"}.issubset(legacy["allocationComparison"])
+    status, ranked = request("/api/research/qc-simulation", {**controls, "allocationPolicy": "next_probability"})
+    assert status == 200 and ranked["assignmentEncoding"] == "hospital_totals_with_ranked_origin_placements"
     status, _ = request("/api/research/qc-simulation", {**controls, "area": "NCR"})
     assert status == 422
     status, future = request("/api/research/future-simulation")

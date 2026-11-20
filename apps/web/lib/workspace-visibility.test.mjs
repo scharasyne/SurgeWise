@@ -185,7 +185,7 @@ const controlFixture = {
   lengthOfStayDays: 4,
   admissionDelayDays: 0,
   surgeActivationDay: 0,
-  allocationPolicy: 'nearest',
+  allocationPolicy: 'first_hospital',
   arrivalSplitPolicy: 'markov_preference',
 };
 
@@ -533,17 +533,18 @@ test('each mode restores its edited dates and input edits invalidate playback re
   assert.equal(states.get(3).endDate, '2025-07-08');
   assert.equal(element(render(), node => node.key === '7' && node.type === 'button').props['aria-pressed'], true);
   assert.deepEqual(requests, []);
-  function checkOptimizedChoice() {
+  function checkRankedChoice() {
     const choice = () => element(render(), node => node.props?.label === 'How patients choose a hospital');
     const overflow = () => element(render(), node => node.props?.label === 'When a hospital is full');
     choice().props.onChange('markov_proximity');
-    overflow().props.onChange('optimized');
+    assert.deepEqual(overflow().props.options.map(o => o.value), ['first_hospital', 'next_probability']);
+    overflow().props.onChange('next_probability');
     assert.equal(choice().props.value, 'markov_proximity');
     assert.deepEqual(choice().props.options.map(o => o.label), ['Distance and preferred hospital', 'Distance only']);
     choice().props.onChange('markov_preference');
-    assert.equal(overflow().props.value, 'optimized');
+    assert.equal(overflow().props.value, 'next_probability');
   }
-  checkOptimizedChoice();
+  checkRankedChoice();
   changeStart('');
   assert.equal(element(render(), node => node.props?.type === 'submit').props.disabled, true);
   assert.equal(element(render(), node => node.props?.['aria-label'] === 'Duration').props.value, 7);
@@ -565,7 +566,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
     scrollTo: (options) => scrolls.push(options),
   };
   await switchMode('future');
-  checkOptimizedChoice();
+  checkRankedChoice();
   assert.equal(states.get(3).startDate, '2026-11-16');
   changeStart('2026-12-01');
   await switchMode('historical');

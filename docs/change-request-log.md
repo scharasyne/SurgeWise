@@ -1,5 +1,9 @@
 # User-requested extensions
 
+## 2026-11-21 00:27 +08:00 — Limit overflow to local shortage or probability-ranked placement
+
+Use two overflow options in Historical replay and Future forecast. Each barangay’s alternative hospitals follow its selected first-hospital probabilities. Remove the optimizer option and its workspace comparison. [Rules and API changes](first-admission-matrix.md#using-the-chain-in-the-simulation)
+
 ## 2026-11-20 22:57 +08:00 — Use the same hospital-choice options with optimization in both tabs
 
 Historical replay and Future forecast use the selected Markov matrix for first destinations under every overflow policy. Changing the overflow setting preserves the hospital-choice setting. Optimized placement reserves available staffed beds for first-choice demand before redirecting excess. [Allocation methods](first-admission-matrix.md#using-the-chain-in-the-simulation)

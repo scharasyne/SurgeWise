@@ -1,13 +1,13 @@
 # Simulation session handoff
 
-Updated 2026-11-20 22:57 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-21 00:27 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
 
 ## Hospital choice and overflow
 
-Both simulation tabs use the selected Markov matrix with all three overflow policies. The engine reserves first-choice staffed placements before diverting any excess. Saved Markov diversion runs include first-to-receiving-site flows for the placement arrows and distance comparison. The map can show all 46 first-choice probabilities for a selected barangay. [Model and saved fields](first-admission-matrix.md#using-the-chain-in-the-simulation)
+Both tabs now offer local shortage recording and probability-ranked overflow. The latter reserves first-choice staffed placements, then tries the highest-ranked available hospital for each originating barangay. Hospital-choice comparisons hold that overflow policy fixed. The location of a full hospital no longer determines where the workspace sends overflow. [Model, tie rules and saved fields](first-admission-matrix.md#using-the-chain-in-the-simulation)
 
-Verification covered 141 backend tests, 101 web tests, TypeScript, lint and the production build. A local Chromium run submitted optimized Historical replay with **Distance only** and optimized Future forecast with **Distance and preferred hospital**. Both returned HTTP 200 with all 46 first-choice destinations per barangay.
+Verification covered 146 backend tests, 102 web tests, lint, TypeScript, the production build and the HTTP workspace smoke test. Chromium submitted a probability-ranked run in each tab. A 28-day stress scenario with 100,000 extra weekly cases conserved the expected patient census through staffed care, holding, discharge and unplaced demand.
 
 ## Hospital bed reservations
 

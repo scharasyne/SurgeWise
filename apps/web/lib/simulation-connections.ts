@@ -59,14 +59,20 @@ export function simulationConnections(context: MovieContext, snapshot: MovieDay 
     for (const route of routes) {
       const h = route.facilityId, total = route.supportedPlacements + route.holdingPlacements;
       if (total <= 0 || (options.focus === 'hospital' && h !== options.selectedHospital)) continue;
-      for (const [b, fraction] of Object.entries(context.firstAdmissionOriginShares[route.firstFacilityId] ?? {})) {
+      const actual = snapshot.placementsByOrigin?.[h];
+      const counts = actual
+        ? context.barangays.map(({ id }, i) => ({ b: id, patients: (actual.supported[i] ?? 0) + (actual.holding[i] ?? 0), held: actual.holding[i] ?? 0 }))
+        : Object.entries(context.firstAdmissionOriginShares[route.firstFacilityId] ?? {}).map(([b, fraction]) =>
+            ({ b, patients: total * fraction, held: route.holdingPlacements * fraction }));
+      for (const { b, patients, held } of counts) {
+        if (patients <= 0) continue;
         if (options.focus !== 'hospital' && !candidates.has(b)) continue;
         const key = options.focus === 'hospital' ? h : b;
         const peer = options.focus === 'hospital' ? b : h;
         const group = flows.get(key) ?? new Map<string, Flow>();
         const flow = group.get(peer) ?? { b, h, patients: 0, held: 0 };
-        flow.patients += total * fraction;
-        flow.held += route.holdingPlacements * fraction;
+        flow.patients += patients;
+        flow.held += held;
         group.set(peer, flow);
         flows.set(key, group);
       }
