@@ -34,8 +34,10 @@ OpenFreeMap provides the OpenStreetMap/OpenMapTiles street and building context.
 `lib/dashboard-map-style.ts` applies the SurgeWise palette to water, land use,
 parks, roads, buildings and labels before map tiles finish loading. Context
 colors do not encode dengue burden, occupancy or capacity. Hospital pins use
-deep teal, a thick rounded white medical cross and an amber provisional-location
-dot. Custom labels appear on hover or keyboard-visible focus.
+a solid deep-teal teardrop (round head, straight sides to a sharp point) with a
+white "H" inside a thin white circle, drawn at 25×35 px (since 2026-11-20; formerly
+a 28×34 teal pin with a white medical cross and an amber dot). Every pin is a
+provisional point; the legend and labels say so. Custom labels appear on hover or keyboard-visible focus.
 
 3D view tilts the camera and enables sourced, generalized building extrusions
 where mapped. These are cartographic context, not verified hospital models.

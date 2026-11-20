@@ -305,7 +305,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       const button = hospitalMarker(h.name, h.id === selectedHospital, reducedMotion);
       button.dataset.facilityId = h.id;
       button.onclick = event => { event.stopPropagation(); onHospitalRef.current(h.id); };
-      add('h-' + h.id, h.coordinates, 34, button);
+      add('h-' + h.id, h.coordinates, 35, button);
     }
     const position = () => {
       const width = instance.getContainer().clientWidth, height = instance.getContainer().clientHeight;
@@ -322,7 +322,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       }), width, height, [{ left: width - 52, top: 0, width: 52, height: 156 }, ...overlayRects(root.current), { left: 0, top: height - 26, width, height: 26 }]);
       layout.forEach((point, index) => {
         const entry = visibleEntries[index];
-        entry.marker.getElement().style.width = `${entry.id.startsWith('h-') ? point.size * 28 / 34 : point.size}px`;
+        entry.marker.getElement().style.width = `${entry.id.startsWith('h-') ? point.size * 28 / 39 : point.size}px`;
         entry.marker.getElement().style.height = `${point.size}px`;
         entry.marker.getElement().style.fontSize = `${(entry.id.startsWith('h-') ? 19 : entry.size > 20 ? 12 : 10) * point.scale}px`;
         entry.marker.setOffset(view === 'qc' ? [point.offsetX, point.offsetY] : [0, 0]);
