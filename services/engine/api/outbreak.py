@@ -14,7 +14,7 @@ from pydantic import Field, model_validator
 
 from .research import StrictModel, FacilityAssumption, forecast, annual_data, unavailable
 from ..domain import outbreak, patient_flow, spatial, optimizer, bed_forecast, hospital_demand, barangay_forecast, source_calendar, seasonal_forecast
-from ..repositories import seasonal_runs, first_admission
+from ..repositories import seasonal_runs, first_admission, synthetic_barangay
 from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
 from ..domain.outbreak import make_context, build_movie, VERSION
 from ..repositories.facility import load_facilities, DATASET_ID, HOSPITAL_SHA256
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/v1")
 _CODE_MODULES = [("first_admission", first_admission), ("outbreak", outbreak), ("patient_flow", patient_flow), ("spatial", spatial),
     ("optimizer", optimizer), ("bed_forecast", bed_forecast), ("hospital_demand", hospital_demand),
     ("barangay_forecast", barangay_forecast), ("source_calendar", source_calendar),
-    ("seasonal_forecast", seasonal_forecast), ("seasonal_runs", seasonal_runs)]
+    ("seasonal_forecast", seasonal_forecast), ("seasonal_runs", seasonal_runs), ("synthetic_barangay", synthetic_barangay)]
 _LOADED_CODE_HASHES = {name: sha256(module.__file__) for name, module in _CODE_MODULES}
 
 
@@ -55,7 +55,7 @@ def illustrative_movie():
 
 class OutbreakInput(StrictModel):
     forecastRunId: str = Field(min_length=1, max_length=120)
-    scenarioKind: Literal["hypothetical_shock", "historical_replay"]
+    scenarioKind: Literal["hypothetical_shock", "historical_replay", "synthetic_replay"]
     autoHotspots: bool = False
     allocationPolicy: AllocationPolicy = "nearest"
     arrivalSplitPolicy: ArrivalPolicy = "nearest"
@@ -85,7 +85,7 @@ class OutbreakInput(StrictModel):
             raise ValueError("Choose an end date 1–28 elapsed days after onset.")
         if not 2012 <= self.startDate.year <= 2035:
             raise ValueError("Scenario onset must be between 2012 and 2035; future dates remain hypothetical.")
-        if self.scenarioKind == "historical_replay" and (self.extraCasesPerWeek != 0 or self.surgeEnabled):
+        if self.scenarioKind in {"historical_replay", "synthetic_replay"} and (self.extraCasesPerWeek != 0 or self.surgeEnabled):
             raise ValueError("Historical reference mode cannot contain a hypothetical added shock.")
         if self.surgeEnabled and self.surgeOnsetDay >= (self.endDate - self.startDate).days:
             raise ValueError("Surge onset must be within the selected future window.")
@@ -97,7 +97,12 @@ class OutbreakInput(StrictModel):
 
 
 def inputs(ident, cutoff_year=None, use_xgboost=False):
-    run = forecast(ident)
+    if ident.startswith(synthetic_barangay.PREFIX):
+        run = synthetic_barangay.approved_runs().get(ident)
+        if run is None:
+            raise HTTPException(404, detail={"code": "FORECAST_NOT_FOUND"})
+    else:
+        run = forecast(ident)
     if run["area"] != "QUEZON_CITY":
         raise HTTPException(422, detail={"code": "QC_DEMAND_REQUIRED", "message": "Spatial movies require QC demand, not NCR totals."})
     manifest = json.loads((FOLDER / "manifest.json").read_text())
@@ -128,7 +133,9 @@ def context(ident: str):
 
 def approved_matrix(policy, geo, ids, manifest):
     try:
-        return first_admission.load_matrix(policy, geo["barangays"], ids, manifest["outputs"][first_admission.GEOMETRY_PATH])
+        inventory = geo["barangays"] + geo.get("missingBarangays", [])
+        shares, favorites = first_admission.load_matrix(policy, inventory, ids, manifest["outputs"][first_admission.GEOMETRY_PATH])
+        return {b["id"]: shares[b["id"]] for b in geo["barangays"]}, favorites
     except (OSError, ValueError) as error:
         raise HTTPException(503, detail={"code": "FIRST_ADMISSION_MATRIX_UNAVAILABLE",
             "message": "The QC first-admission matrix is missing or failed validation. Restore the approved probability table."}) from error
@@ -141,6 +148,10 @@ def create_movie(params: OutbreakInput):
             raise HTTPException(503, detail={"code": "ENGINE_RESTART_REQUIRED",
                 "message": "Simulation code changed while this worker was running. Restart the engine and reload the forecast; no outdated result was substituted."})
         run, geo, manifest = inputs(params.forecastRunId, params.startDate.year, params.autoHotspots)
+        if params.scenarioKind != "hypothetical_shock" and (params.scenarioKind == "synthetic_replay") != ("weeklyByBarangay" in run):
+            raise HTTPException(422, detail={"code": "FORECAST_SCENARIO_MISMATCH"})
+        if "weeklyByBarangay" in run and not params.autoHotspots:
+            raise HTTPException(422, detail={"code": "DIRECT_BARANGAY_TRAJECTORY_REQUIRED"})
         if params.autoHotspots and not run.get("dailyPredictions"):
             first, last = source_calendar.historical_window(run)
             if params.startDate < first or params.endDate > last:
@@ -158,7 +169,7 @@ def create_movie(params: OutbreakInput):
         parameters["facilities"] = sorted(parameters["facilities"], key=lambda f: f["facilityId"])
         identity = {"parameters": parameters, "methodVersion": VERSION, "facilityDatasetId": DATASET_ID,
             "softwareVersions": {"python": platform.python_version(), "shapely": shapely.__version__, "pyproj": pyproj.__version__, "scipy": scipy.__version__},
-            "facilitySourceSha256": HOSPITAL_SHA256, "forecastArtifactSha256": sha256(FOLDER / "forecast-runs.json"),
+            "facilitySourceSha256": HOSPITAL_SHA256, "forecastArtifactSha256": run["runSha256"] if "weeklyByBarangay" in run else sha256(FOLDER / "forecast-runs.json"),
             "environmentalForecastSha256": sha256(FOLDER / "qc-environmental-forecasts.json") if run["model"] == "cases_weather" else None,
             "seasonalModelSha256": run.get("seasonalModelSha256"), "forecastRunSha256": run.get("runSha256"),
             "spatialForecastSha256": geo["hotspotRanking"]["artifactSha256"] if geo.get("hotspotRanking") else None,
@@ -177,10 +188,16 @@ def create_movie(params: OutbreakInput):
             return saved_movie(ident)
         config = params.model_dump()
         config["facilities"] = sorted(config["facilities"], key=lambda f: f["facilityId"])
-        result = {"schemaVersion": "1.1" if shares else "1.0", "scenarioId": ident, **identity, **build_movie(run, geo, config, shares),
+        result = {"schemaVersion": "1.2" if shares and "weeklyByBarangay" in run else "1.1" if shares else "1.0", "scenarioId": ident, **identity, **build_movie(run, geo, config, shares),
             "runTimestamp": datetime.now(timezone.utc).isoformat(), "seed": None,
             "randomness": "Deterministic expected values; no stochastic draws", "geography": "QUEZON_CITY",
             "units": {"cases": "expected reported cases per daily interval", "patients": "expected patients", "distance": "km straight line"}}
+        if "weeklyByBarangay" in run:
+            result["units"]["cases"] = "expected synthetic cases per daily interval"
+            result["syntheticForecast"] = {**run["syntheticEvidence"], "issueBlock": run["issueBlock"],
+                "targets": run["weeklyPredictions"], "weeklyByBarangay": run["weeklyByBarangay"],
+                "coverage": len(run["weeklyByBarangay"]), "missingBarangays": geo["missingBarangays"],
+                "measurementKind": "forecast", "units": "expected synthetic cases per source week"}
         result["resultSha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, allow_nan=False).encode()).hexdigest()
         folder.mkdir(parents=True, exist_ok=True)
         temp = folder / (uuid4().hex + ".tmp")
@@ -212,7 +229,8 @@ def saved_movie(ident: str):
         expected = result.pop("resultSha256")
         if hashlib.sha256(json.dumps(result, sort_keys=True, allow_nan=False).encode()).hexdigest() != expected:
             raise ValueError("Saved movie checksum mismatch")
-        if result["forecastArtifactSha256"] != sha256(FOLDER / "forecast-runs.json"):
+        synthetic = result["parameters"]["forecastRunId"].startswith(synthetic_barangay.PREFIX)
+        if result["forecastArtifactSha256"] != (synthetic_barangay.DIGEST if synthetic else sha256(FOLDER / "forecast-runs.json")):
             raise ValueError("Forecast version changed")
         if result.get("environmentalForecastSha256") and result["environmentalForecastSha256"] != sha256(FOLDER / "qc-environmental-forecasts.json"):
             raise ValueError("Environmental forecast version changed")

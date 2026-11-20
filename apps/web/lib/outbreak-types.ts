@@ -15,15 +15,16 @@ export interface MovieBarangay {
   hospitalsWithinBarangay?: { facilityId: string; distanceKm: number }[];
 }
 export interface MovieContext {
+  firstAdmissionOriginSharesByHorizon?: Record<number, Record<string, Record<string, number>>>;
   firstAdmissionOriginShares?: Record<string, Record<string, number>>;
   hotspotRanking?: { model: string; forecastYear: number; trainingCutoffYear: number; criterion: string;
     artifactSha256: string; candidateIds: string[]; limitations: string;
     validation: { targetYear: number; model: string; n: number; maeAnnualCases: number; top10Overlap: number; topCount: number }[] } | null;
-  referenceForecastRunId: string; weightYear: number; distanceMethod: string;
+  referenceForecastRunId: string; weightYear: number | null; distanceMethod: string;
   barangays: MovieBarangay[]; hospitals: MovieHospital[];
 }
 export interface MovieParameters {
-  forecastRunId: string; scenarioKind: 'hypothetical_shock' | 'historical_replay'; acknowledgeHypotheticalHospitalNetwork: true;
+  forecastRunId: string; scenarioKind: 'hypothetical_shock' | 'historical_replay' | 'synthetic_replay'; acknowledgeHypotheticalHospitalNetwork: true;
   autoHotspots?: boolean; allocationPolicy?: AllocationPolicy;
   arrivalSplitPolicy?: ArrivalPolicy;
   acknowledgeHypotheticalDates: true; startDate: string; endDate: string; seedBarangayId: string;
@@ -33,6 +34,7 @@ export interface MovieParameters {
   facilities: { facilityId: string; assumedDengueEligible: true; normalCapacity: number; surgeCapacity: number; holdingCapacity: number }[];
 }
 export interface MovieDay {
+  arrivalForecastHorizon?: number | null;
   dayIndex: number; date: string; snapshotAt: string; intervalStart: string; intervalEnd: string;
   expectedCases: number; baselineCases: number; shockCases: number; cumulativeCases: number;
   cumulativeBaselineCases: number; cumulativeShockCases: number; assumedRadiusKm: number;
@@ -82,14 +84,20 @@ export interface QCControls {
   surgeEnabled?: boolean; surgeOnsetDay?: number; surgeMultiplier?: number;
 }
 export interface QCWorkspaceResult extends OutbreakMovie {
+  syntheticForecast?: {
+    model: 'RandomForest'; coverage: number; missingBarangays: { id: string; name: string }[];
+    issueBlock: { YR: number; WN: number }; targets: { YR: number; WN: number; meanCases: number }[];
+    weeklyByBarangay: Record<string, number[]>; trainingYears: number[]; selectionYear: number;
+    sourceFolder: string; runVersion: string; beta: number;
+  };
   workspaceTab?: 'future' | 'historical';
   controlValues: QCControls; inputLimits: Record<string, { min: number; max: number; units: string }>;
   historicalWindows?: { startDate: string; endDate: string }[];
   forecastEvidence: { id: string; issueBlock: { YR: number; WN: number }; model: string;
     environmentalInputs: { sourceColumn: string; valueAtOrigin: number; unit: string; lagsSourceBlocks: number[] }[];
-    observedCasesAtOrigin: number; observedSourceYearToDateCases: number; intervalCoverageTarget: number;
+    observedCasesAtOrigin: number | null; observedSourceYearToDateCases: number | null; intervalCoverageTarget: number | null;
     intervalCaveat: string; spatialCaveat: string; availabilityAssumption: string };
-  periodSummary: { expectedCases: number; caseRange: CaseRange; barangays: MovieDay['barangays'] };
+  periodSummary: { expectedCases: number; caseRange: CaseRange | null; barangays: MovieDay['barangays'] };
   forecastBacktest: { horizon: number; n: number; weatherMae: number; casesOnlyMae: number; persistenceMae: number; empiricalRangeCoverage: number }[];
   referenceSelectionAssumption: string; rangeInterpretation: string; simulationResultSha256: string;
   futureForecast?: { asOfDate: string; trainingCutoffBlock: { YR: number; WN: number }; weatherProfile: string;
@@ -115,7 +123,7 @@ export interface QCWorkspaceResult extends OutbreakMovie {
 }
 export interface AllocationMetrics { cumulativeUnresolved: number; holdingCensus: number; maxNormalOccupancyPct: number; expectedPatientKm: number }
 export interface OutbreakMovie {
-  progressionMethod?: 'dated_QC_forecast_allocated_by_xgboost_annual_burden_shares' | 'dated_QC_forecast_allocated_by_prior_annual_barangay_shares' | 'explicit_hypothetical_radial_shock';
+  progressionMethod?: 'synthetic_weekly_barangay_random_forest' | 'dated_QC_forecast_allocated_by_xgboost_annual_burden_shares' | 'dated_QC_forecast_allocated_by_prior_annual_barangay_shares' | 'explicit_hypothetical_radial_shock';
   schemaVersion: string; scenarioId: string; resultSha256: string; runTimestamp: string;
   parameters: MovieParameters; context: MovieContext; days: MovieDay[]; durationDays: number;
   mapScaleMaxDailyCases: number; assumptions: string; disclaimer: string;

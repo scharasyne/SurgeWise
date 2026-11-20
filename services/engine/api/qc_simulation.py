@@ -2,7 +2,7 @@
 from datetime import date, timedelta
 import json
 import hashlib
-from typing import Literal
+from typing import ClassVar, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, model_validator
@@ -10,6 +10,7 @@ from pydantic import Field, model_validator
 from .research import StrictModel, FacilityAssumption, unavailable
 from .outbreak import OutbreakInput, inputs, create_movie
 from ..repositories.forecast_runs import load_environmental_runs, FOLDER
+from ..repositories import synthetic_barangay
 from ..domain.source_calendar import historical_window
 from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
 
@@ -30,6 +31,7 @@ LIMITS = {
 
 
 class QCInput(StrictModel):
+    first_year: ClassVar[int] = 2024
     startDate: date = date(2025, 1, 29)
     endDate: date = date(2025, 2, 26)
     mode: Literal["forecast", "hypothetical_shock"] = "forecast"
@@ -66,11 +68,15 @@ class QCInput(StrictModel):
             raise ValueError("Select first-hospital placement for a Markov choice policy.")
         if not 1 <= (self.endDate - self.startDate).days <= 28:
             raise ValueError("Select a 1–28 elapsed-day date range.")
-        if not 2024 <= self.startDate.year <= 2035:
-            raise ValueError("Source-based reference windows begin in 2024; hypothetical date labels may extend through 2035.")
+        if not self.first_year <= self.startDate.year <= 2035:
+            raise ValueError(f"Source-based reference windows begin in {self.first_year}; hypothetical date labels may extend through 2035.")
         if self.mode == "forecast" and (self.startDate.year > 2025 or self.extraCasesPerWeek != 0):
             raise ValueError("Forecast-reference mode uses historical data through 2025 and no added shock. Choose hypothetical mode for future/off-season stress tests.")
         return self
+
+
+class SyntheticInput(QCInput):
+    first_year = 2022
 
 
 def select_reference(runs, start, end=None):
@@ -91,14 +97,35 @@ def default_workspace():
 
 @router.post("/qc-simulation")
 def workspace(params: QCInput):
+    return _workspace(params, synthetic=False)
+
+
+@router.get("/synthetic-barangay-simulation")
+def default_synthetic_workspace():
+    return synthetic_workspace(SyntheticInput())
+
+
+@router.post("/synthetic-barangay-simulation")
+def synthetic_workspace(params: SyntheticInput):
+    return _workspace(params, synthetic=True)
+
+
+def _workspace(params, synthetic):
     try:
-        historical_runs = load_environmental_runs()
+        if synthetic:
+            try:
+                historical_runs = synthetic_barangay.approved_runs().values()
+            except ValueError as error:
+                raise HTTPException(503, detail={"code": "SYNTHETIC_FORECAST_UNAVAILABLE", "message": str(error)}) from None
+        else:
+            historical_runs = load_environmental_runs()
         run = select_reference(historical_runs, params.startDate, params.endDate)
         geo = inputs(run["id"], params.startDate.year, True)[1]
         # No place is requested from the browser; all QC weights determine rankings.
         automatic_origin = max(geo["barangays"], key=lambda b: b["weight"])["id"]
+        replay_kind = "synthetic_replay" if synthetic else "historical_replay"
         model = OutbreakInput(
-            forecastRunId=run["id"], scenarioKind="historical_replay" if params.mode == "forecast" else "hypothetical_shock",
+            forecastRunId=run["id"], scenarioKind=replay_kind if params.mode == "forecast" else "hypothetical_shock",
             autoHotspots=True, acknowledgeHypotheticalHospitalNetwork=True, acknowledgeHypotheticalDates=True,
             allocationPolicy=params.allocationPolicy, arrivalSplitPolicy=params.arrivalSplitPolicy,
             startDate=params.startDate, endDate=params.endDate, seedBarangayId=automatic_origin,
@@ -117,14 +144,15 @@ def workspace(params: QCInput):
             "forecastEvidence": {key: run[key] for key in ["id", "issueBlock", "model", "environmentalInputs", "observedCasesAtOrigin", "observedSourceYearToDateCases", "intervalCoverageTarget", "intervalCaveat", "spatialCaveat", "availabilityAssumption"]},
             "scope": "QUEZON_CITY", "mapContext": "PHILIPPINES_GEOMETRY_ONLY",
             "referenceSelectionAssumption": "Use only saved forecast target blocks covering the entire selected window, under the explicit Jan-1 52-block assumption. Partial windows preserve their actual source-block offset. Other months are rejected. Original WN dating remains unresolved.",
-            "rangeInterpretation": "80% target empirical city forecast residual ranges, conditional on fixed annual barangay shares. Spatial allocation uncertainty and hospital admission/capacity uncertainty are not calibrated.",
-            "forecastBacktest": json.loads((FOLDER / "qc-environmental-forecasts.json").read_text())["backtest"]["scores"]}
+            "rangeInterpretation": synthetic_barangay.INTERVAL if synthetic else "80% target empirical city forecast residual ranges, conditional on fixed annual barangay shares. Spatial allocation uncertainty and hospital admission/capacity uncertainty are not calibrated.",
+            "forecastBacktest": [] if synthetic else json.loads((FOLDER / "qc-environmental-forecasts.json").read_text())["backtest"]["scores"]}
         final = result["days"][-1]
-        result["periodSummary"] = {"expectedCases": final["cumulativeCases"], "caseRange": final["caseRange"],
+        result["periodSummary"] = {"expectedCases": final["cumulativeCases"], "caseRange": final.get("caseRange"),
             "barangays": sorted(final["barangays"], key=lambda b: (-b["cumulativeCases"], b["barangayId"]))}
-        result["assumptions"] = "QC-wide historical case + lagged rainfall/temperature/humidity model; fixed prior annual barangay weights. Daily counts are uniformly disaggregated source-block forecasts. Zero initial dengue census, constant assumed non-dengue occupancy, configured admission fraction/delay and fixed LOS; observed source case totals are not observed hospital admissions. No user-selected infection origin or calibrated transmission model. All 46 registered hospitals are hypothetical eligible sites with separately assumed capacity. " + ("Markov first admissions retain demand at each chosen hospital." if params.allocationPolicy == "first_hospital" else "Minimum-distance capacity-constrained LP; holding solved after supported placements." if params.allocationPolicy == "optimized" else "Deterministic nearest-supported-capacity baseline, then finite holding.")
-        result["assumptions"] = result["assumptions"].replace("fixed prior annual barangay weights", "fixed XGBoost annual barangay burden forecast shares")
-        result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is evaluated separately; weekly hotspot and spatial-allocation uncertainty are not validated."
+        if not synthetic:
+            result["assumptions"] = "QC-wide historical case + lagged rainfall/temperature/humidity model; fixed prior annual barangay weights. Daily counts are uniformly disaggregated source-block forecasts. Zero initial dengue census, constant assumed non-dengue occupancy, configured admission fraction/delay and fixed LOS; observed source case totals are not observed hospital admissions. No user-selected infection origin or calibrated transmission model. All 46 registered hospitals are hypothetical eligible sites with separately assumed capacity. " + ("Markov first admissions retain demand at each chosen hospital." if params.allocationPolicy == "first_hospital" else "Minimum-distance capacity-constrained LP; holding solved after supported placements." if params.allocationPolicy == "optimized" else "Deterministic nearest-supported-capacity baseline, then finite holding.")
+            result["assumptions"] = result["assumptions"].replace("fixed prior annual barangay weights", "fixed XGBoost annual barangay burden forecast shares")
+            result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is evaluated separately; weekly hotspot and spatial-allocation uncertainty are not validated."
         if params.compareAllocation and params.allocationPolicy == "first_hospital":
             result["firstAdmissionComparison"] = compare_first_admissions(model, result)
         elif params.compareAllocation:

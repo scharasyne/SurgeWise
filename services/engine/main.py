@@ -47,8 +47,9 @@ def facilities():
 
 @app.get("/readiness")
 def readiness():
+    facilities = []
     try:
-        load_facilities()
+        facilities = load_facilities()
         facility_ready = True
     except FacilityDatasetError:
         facility_ready = False
@@ -70,7 +71,25 @@ def readiness():
         approved_ranking(today_qc().year)
     except BarangayRankingUnavailable as error:
         ranking = {"ready": False, "code": "BARANGAY_RANKING_UNAVAILABLE", "message": str(error)}
-    return {"schemaVersion": "1.0", "ready": False, "historicalSourceBlockReplayReady": forecast_ready and facility_ready,
+    from services.engine.repositories.synthetic_barangay import approved_runs
+    try:
+        synthetic = {"ready": True, "origins": len(approved_runs())}
+    except ValueError as error:
+        synthetic = {"ready": False, "code": "SYNTHETIC_FORECAST_UNAVAILABLE", "message": str(error)}
+    from services.engine.repositories import first_admission
+    from services.engine.upri_data import ROOT, sha256
+    import json
+    try:
+        geometry = ROOT / first_admission.GEOMETRY_PATH
+        identifiers = [{"id": f["properties"]["ADM4_PCODE"]} for f in json.loads(geometry.read_bytes())["features"]]
+        first_admission.load_matrix("markov_preference", identifiers, [f["id"] for f in facilities], sha256(geometry))
+        preference = {"ready": True}
+    except (OSError, ValueError, KeyError, TypeError):
+        preference = {"ready": False, "code": "FIRST_ADMISSION_MATRIX_UNAVAILABLE"}
+    return {"schemaVersion": "1.0", "defaultWorkspace": "synthetic-barangay-simulation",
+        "defaultWorkspaceReady": synthetic["ready"] and facility_ready and preference["ready"],
+        "firstAdmissionPreference": preference,
+        "syntheticBarangayForecast": synthetic, "ready": False, "historicalSourceBlockReplayReady": forecast_ready and facility_ready,
         "seasonalForecast": seasonal,
         "barangayRanking": ranking,
         "qcWorkspaceReady": forecast_ready and facility_ready and ranking["ready"],

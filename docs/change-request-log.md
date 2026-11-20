@@ -1,5 +1,13 @@
 # User-requested extensions
 
+## 2026-11-20 13:59 +08:00 — Align the dev simulation interface with barangay forecasts
+
+The user requested the scenario design from dev on brgy-forecasting. The default historical simulation uses each covered barangay’s saved weekly RandomForest forecast with the pulled forecast-period, case-forecast and hospital-planning controls. Hospital-choice comparisons share identical dated forecast inputs. Admissions, local shortages and displayed placement flows use the corresponding weekly origin mix and scenario delays. [Synthetic replay and hospital assumptions](synthetic-barangay-replay.md#hospital-planning)
+
+## 2026-11-19 17:57 +0800 — Default to synthetic weekly barangay forecasts on brgy-forecasting
+
+The user approved making the selected Drive RandomForest the default in this branch. Sum the covered local forecasts to supply QC simulation demand, identify partial coverage and show the 1–4-week point estimates by barangay. See [implementation and reproduction](synthetic-barangay-replay.md) and the [approved design](superpowers/specs/2026-11-19-synthetic-barangay-default-design.md).
+
 ## 2026-11-19 04:32 +08:00 — Simplify scenario setup
 
 Group the settings by forecast period, case forecast and hospital planning. Use “preferred hospital” throughout the interface. Mark selected tabs and duration presets with a checkmark and teal fill. Presets edit the duration, and Run simulation applies the settings. Numeric fields allow replacement of an initial zero and validate before submission. [Panel behavior](simulation-workspace-design.md#layout-and-interaction)

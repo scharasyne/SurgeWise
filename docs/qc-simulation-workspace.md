@@ -1,5 +1,7 @@
 # Automatic QC forecasting and capacity workspace
 
+On the brgy-forecasting branch, the default UI uses [synthetic weekly barangay replay](synthetic-barangay-replay.md). The environmental methods below describe the retained environmental replay API.
+
 Current UI revision (2026-11-16): see
 [simulation workspace design](simulation-workspace-design.md). One optional
 contextual panel replaces the former simultaneous sidebars, and playback stays

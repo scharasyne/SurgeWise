@@ -70,7 +70,7 @@ const PhilippinesOverview = dynamic(
 const format = (n: number | undefined | null) =>
   n == null ? '—' : n.toLocaleString('en-PH', { maximumFractionDigits: 1 });
 const formatFractional = (n: number) => n > 0 && n < 0.01 ? '<0.01' : n.toLocaleString('en-PH', { maximumFractionDigits: 2 });
-const range = (r: { lowerCases: number; upperCases: number } | undefined) =>
+const range = (r: { lowerCases: number; upperCases: number } | undefined | null) =>
   r ? `${format(r.lowerCases)}–${format(r.upperCases)}` : 'Unavailable';
 const factorName: Record<string, string> = {
   RF_NASA: 'Rainfall',
@@ -98,11 +98,11 @@ const GLOSSARY = {
   ],
   range: [
     'Case range',
-    'Experimental range targeting 80% coverage. Retrospective checks covered fewer weeks, so treat it as exploratory.',
+    'The synthetic model supplies point estimates. Seasonal ranges have separate retrospective coverage checks.',
   ],
   hotspot: [
     'High-burden candidate (hotspot)',
-    'One of the ten barangays with the highest predicted annual dengue burden. Not a confirmed outbreak.',
+    'One of the ten barangays with the highest projected burden under the selected model. Not a confirmed outbreak.',
   ],
   accredited: [
     'Accredited beds',
@@ -152,7 +152,7 @@ async function fetchWorkspace(
   onStatus: (status: EngineConnectionStatus) => void
 ): Promise<QCWorkspaceResult> {
   const response = await fetchResearch(
-    `/api/research/${tab === 'future' ? 'future-simulation' : 'qc-simulation'}`,
+    `/api/research/${tab === 'future' ? 'future-simulation' : 'synthetic-barangay-simulation'}`,
     controls
       ? {
           method: 'POST',
@@ -430,7 +430,7 @@ export default function QCSimulationWorkspace() {
     );
     if (next) update(next);
   }
-  const earliestStart = tab === 'future' ? planningAsOf : '2024-01-29';
+  const earliestStart = tab === 'future' ? planningAsOf : historicalWindows[0]?.startDate;
   const latestStart = tab === 'future' ? '2035-12-31' : '2025-12-31';
   function dateProblem() {
     if (!controls) return null;
@@ -494,6 +494,10 @@ export default function QCSimulationWorkspace() {
   );
   const localHospitals = area?.hospitalsWithinBarangay ?? [];
   const source = data?.forecastEvidence;
+  const synthetic = data?.syntheticForecast;
+  const missingPlace = synthetic?.missingBarangays.find(b => b.id === selected);
+  const coverageLabel = synthetic && `${synthetic.coverage} of 142 barangays covered`;
+  const targetLabel = (target: { YR: number; WN: number }) => `${target.YR} W${target.WN}`;
   const fullPeriod = scenario?.periodSummary;
   const finalDay = scenario?.days.at(-1);
   const hotspotRanking = context?.hotspotRanking;
@@ -585,7 +589,7 @@ export default function QCSimulationWorkspace() {
       ? `${controls.surgeEnabled ? `Surge up to ${format(controls.surgeMultiplier)}× seasonal baseline` : 'No added surge'} · ${controls.weatherProfile ?? 'typical'} weather`
       : controls.mode === 'hypothetical_shock'
         ? `Stress overlay · +${format(controls.extraCasesPerWeek)} cases/week`
-        : 'Data-based historical forecast replay';
+        : 'Synthetic weekly barangay replay';
   const comparison = scenario?.allocationComparison;
   const chainComparison = scenario?.firstAdmissionComparison;
   const firstHospital = controls?.allocationPolicy === 'first_hospital';
@@ -773,7 +777,7 @@ export default function QCSimulationWorkspace() {
                   }}
                 >
                   {tab === value && <Check size={14} strokeWidth={2.5} aria-hidden="true" />}
-                  {value === 'historical' ? 'Historical replay' : 'Future forecast'}
+                  {value === 'historical' ? 'Synthetic barangay replay' : 'Future forecast'}
                 </button>
               ))}
             </div>
@@ -793,6 +797,7 @@ export default function QCSimulationWorkspace() {
               >
                 {controls ? (
                   <>
+                    {synthetic && <p className="qc-run-hint">RandomForest synthetic weekly forecasts · {coverageLabel}. Forecast intervals are unavailable.</p>}
                     <fieldset className="qc-fieldset">
                       <legend><CalendarDays aria-hidden="true" size={16} /> Forecast period</legend>
                       {tab === 'historical' && historicalWindows.length > 0 && (
@@ -834,8 +839,8 @@ export default function QCSimulationWorkspace() {
                           <label>Case scenario
                             <WorkspaceSelect label="Case scenario" value={controls.mode} onChange={value =>
                               update({ mode: value as QCControls['mode'], extraCasesPerWeek: value === 'forecast' ? 0 : 700 })}
-                              options={[{ value: 'forecast', label: 'Historical forecast' },
-                                { value: 'hypothetical_shock', label: 'Historical forecast with added cases' }]} />
+                              options={[{ value: 'forecast', label: 'Synthetic barangay forecast' },
+                                { value: 'hypothetical_shock', label: 'Synthetic forecast with added cases' }]} />
                           </label>
                           {controls.mode === 'hypothetical_shock' && <div className="qs-field-pair">
                             {numeric('extraCasesPerWeek', 'Extra weekly cases at peak', 0, 100000, 'cases/week')}
@@ -954,7 +959,7 @@ export default function QCSimulationWorkspace() {
                   <span>
                     {tab === 'future'
                       ? 'Future forecast'
-                      : 'Historical replay'}
+                      : 'Synthetic barangay replay'}
                   </span>
                   <strong>
                     {controls
@@ -1054,6 +1059,7 @@ export default function QCSimulationWorkspace() {
                   'alert'
                 )}
               </section>
+              {synthetic && <p><strong>{coverageLabel}.</strong> QC demand sums the available synthetic forecasts.</p>}
               <h3 className="qc-panel-subheading">Whole selected window</h3>
               <section
                 className="qc-totals"
@@ -1070,9 +1076,9 @@ export default function QCSimulationWorkspace() {
                 {summaryCard(
                   'window-range',
                   <TrendingUp size={20} />,
-                  'Experimental empirical case range · 80% target',
+                  synthetic ? 'Forecast interval' : 'Experimental empirical case range · 80% target',
                   range(fullPeriod?.caseRange),
-                  'Conditional on historical spatial weights',
+                  synthetic ? 'RandomForest supplies point estimates only' : 'Conditional on historical spatial weights',
                   GLOSSARY.range[1]
                 )}
                 {data && coverageValues.length > 0 && (
@@ -1094,7 +1100,7 @@ export default function QCSimulationWorkspace() {
                   <li>
                     {tab === 'future'
                       ? 'Future seasonal surge planning: new seasonal curves and historical weather analogs; current surveillance and real hospital census are unavailable.'
-                      : 'Historical replay: source-based case/environment forecasts for retrospective periods.'}{' '}
+                      : 'RandomForest replays 1–4-week predictions trained on synthetic weekly barangay counts.'}{' '}
                     No place selection is required. QC calculations; Philippines
                     geography is context only.
                   </li>
@@ -1120,7 +1126,7 @@ export default function QCSimulationWorkspace() {
                 <p>
                   {hotspotRanking
                     ? `Annual burden forecast for ${hotspotRanking.forecastYear}; source/training cutoff ${hotspotRanking.trainingCutoffYear}. Top ten is a research ranking, not a validated outbreak threshold.`
-                    : 'Hotspot ranking awaits approved model data.'}{' '}
+                    : synthetic ? 'Ranked by projected cases in the selected window.' : 'Hotspot ranking awaits approved model data.'}{' '}
                   Window cases: {controls?.startDate} to {controls?.endDate}{' '}
                   (end exclusive).
                 </p>
@@ -1129,7 +1135,7 @@ export default function QCSimulationWorkspace() {
                     <thead>
                       <tr>
                         <th>Candidate location</th>
-                        <th>XGBoost annual burden</th>
+                        {!synthetic && <th>XGBoost annual burden</th>}
                         <th>Projected window cases</th>
                         <th>Nearest hospital</th>
                       </tr>
@@ -1156,12 +1162,12 @@ export default function QCSimulationWorkspace() {
                                 {index + 1}. {b.name}
                               </button>
                             </td>
-                            <td>
+                            {!synthetic && <td>
                               {format(b.predictedAnnualCases)}
                               <small>
                                 Annual forecast · {hotspotRanking?.forecastYear}
                               </small>
-                            </td>
+                            </td>}
                             <td>
                               {format(row.cumulativeCases)}
                               <small>Range {range(row.caseRange)}</small>
@@ -1262,11 +1268,7 @@ export default function QCSimulationWorkspace() {
                         : ''}
                     </span>
                     <small>
-                      Progression uses this barangay’s dated allocated forecast.
-                      All places update together; no infection chain is modeled.
-                      XGBoost predicts annual barangay burden; its modeled
-                      shares allocate QC weekly forecasts. Independent weekly
-                      barangay forecasts remain unavailable.
+                      {synthetic ? 'Each source week uses this barangay’s saved RandomForest prediction.' : 'Annual modeled shares allocate the dated QC forecast to barangays.'}
                     </small>
                     {scenario && (
                       <svg
@@ -1329,7 +1331,7 @@ export default function QCSimulationWorkspace() {
                   Case model:{' '}
                   {data?.futureForecast
                     ? 'XGBoost seasonal projection'
-                    : 'audited historical cases/weather replay'}
+                    : 'RandomForest synthetic weekly barangay replay'}
                   . Bed need is a conditional admissions/LOS calculation; no
                   observed hospital occupancy targets were available for model
                   training.
@@ -1504,7 +1506,7 @@ export default function QCSimulationWorkspace() {
                 </div>
                 <div className="qc-chart-heading">
                   <strong>Daily unconstrained bed demand</strong>
-                  <span>Expected beds · shaded case-range sensitivity</span>
+                  <span>{synthetic ? 'Expected beds · point estimate' : 'Expected beds · shaded case-range sensitivity'}</span>
                 </div>
                 <svg
                   viewBox="0 0 900 100"
@@ -1513,7 +1515,7 @@ export default function QCSimulationWorkspace() {
                 >
                   {scenario && (
                     <>
-                      <polygon
+                      {!synthetic && <polygon
                         points={[
                           ...scenario.days.map(
                             (d, i) =>
@@ -1527,7 +1529,7 @@ export default function QCSimulationWorkspace() {
                             ),
                         ].join(' ')}
                         fill="#457b9d33"
-                      />
+                      />}
                       <polyline
                         points={scenario.days
                           .map(
@@ -1581,13 +1583,9 @@ export default function QCSimulationWorkspace() {
                   Automatically ranked QC barangays · full selected date range
                 </div>
                 <p>
-                  Annual XGBoost burden predictions supply modeled shares;
-                  observed annual source counts below are from{' '}
-                  {context?.weightYear ?? '—'}. Forecast ranges omit
-                  spatial-model uncertainty. Positive demand is not hotspot
-                  membership.{' '}
+                  {synthetic ? `RandomForest synthetic cases per full source week. ${coverageLabel}. Window totals include the selected days and any configured shock.` : `Annual modeled shares allocate QC predictions. Observed annual source year: ${context?.weightYear ?? '—'}.`}{' '}
                   <button onClick={() => setShowAll((v) => !v)}>
-                    {showAll ? 'Show top 10' : 'Show all 142 barangays'}
+                    {showAll ? 'Show top 10' : 'Show all barangays'}
                   </button>
                 </p>
                 <div className="qc-table-scroll">
@@ -1595,7 +1593,7 @@ export default function QCSimulationWorkspace() {
                     <thead>
                       <tr>
                         <th>Barangay</th>
-                        <th>Observed annual cases</th>
+                        {synthetic ? synthetic.targets.map(t => <th key={targetLabel(t)}>{targetLabel(t)}</th>) : <th>Observed annual cases</th>}
                         <th>Expected window cases</th>
                         <th>Conditional case range</th>
                         {firstHospital && <th>Attributed beds short · day {day}</th>}
@@ -1619,10 +1617,7 @@ export default function QCSimulationWorkspace() {
                                   {b.name}
                                 </button>
                               </td>
-                              <td>
-                                {format(b.observedAnnualCases)} (
-                                {context?.weightYear})
-                              </td>
+                              {synthetic ? synthetic.weeklyByBarangay[b.id].map((v, i) => <td key={i}>{format(v)}</td>) : <td>{format(b.observedAnnualCases)} ({context?.weightYear})</td>}
                               <td>{format(row.cumulativeCases)}</td>
                               <td>{range(row.caseRange)}</td>
                               {firstHospital && <td>{bedsShort == null ? '—' : formatFractional(bedsShort)}</td>}
@@ -1632,6 +1627,7 @@ export default function QCSimulationWorkspace() {
                     </tbody>
                   </table>
                 </div>
+                {!!synthetic?.missingBarangays.length && <p>Forecast unavailable for {synthetic.missingBarangays.map(b => b.name).join(', ')}.</p>}
                 {!scenario && (
                   <p>The ranked table appears after the simulation starts.</p>
                 )}
@@ -1936,6 +1932,8 @@ export default function QCSimulationWorkspace() {
                       </details>
                     )}
                   </>
+                ) : synthetic ? (
+                  <p>RandomForest trained on synthetic weekly counts for {synthetic.trainingYears.join('–')}. The experiment selected the model in {synthetic.selectionYear}. Annual totals and whole-year scaling enter the synthetic targets. Weekly accuracy against observed barangay cases is unknown. <a href={synthetic.sourceFolder}>Drive experiment and synthetic-target evaluation</a></p>
                 ) : (
                   <div className="qc-table-scroll">
                     <table>
@@ -1986,15 +1984,18 @@ export default function QCSimulationWorkspace() {
           </section>);
   const selectedPlace = area && !inspectedHospital && (showHotspotDetails || panelView === 'hospitals') ? (
     <section className="qs-inspector-block" aria-label="Selected hotspot details" aria-live="polite">
-      {selectedShortfall != null && <p className="qs-inspector-note"><strong>{formatFractional(selectedShortfall)} expected beds short</strong> attributable to this barangay on day {day}. Each hospital’s gap is shared in proportion to its modeled arrivals.</p>}
-      <div className="qs-place-heading"><span>{markerHotspotIds?.includes(area.id) ? 'Annual high-burden candidate' : 'Selected barangay · outside the top candidates'}</span><h3>{area.name}</h3></div>
+      {selectedShortfall != null && <p className="qs-inspector-note"><strong>{formatFractional(selectedShortfall)} expected beds short</strong> attributable to this barangay on day {day}. Each hospital’s gap is shared in proportion to the modeled beds needed by each barangay that day.</p>}
+      <div className="qs-place-heading"><span>{markerHotspotIds?.includes(area.id) ? 'High projected burden' : 'Selected barangay · outside the top candidates'}</span><h3>{area.name}</h3></div>
       <h4>Projected cases</h4>
       <InspectorFacts rows={[
         ['Full selected window', format(selectedPeriod?.cumulativeCases)],
         [`Accumulated to day ${day}`, format(snapshot?.barangays.find(b => b.barangayId === area.id)?.cumulativeCases)],
         ['Experimental window range', range(selectedPeriod?.caseRange)],
       ]} />
-      <p className="qs-inspector-note">Modeled allocation, not observed weekly barangay surveillance. The case range is conditional on the spatial weights.</p>
+      {synthetic ? <section className="qs-inspector-section"><h4>Weekly synthetic forecast</h4>
+        <p>RandomForest point estimates · expected cases per source week</p>
+        {scenario && <InspectorFacts rows={synthetic.targets.map((t, i) => [targetLabel(t), format(synthetic.weeklyByBarangay[area.id]?.[i])])} />}
+      </section> : <><p className="qs-inspector-note">Modeled allocation, not observed weekly barangay surveillance. The case range is conditional on the spatial weights.</p>
       <details className="qs-inspector-disclosure"><summary>Annual ranking & model context</summary>
         <InspectorFacts rows={[
           ['Annual model', hotspotRanking?.model ?? 'Unavailable'],
@@ -2003,7 +2004,7 @@ export default function QCSimulationWorkspace() {
           ['Annual burden rank', area.burdenRank == null ? 'Unavailable' : `${area.burdenRank} of 142`],
         ]} />
         <p>Rank identifies the model’s annual burden order. It is not a case count or a confirmed outbreak.</p>
-      </details>
+      </details></>}
       <section className="qs-inspector-section"><h4>Nearest registered hospital</h4>
         <p className="qs-inspector-name">{nearestHospital?.name ?? 'Unavailable'}</p>
         <InspectorFacts rows={[
@@ -2035,7 +2036,7 @@ export default function QCSimulationWorkspace() {
           ['Projected window cases', format(hospitalHotspotCases?.cumulativeCases)],
           ['Experimental range', range(hospitalHotspotCases?.caseRange)],
         ]} />
-        <p className="qs-inspector-note">Closest annual candidate by representative point; not a verified hospital entrance or referral.</p>
+        <p className="qs-inspector-note">Closest ranked barangay by representative point; not a verified hospital entrance or referral.</p>
         <div className="qs-inspector-actions"><button type="button" className="text-button" disabled={!hospitalHotspotArea} onClick={() => hospitalHotspotArea && inspectHotspot(hospitalHotspotArea.id)}>Inspect barangay <ChevronRight size={13} /></button><button type="button" className="text-button" onClick={() => { setHospital(''); setShowHotspotDetails(true); }}>Nearby hospitals</button></div>
       </section>}
       <h3 className="qs-inspector-section-title">{inspectedHospital ? 'Hospital capacity & demand' : 'Nearby hospital details'}</h3>
@@ -2122,7 +2123,7 @@ export default function QCSimulationWorkspace() {
               showHospitals={showHospitals} satellite={satellite} onReady={setMapController} onStatus={setMapStatus} />
             <div className="qs-topbar">
               <button ref={scenarioTrigger} type="button" className="text-button qs-scenario-trigger" data-map-overlay aria-label="Edit simulation scenario" aria-controls="qs-context-panel" aria-expanded={panelView === 'scenario'} onClick={() => panelView === 'scenario' ? closePanel() : openPanel('scenario')}>
-                <SlidersHorizontal size={17} aria-hidden="true" /><span><strong>{tab === 'historical' ? 'Historical replay' : 'Future forecast'}</strong><small>Quezon City · {Number.isFinite(selectedDays) ? `${selectedDays} days` : 'Choose dates'}</small></span><ChevronDown size={13} aria-hidden="true" />
+                <SlidersHorizontal size={17} aria-hidden="true" /><span><strong>{tab === 'historical' ? 'Synthetic barangay replay' : 'Future forecast'}</strong><small>Quezon City · {Number.isFinite(selectedDays) ? `${selectedDays} days` : 'Choose dates'}</small></span><ChevronDown size={13} aria-hidden="true" />
               </button>
               <button type="button" className="text-button qs-results-trigger" data-map-overlay aria-label="Open simulation results" aria-controls="qs-context-panel" aria-expanded={panelView === 'results'} onClick={() => panelView === 'results' ? closePanel() : openPanel('results')}><ChartNoAxesCombined size={16} aria-hidden="true" /><span>Results</span></button>
             </div>
@@ -2173,7 +2174,7 @@ export default function QCSimulationWorkspace() {
                     <b className="qc-marker-hotspot" aria-hidden="true">
                       1
                     </b>
-                    Annual predicted burden · number = rank
+                    {synthetic ? 'Selected-window burden' : 'Annual predicted burden'} · number = rank
                   </span>
                   <span>
                     <b className="qc-marker-hospital" aria-hidden="true">
@@ -2190,7 +2191,7 @@ export default function QCSimulationWorkspace() {
                 </div>
                 <div className="qc-line-key">
                   {[SIMULATION_LINES.proximity,
-                    ...(scenario ? [context?.firstAdmissionOriginShares ? { ...SIMULATION_LINES.placement, label: 'Up to three largest placement flows per selection' } : SIMULATION_LINES.placement, SIMULATION_LINES.holding] : []),
+                    ...(scenario ? [(context?.firstAdmissionOriginShares || context?.firstAdmissionOriginSharesByHorizon) ? { ...SIMULATION_LINES.placement, label: 'Up to three largest placement flows per selection' } : SIMULATION_LINES.placement, SIMULATION_LINES.holding] : []),
                     SIMULATION_LINES['hospital-context'],
                     ...(snapshot?.expansionRing?.length ? [SIMULATION_LINES.front] : []),
                   ].map(line => <span key={line.kind} data-line-kind={line.kind}><i aria-hidden="true" style={{ borderTop: `${line.width}px ${line.dash.length ? 'dashed' : 'solid'} ${line.color}` }} />{line.label}</span>)}
@@ -2204,7 +2205,7 @@ export default function QCSimulationWorkspace() {
                   <p className="qc-progression-note">
                     {hotspotRanking
                     ? `XGBoost ranks predicted annual barangay burden for ${hotspotRanking.forecastYear}, trained only through ${hotspotRanking.trainingCutoffYear}. Only the ten highest-burden candidates receive numbered markers. Their modeled annual shares allocate the dated QC forecast; this is not validated weekly hotspot detection.`
-                      : 'Places follow dated modeled allocations; local weekly hotspot forecasts are unavailable.'}{' '}
+                      : 'RandomForest ranks covered barangays by their projected burden over the selected window.'}{' '}
                     All places update together, without a neighbor-triggered
                     outbreak sequence.
                   </p>
@@ -2218,7 +2219,7 @@ export default function QCSimulationWorkspace() {
                   </small>
                   <small>
                     Only the {markerHotspotIds?.length ?? '—'} highest predicted
-                    annual-burden candidates have numbered markers and case-band
+                    burden candidates have numbered markers and case-band
                     coloring; other barangays remain neutral. Small unnumbered dots identify other barangays linked to an inspected hospital. Positive demand
                     alone does not make a hotspot. Click a marker to inspect its
                     hospital connections. {hotspotRanking?.model}; no
@@ -2231,7 +2232,7 @@ export default function QCSimulationWorkspace() {
               </div></details>
           </div>
           <section id="qs-timeline" className="qs-timeline" role="group" aria-label="Simulation timeline and playback" hidden={timelineHidden}>
-            <div className="qs-timeline-heading"><span className="qs-research-status">Research scenario · Assumed capacity</span><button ref={guideTrigger} type="button" className="text-button qs-help" aria-label="How to use this page" aria-expanded={showGuide} onClick={openGuide}><CircleHelp size={15} />Help</button></div>
+            <div className="qs-timeline-heading"><span className="qs-research-status">{synthetic ? `Synthetic replay · ${synthetic.coverage}/142 barangays` : 'Research scenario'} · Assumed capacity</span><button ref={guideTrigger} type="button" className="text-button qs-help" aria-label="How to use this page" aria-expanded={showGuide} onClick={openGuide}><CircleHelp size={15} />Help</button></div>
             <div className="qs-transport">
               <button type="button" className="text-button qs-play" aria-label={playing ? 'Pause simulation' : 'Play simulation'} disabled={!data} onClick={() => { if (data && day === data.durationDays) setDay(0); setPlaying(v => !v); }}>{playing ? <Pause size={17} /> : <Play size={17} />}{playing ? 'Pause' : 'Play'}</button>
               <div className="qs-timeline-date"><strong>{snapshot ? formatScenarioDate(snapshot.date) : controls?.startDate ? formatScenarioDate(controls.startDate) : 'Choose a scenario'}</strong><span>Day {day} / {data?.durationDays ?? '—'} · {playing ? 'Playing' : scenario ? 'Paused' : data ? 'Ready' : 'Awaiting update'}</span></div>
@@ -2255,7 +2256,7 @@ export default function QCSimulationWorkspace() {
                 : <div><span>Unplaced demand to date</span><strong>{format(snapshot?.cumulativeUnresolved)}</strong><small>Expected patients · cumulative</small></div>}
               <button type="button" className="text-button qs-more-results" onClick={() => openDetail('overview')}>View results <ChevronRight size={14} /></button>
             </div>
-            {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Numbered markers show annual burden rank; cross pins are hospitals.</p>}
+            {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Numbered markers show projected burden rank; cross pins are hospitals.</p>}
           </section>
         </section>
         <aside id="qs-context-panel" className="qs-context-panel" hidden={!panelView} aria-labelledby="qs-panel-title" data-reduced-motion={reduced}>
@@ -2334,7 +2335,7 @@ export default function QCSimulationWorkspace() {
                 <summary>
                   {tab === 'future'
                     ? 'Seasonal forecasting engine'
-                    : 'Environmental basis'}
+                    : 'RandomForest inputs'}
                 </summary>
                 {source ? (
                   <>
@@ -2387,7 +2388,7 @@ export default function QCSimulationWorkspace() {
                     <p>
                       {tab === 'future'
                         ? 'Values above are assumed historical weather analogs for the selected season. No current-case lags or measured future weather are fabricated.'
-                        : 'Observed inputs at origin; lagged 1, 2 and 4 source blocks in the city model.'}{' '}
+                        : 'The saved RandomForest used synthetic case lags, city weather through the origin block, settlement proportion, seasonality and barangay code.'}{' '}
                       No measured barangay microclimate.
                     </p>
                   </>
@@ -2399,7 +2400,7 @@ export default function QCSimulationWorkspace() {
               </details>}
             </div>
           </div>
-          <div className="qs-panel-body qs-inspector-body" hidden={panelView !== 'hospitals'}>{selectedPlace}{hospitalDetails}<button type="button" className="text-button qs-inspector-results" onClick={() => openDetail(inspectedHospital ? 'city-beds' : 'place-beds')}>{inspectedHospital ? 'View city-wide bed demand' : 'View barangay bed-demand results'} <ChevronRight size={14} /></button></div>
+          <div className="qs-panel-body qs-inspector-body" hidden={panelView !== 'hospitals'}>{missingPlace && <p>{missingPlace.name} · weekly synthetic forecast unavailable for this origin.</p>}{selectedPlace}{hospitalDetails}<button type="button" className="text-button qs-inspector-results" onClick={() => openDetail(inspectedHospital ? 'city-beds' : 'place-beds')}>{inspectedHospital ? 'View city-wide bed demand' : 'View barangay bed-demand results'} <ChevronRight size={14} /></button></div>
           <div className="qs-panel-body qs-layers-body" hidden={panelView !== 'layers'}>
             <p className="qs-panel-intro">Choose the context and information on your map.</p>
             <label className="qs-field-label">Map area<WorkspaceSelect label="Map extent" value={view} onChange={value => setView(value as 'qc' | 'philippines')} options={[{value:'qc',label:'Quezon City'},{value:'philippines',label:'Philippines context'}]} /></label>
@@ -2425,7 +2426,7 @@ export default function QCSimulationWorkspace() {
           else if(!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}><section className="qs-guide" role="dialog" aria-modal="true" aria-labelledby="qs-guide-title"><div className="qs-guide-heading"><h2 id="qs-guide-title">Explore a preparedness scenario</h2><button type="button" ref={guideClose} className="text-button qs-panel-icon" aria-label="Close guide" onClick={closeGuide}><X size={18} /></button></div>
-        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers are annual projected-burden ranks, not case counts or confirmed outbreaks. Cross pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and policy comparisons, then export the saved scenario.</li></ol>
+        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers show projected burden ranks, not case counts or confirmed outbreaks. Cross pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and policy comparisons, then export the saved scenario.</li></ol>
         <details><summary>Terms used in this simulation</summary><dl>{Object.values(GLOSSARY).map(([term, meaning]) => <div key={term}><dt>{term}</dt><dd>{meaning}</dd></div>)}</dl></details>
         <p>Historical source evidence and configured assumptions support this research scenario. Current hospital vacancies, dengue capacity and entrances are not verified. This is not live surveillance or clinical referral guidance.</p><button type="button" className="text-button qs-primary" onClick={closeGuide}>Explore the map</button>
       </section></div>}

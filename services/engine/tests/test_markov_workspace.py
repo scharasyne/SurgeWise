@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 import csv
+import json
 
 from fastapi.testclient import TestClient
 import pytest
@@ -8,7 +9,7 @@ from services.engine.api.qc_simulation import QCInput, workspace
 from services.engine.domain.outbreak import build_movie
 from services.engine.main import app
 from services.engine.repositories import first_admission
-from services.engine.upri_data import ROOT
+from services.engine.upri_data import ROOT, sha256
 
 
 def test_local_shortage_survives_spare_beds_elsewhere():
@@ -45,13 +46,39 @@ def test_local_shortage_survives_spare_beds_elsewhere():
     assert held["bedForecast"]["hospitalBedsShort"] == 4
 
 
+@pytest.fixture(scope="module")
+def matching_reference_exports(tmp_path_factory):
+    """Compare identical forecast artifacts, including after a local annual model rebuild."""
+    from scripts import build_first_admission_matrix as proximity
+    from scripts import build_first_admission_preference as preference
+
+    published = ROOT / "data/processed"
+    baseline_name, _ = first_admission.MATRICES["markov_proximity"]
+    favorite_name, _ = first_admission.MATRICES["markov_preference"]
+    manifest = json.loads((published / baseline_name / "manifest.json").read_text())
+    annual = "data/processed/upri_noah/qc-barangay-xgboost.json"
+    if manifest["inputHashes"][annual] == sha256(ROOT / annual):
+        return published
+
+    # The published worked example records the annual forecast hash used to build it.
+    # Regenerate its offline reference for this machine's validated local model.
+    root = tmp_path_factory.mktemp("historical_reference")
+    baseline, favorites = root / baseline_name, root / favorite_name
+    baseline.mkdir()
+    favorites.mkdir()
+    current = proximity.build(baseline, manifest["runId"], 3, .15, 4)
+    (baseline / "manifest.json").write_text(json.dumps(current))
+    preference.build(favorites, baseline, preference.PREFERENCES, 1.5)
+    return root
+
+
 @pytest.mark.parametrize("policy,folder", [(k, v[0]) for k, v in first_admission.MATRICES.items()])
-def test_live_historical_run_matches_every_exported_hospital_day(policy, folder):
+def test_live_historical_run_matches_every_exported_hospital_day(policy, folder, matching_reference_exports):
     movie = workspace(QCInput(arrivalSplitPolicy=policy))
     assert movie["parameters"]["allocationPolicy"] == "first_hospital"
     assert movie["firstAdmissionMatrixSha256"] == first_admission.MATRICES[policy][1]
     assert len([b for b in movie["context"]["barangays"] if b["mappedFavoriteHospitalId"]]) == 14
-    with (ROOT / "data/processed" / folder / "daily_hospital_beds.csv").open() as stream:
+    with (matching_reference_exports / folder / "daily_hospital_beds.csv").open() as stream:
         reference = list(csv.DictReader(stream))
     assert len(reference) == 28 * 46
     # The export labels interval starts. The movie labels the end snapshot.

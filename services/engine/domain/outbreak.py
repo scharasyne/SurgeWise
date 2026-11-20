@@ -10,7 +10,7 @@ from .patient_flow import simulate_flow
 from .spatial import annual_weights
 from .bed_forecast import add_bed_forecasts
 from .hospital_demand import hospital_shares
-from .source_calendar import align_historical_run
+from .source_calendar import align_historical_run, day_schedule
 
 VERSION = "qc-first-admission-bed-allocation-v4"
 
@@ -36,11 +36,19 @@ def distance_km(a, b):
 
 def make_context(run, annual, geojson, hospitals, cutoff_year=None, use_xgboost=False):
     records = {r["ADM4_PCODE"]: r for r in annual}
-    year, weights = annual_weights(annual, min(run.get("spatialWeightsIssueYear", run["issueBlock"]["YR"]), cutoff_year or 9999))
-    weight_map = dict(weights)
+    places = run.get("weeklyByBarangay")
+    if places is None:
+        year, weights = annual_weights(annual, min(run.get("spatialWeightsIssueYear", run["issueBlock"]["YR"]), cutoff_year or 9999))
+        weight_map = dict(weights)
+    else:
+        if not places.keys() <= records.keys():
+            raise ValueError("Synthetic forecast contains unknown QC barangays")
+        year = None
+        total = sum(sum(values) for values in places.values())
+        weight_map = {ident: sum(values) / total if total else 0 for ident, values in places.items()}
     ranking = None
     predicted = {}
-    if use_xgboost:
+    if use_xgboost and places is None:
         from ..repositories.barangay_runs import approved_ranking
         issue_year = min(run.get("spatialWeightsIssueYear", run["issueBlock"]["YR"]), cutoff_year or 9999)
         ranked_run, ranking = approved_ranking(issue_year)
@@ -58,6 +66,8 @@ def make_context(run, annual, geojson, hospitals, cutoff_year=None, use_xgboost=
     barangays = []
     hospital_points = {h["id"]: Point(h["longitude"], h["latitude"]) for h in hospitals}
     for feature in features:
+        if places is not None and feature["properties"]["ADM4_PCODE"] not in places:
+            continue
         geometry = shape(feature["geometry"])
         if not geometry.is_valid or geometry.is_empty or geometry.geom_type not in {"Polygon", "MultiPolygon"}:
             raise ValueError("Invalid source polygon")
@@ -69,13 +79,14 @@ def make_context(run, annual, geojson, hospitals, cutoff_year=None, use_xgboost=
                           for h in hospitals], key=lambda r: (r["distanceKm"], r["facilityId"]))
         barangays.append({"id": ident, "name": records[ident]["Barangay"], "coordinates": coordinates,
             "sourceADM4_PCODE": feature["properties"].get("sourceADM4_PCODE"), "weight": weight_map[ident],
-            "observedAnnualCases": records[ident][f"DC_{year}"],
+            "observedAnnualCases": records[ident][f"DC_{year}"] if year is not None else None,
             "predictedAnnualCases": predicted.get(ident, {}).get("predictedAnnualCases"),
             "burdenRank": predicted.get(ident, {}).get("burdenRank"),
             "isHighBurdenCandidate": predicted.get(ident, {}).get("isHighBurdenCandidate", False),
             "nearestHospitals": nearest[:3],
             "hospitalsWithinBarangay": [entry for entry in nearest if geometry.covers(hospital_points[entry["facilityId"]])]})
-    return {"schemaVersion": "1.2", "referenceForecastRunId": run["id"], "weightYear": year, "hotspotRanking": ranking,
+    return {"schemaVersion": "1.2", "referenceForecastRunId": run["id"], "weightYear": year,
+        **({"missingBarangays": [{"id": ident, "name": records[ident]["Barangay"]} for ident in sorted(records.keys() - places.keys())]} if places is not None else {}), "hotspotRanking": ranking,
         "barangays": sorted(barangays, key=lambda b: b["id"]),
         "hospitals": [{"id": h["id"], "name": h["name"], "coordinates": [h["longitude"], h["latitude"]],
             "coordinateStatus": h["coordinateStatus"], "sourceAsOf": h["sourceAsOf"], "coordinateSourceUrl": h["coordinateSourceUrl"],
@@ -142,13 +153,81 @@ def allocated_forecast_trajectory(run, context, config, duration):
     return days
 
 
+def synthetic_trajectory(run, config, duration):
+    """Slice each saved local horizon by its source block's actual day count."""
+    places = run["weeklyByBarangay"]
+    origin = run["issueBlock"]["YR"] * 52 + run["issueBlock"]["WN"] - 1
+    days = []
+    schedule = day_schedule(config["startDate"], duration)
+    for i in range(28):
+        horizon = None
+        local = dict.fromkeys(places, 0.0)
+        shock = 0.0
+        if i < duration:
+            _, block, divisor = schedule[i]
+            horizon = block - origin - 1
+            if horizon not in range(4):
+                raise ValueError("Date outside the four saved forecast horizons")
+            local = {code: values[horizon] / divisor for code, values in places.items()}
+            rise = 1 if config["shockProfile"] == "step" else min(1, (i + 1) / config["growthDays"])
+            shock = config["extraCasesPerWeek"] * rise / 7
+        total = math.fsum(local.values())
+        if shock and not total:
+            raise ValueError("Cannot apportion an added shock with zero covered demand")
+        rows = []
+        for code, value in local.items():
+            extra = shock * value / total if shock else 0.0
+            rows.append({"barangayId": code, "baselineCases": value, "shockCases": extra, "expectedCases": value + extra})
+        days.append({"dayIndex": i + 1, "baselineCases": total, "shockCases": shock, "expectedCases": total + shock,
+                     "forecastHorizon": horizon + 1 if horizon is not None else None,
+                     "surgeFactor": 1.0, "assumedRadiusKm": 0.0, "barangays": rows})
+    return days
+
+
+def first_destination_mix(origin_demand, shares, eligible):
+    """Return each hospital's share of demand and the origins of its arrivals."""
+    contributions = {h: {} for h in eligible}
+    for origin, options in shares.items():
+        for h, probability in options:
+            contributions[h][origin] = origin_demand[origin] * probability
+    total = math.fsum(origin_demand.values())
+    volumes = {h: math.fsum(parts.values()) for h, parts in contributions.items()}
+    fractions = {h: volume / total if total else 0.0 for h, volume in volumes.items()}
+    origins = {h: {b: v / volumes[h] for b, v in parts.items() if v > 0} for h, parts in contributions.items()}
+    return fractions, origins
+
+
 def build_movie(run, context, config, first_admission_shares=None):
     duration = (config["endDate"] - config["startDate"]).days
-    if config.get("autoHotspots") and not run.get("dailyPredictions"):
-        run = align_historical_run(run, config["startDate"], duration)
-    days = allocated_forecast_trajectory(run, context, config, duration) if config.get("autoHotspots") else spatial_trajectory(
-        run, context, config["seedBarangayId"], config["extraCasesPerWeek"], config["initialRadiusKm"],
-        config["expansionKmPerDay"], config["growthDays"], duration, config["shockProfile"])
+    synthetic = "weeklyByBarangay" in run
+    if synthetic:
+        days = synthetic_trajectory(run, config, duration)
+        totals = {code: 0.0 for code in run["weeklyByBarangay"]}
+        for day in days[:duration]:
+            for row in day["barangays"]:
+                totals[row["barangayId"]] += row["expectedCases"]
+        progression_method = "synthetic_weekly_barangay_random_forest"
+        assumptions = ("RandomForest synthetic weekly barangay forecasts are divided evenly across source-block days. "
+                       "QC demand sums covered barangays. Added shocks use each day's relative forecast burden. ")
+        window_ranks = [code for code in sorted(totals, key=lambda k: (-totals[k], k))[:10] if totals[code] > 0]
+    elif config.get("autoHotspots"):
+        if not run.get("dailyPredictions"):
+            run = align_historical_run(run, config["startDate"], duration)
+        days = allocated_forecast_trajectory(run, context, config, duration)
+        progression_method = ("dated_QC_forecast_allocated_by_xgboost_annual_burden_shares" if context.get("hotspotRanking")
+                              else "dated_QC_forecast_allocated_by_prior_annual_barangay_shares")
+        assumptions = ("Each barangay progresses directly from its dated QC forecast allocation using prior annual spatial shares. "
+                       "No geographic seed, expansion radius, neighbor activation or contagion chain affects forecast demand. "
+                       "These are modeled barangay allocations, not separately trained local forecasts. "
+                       "Configured citywide shocks are separate assumptions. ")
+    else:
+        days = spatial_trajectory(run, context, config["seedBarangayId"], config["extraCasesPerWeek"],
+                                  config["initialRadiusKm"], config["expansionKmPerDay"], config["growthDays"],
+                                  duration, config["shockProfile"])
+        progression_method = "explicit_hypothetical_radial_shock"
+        assumptions = ("Historical reference blocks mapped onto hypothetical dates; annual weights use only complete years before "
+                       "the reference/scenario cutoff with one extra full-year lag. Additive shock uses an explicit hypothetical radial "
+                       "kernel; radius speed and case ramp are user assumptions, not inferred transmission. ")
     hospital_map = {h["id"]: h for h in context["hospitals"]}
     eligible = {f["facilityId"] for f in config["facilities"]}
     barangay_map = {b["id"]: b for b in context["barangays"]}
@@ -156,20 +235,19 @@ def build_movie(run, context, config, first_admission_shares=None):
     policy = config.get("allocationPolicy", "nearest")
     if policy == "first_hospital":
         if first_admission_shares is None or not config.get("autoHotspots"):
-            raise ValueError("First-hospital placement needs validated QC choices and fixed barangay forecast weights")
+            raise ValueError("First-hospital placement needs validated QC choices and automatic barangay demand")
         shares = first_admission_shares
-        # Automatic QC forecasts use the same origin weights on every date. Aggregate
-        # first destinations before applying capacity, sharing placement proportionally
-        # among origins at a hospital. No barangay gets priority from CSV row order.
-        contribution = {h: {} for h in eligible}
-        for origin, options in shares.items():
-            for h, probability in options:
-                contribution[h][origin] = barangay_map[origin]["weight"] * probability
-        fractions = {h: math.fsum(parts.values()) for h, parts in contribution.items()}
-        groups = [[{"originId": None, "cases": d["expectedCases"] * fractions[h], "facilityOrder": [h]}
-                   for h in sorted(eligible)] for d in days]
-        origin_mix = {h: {b: w / fractions[h] for b, w in parts.items() if w > 0} for h, parts in contribution.items()}
-        context = {**context, "firstAdmissionOriginShares": origin_mix}
+        if synthetic:
+            mixes = {h: first_destination_mix({b: v[h - 1] for b, v in run["weeklyByBarangay"].items()}, shares, eligible)
+                     for h in range(1, 5)}
+            daily_fractions = [mixes[d["forecastHorizon"]][0] if d["forecastHorizon"] else {} for d in days]
+            context = {**context, "firstAdmissionOriginSharesByHorizon": {str(h): mix[1] for h, mix in mixes.items()}}
+        else:
+            fractions, origins = first_destination_mix({b: row["weight"] for b, row in barangay_map.items()}, shares, eligible)
+            daily_fractions = [fractions] * len(days)
+            context = {**context, "firstAdmissionOriginShares": origins}
+        groups = [[{"originId": None, "cases": d["expectedCases"] * split[h], "facilityOrder": [h]}
+                   for h in sorted(split)] for d, split in zip(days, daily_fractions, strict=True)]
     else:
         orders = {b["id"]: sorted(eligible, key=lambda h: (distance_km(b["coordinates"], hospital_map[h]["coordinates"]), h))
                   for b in context["barangays"]}
@@ -193,6 +271,9 @@ def build_movie(run, context, config, first_admission_shares=None):
     onset = datetime.combine(config["startDate"], datetime.min.time(), zone)
     for d in flow[:duration + 1]:
         index = d["dayIndex"]
+        if synthetic and policy == "first_hospital":
+            source_index = index - config["admissionDelayDays"] - 1
+            d["arrivalForecastHorizon"] = days[source_index]["forecastHorizon"] if source_index >= 0 else None
         start, end = onset + timedelta(days=max(0, index - 1)), onset + timedelta(days=index)
         if index:
             source = days[index - 1]
@@ -214,7 +295,9 @@ def build_movie(run, context, config, first_admission_shares=None):
         d["expansionRing"] = expansion_ring(seed["coordinates"], d["assumedRadiusKm"]) if index and config["extraCasesPerWeek"] > 0 and not config.get("autoHotspots") else []
         ranking_field = "cumulativeCases" if config.get("autoHotspots") else "expectedCases"
         d["hotspotIds"] = [b["barangayId"] for b in sorted(d["barangays"], key=lambda b: (-b[ranking_field], b["barangayId"]))[:10] if b[ranking_field] > 0]
-        if config.get("autoHotspots") and context.get("hotspotRanking") and index:
+        if synthetic and index:
+            d["hotspotIds"] = window_ranks
+        elif config.get("autoHotspots") and context.get("hotspotRanking") and index:
             d["hotspotIds"] = context["hotspotRanking"]["candidateIds"]
         for facility in d["facilities"]:
             candidates = [{"barangayId": ident, "distanceKm": distance_km(
@@ -253,13 +336,16 @@ def build_movie(run, context, config, first_admission_shares=None):
         for route in d["assignments"]:
             route["distanceKm"] = distance_km(barangay_map[route["barangayId"]]["coordinates"], hospital_map[route["facilityId"]]["coordinates"])
     bed_projection = add_bed_forecasts(flow[:duration + 1], days, run, context, config, shares)
-    return {"assignmentEncoding": "hospital_totals_with_origin_shares" if first_admission_shares is not None else "origin_hospital_routes",
+    encoding = "origin_hospital_routes"
+    if first_admission_shares is not None:
+        encoding = "hospital_totals_with_horizon_origin_shares" if synthetic else "hospital_totals_with_origin_shares"
+    return {"assignmentEncoding": encoding,
         "days": flow[:duration + 1], "context": context, "durationDays": duration, "bedProjection": bed_projection,
-        "progressionMethod": ("dated_QC_forecast_allocated_by_xgboost_annual_burden_shares" if context.get("hotspotRanking") else "dated_QC_forecast_allocated_by_prior_annual_barangay_shares") if config.get("autoHotspots") else "explicit_hypothetical_radial_shock",
+        "progressionMethod": progression_method,
         "mapScaleMaxDailyCases": max(b["expectedCases"] for d in days[:duration] for b in d["barangays"]),
-        "measurementKind": "modeled_allocation", "capacityMeasurementKind": "assumption",
-        "calendarStatus": "USER_SELECTED_HYPOTHETICAL_DATES_NOT_SOURCE_WEEK_ALIGNMENT",
-        "assumptions": ("Each barangay progresses directly from its dated QC forecast allocation using prior annual spatial shares. No geographic seed, expansion radius, neighbor activation or contagion chain affects forecast demand. These are modeled barangay allocations, not separately trained local forecasts. Configured citywide shocks are separate assumptions. " if config.get("autoHotspots") else "Historical reference blocks mapped onto hypothetical dates; annual weights use only complete years before the reference/scenario cutoff with one extra full-year lag. Additive shock uses an explicit hypothetical radial kernel; radius speed and case ramp are user assumptions, not inferred transmission. ") + "Zero initial dengue census, fixed LOS and occupancy; supported placements, finite holding and unresolved demand are separate from case forecasts.",
+        "measurementKind": "forecast" if synthetic else "modeled_allocation", "capacityMeasurementKind": "assumption",
+        "calendarStatus": "JAN_1_SOURCE_BLOCK_ASSUMPTION" if synthetic else "USER_SELECTED_HYPOTHETICAL_DATES_NOT_SOURCE_WEEK_ALIGNMENT",
+        "assumptions": assumptions + "Zero initial dengue census, fixed LOS and occupancy; supported placements, finite holding and unresolved demand are separate from case forecasts.",
         "disclaimer": "Hypothetical spread and hospital-demand planning movie. No observed daily/weekly barangay spread, clinical eligibility, hospital vacancy or road-route claim. All hospital points are provisional; 2026 inventory is a hypothetical planning network."}
 
 

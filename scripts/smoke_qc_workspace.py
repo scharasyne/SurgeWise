@@ -29,11 +29,18 @@ def main():
         elif page in {"/outbreak-response", "/simulate"}:
             assert "SurgeWise" in html and "Base cases for selected date" in html and "Nearby hospital details" in html, page
             assert "Simulation not started" in html
-            assert "Historical replay" in html and "Future forecast" in html
+            assert "Synthetic barangay replay" in html and "Future forecast" in html
             assert "Simulation timeline and playback" in html and "Nearest hospital" in html
             assert "Expansion origin" not in html
     status, country = request("/data/philippines-context.geojson")
     assert status == 200 and len(country["features"]) == 17
+    status, replay = request("/api/research/synthetic-barangay-simulation")
+    assert status == 200, status
+    forecast = replay["syntheticForecast"]
+    assert forecast["model"] == "RandomForest" and forecast["coverage"] == 142
+    assert replay["controlValues"]["arrivalSplitPolicy"] == "markov_preference"
+    assert replay["periodSummary"]["caseRange"] is None
+    assert abs(replay["periodSummary"]["expectedCases"] - sum(sum(v) for v in forecast["weeklyByBarangay"].values())) < 1e-7
     status, data = request("/api/research/qc-simulation")
     assert status == 200, data
     assert data["scope"] == "QUEZON_CITY" and data["forecastEvidence"]["model"] == "cases_weather"
@@ -111,7 +118,7 @@ def main():
     for patch in [{"horizonDays": 29}, {"area": "NCR"}, {"facilities": []}]:
         status, _ = request("/api/research/future-simulation", patch)
         assert status == 422
-    print("PASS: pages/two tabs, Philippines context, historical QC/ranges/46 hospitals, 7/14/28-day replay, allocation comparison, future 2/12/14/28-day windows, January 2027 seasonal difference, surge, bed demand, conservation and invalid-input/QC-scope rejection.")
+    print("PASS: synthetic barangay default, pages/two tabs, Philippines context, historical QC/ranges/46 hospitals, 7/14/28-day replay, allocation comparison, future 2/12/14/28-day windows, January 2027 seasonal difference, surge, bed demand, conservation and invalid-input/QC-scope rejection.")
 
 
 if __name__ == "__main__":

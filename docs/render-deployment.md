@@ -80,7 +80,7 @@ Use these endpoints to distinguish the failure:
 | Engine `/readiness` reports workspace flags false | Inspect model/source blockers; waking alone cannot repair them. |
 
 `/readiness` deliberately keeps its top-level `ready` false because operational
-data/calendar limitations remain. Check `qcWorkspaceReady`, `futureWorkspaceReady`,
+data/calendar limitations remain. Check `defaultWorkspaceReady` and `syntheticBarangayForecast` for the branch default. Check `qcWorkspaceReady`, `futureWorkspaceReady`,
 `seasonalForecast` and `barangayRanking` for the research workspaces instead.
 
 To verify a cold start, leave the free engine idle for at least 15 minutes, then

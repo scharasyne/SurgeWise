@@ -47,15 +47,17 @@ export function simulationConnections(context: MovieContext, snapshot: MovieDay 
     const id = options.hospitalHotspot.barangayId, facilityId = options.selectedHospital;
     if (!result.has(`proximity:${id}:${facilityId}`)) add('hospital-context', id, facilityId);
   }
-  // First-hospital runs store the origin mixture once and each day's placements
-  // at its hospital. Display the three largest flows for each selected place.
-  if (context.firstAdmissionOriginShares && snapshot) {
+  // Delayed arrivals keep the origin mix of the source forecast week.
+  const originShares = snapshot?.arrivalForecastHorizon != null
+    ? context.firstAdmissionOriginSharesByHorizon?.[snapshot.arrivalForecastHorizon]
+    : context.firstAdmissionOriginShares;
+  if (originShares && snapshot) {
     const sites = snapshot.facilities.filter(f => options.focus !== 'hospital' || f.facilityId === options.selectedHospital);
     const flows = new Map<string, { b: string; h: string; patients: number; held: number }[]>();
     for (const site of sites) {
       const supported = site.supportedPlacementsToday ?? 0, held = site.holdingPlacementsToday ?? 0;
       if (supported + held === 0) continue;
-      for (const [b, fraction] of Object.entries(context.firstAdmissionOriginShares[site.facilityId] ?? {})) {
+      for (const [b, fraction] of Object.entries(originShares[site.facilityId] ?? {})) {
         if (options.focus !== 'hospital' && !candidates.has(b)) continue;
         const key = options.focus === 'hospital' ? site.facilityId : b;
         const group = flows.get(key) ?? [];

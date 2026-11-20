@@ -125,3 +125,16 @@ test('first-hospital map shows largest actual placements and excludes unplaced d
     .filter(c => c.kind === 'placement');
   assert.equal(hospital.reduce((sum, c) => sum + c.patients, 0), 4);
 });
+
+test('synthetic placements use the forecast horizon of delayed admissions', () => {
+  const local = { ...context, firstAdmissionOriginSharesByHorizon: {
+    1: { H2: { B1: .2, B2: .8 } }, 2: { H2: { B1: .9, B2: .1 } },
+  } };
+  const day = { assignments: [], facilities: [{ facilityId: 'H2', supportedPlacementsToday: 10 }] };
+  const selected = { ...options, selected: 'B1', focus: 'barangay' };
+  const patients = h => simulationConnections(local, { ...day, arrivalForecastHorizon: h }, selected)
+    .filter(c => c.kind === 'placement').map(c => c.patients);
+  assert.deepEqual(patients(null), []);
+  assert.deepEqual(patients(1), [2]);
+  assert.deepEqual(patients(2), [9]);
+});

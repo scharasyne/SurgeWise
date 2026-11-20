@@ -346,7 +346,7 @@ test('switching tabs and leaving the workspace cancel requests; late old results
   loaded._compile(compiled, filename);
   const tree = loaded.exports.default();
   const cleanup = effects[0]();
-  assert.equal(requests[0].url, '/api/research/qc-simulation');
+  assert.equal(requests[0].url, '/api/research/synthetic-barangay-simulation');
   function find(node, id) {
     if (!node || typeof node !== 'object') return undefined;
     if (node.props?.id === id) return node;
@@ -526,7 +526,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
     requests.map((request) => request.url),
     [
       '/api/research/future-simulation',
-      '/api/research/qc-simulation',
+      '/api/research/synthetic-barangay-simulation',
       '/api/research/future-simulation',
     ]
   );
@@ -563,4 +563,15 @@ test('the loaded mode form enters after asynchronous loading and manual reduced 
   )[0].node;
   const dock = findElements(loaded, node => node.props?.id === 'qs-context-panel')[0].node;
   assert.ok(left); assert.equal(dock.props['data-reduced-motion'], true);
+});
+
+test('synthetic replay identifies coverage, absent places, four forecast weeks and missing intervals', () => {
+  const syntheticForecast = { model: 'RandomForest', coverage: 141, trainingYears: [2010, 2021], selectionYear: 2022,
+    issueBlock: {YR: 2024, WN: 4}, targets: [5,6,7,8].map(WN => ({YR: 2024, WN})),
+    weeklyByBarangay: {'fixture-hotspot': [1.1, 2.2, 3.3, 4.4], 'outside-top-ten':[0,0,0,0]},
+    missingBarangays: [{id:'absent', name:'Missing fixture place'}] };
+  const html = renderDay(1, {2: {...fixture, syntheticForecast}, 3:controlFixture, 23:'hospitals'});
+  for (const label of ['RandomForest', '141 of 142', 'Missing fixture place', '2024 W8', '4.4', 'point estimates']) assert.ok(html.includes(label), label);
+  assert.ok(!html.includes('XGBoost annual burden'));
+  assert.ok(!html.includes('80% target'));
 });

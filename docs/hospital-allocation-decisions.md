@@ -49,6 +49,8 @@ Hold the QC forecast, barangay shares, facility list, dates, admission fraction,
 
 Report each hospital's baseline and adjusted **peak expected beds**, their difference in beds, and any change in rank. Also report how many of the 142 barangays had a traceable preferred hospital matched to a register ID. As arithmetic checks, gray rows must match their baseline, daily hospital arrivals must sum to the same QC admission demand, and the citywide daily bed total must agree across paired runs under the shared stay assumptions. Any comparison of the proximity-only ranking with Figure 4 should use the comparable surveyed hospitals. Once a preferred hospital helps construct a row, agreement with it is an in-sample result.
 
+On the synthetic replay branch, the same choice probabilities apply to the saved local RandomForest predictions for each source week. QC demand sums the covered barangays. The delayed origin mix determines each hospital's modeled placements, while occupied demand over the assumed stay determines each barangay's share of a local shortage. [Synthetic replay methods](synthetic-barangay-replay.md#hospital-planning)
+
 ## References
 
 - Chua, C. A., Lao, F. G. G., Peralta, M. H., & Regidor, J. R. (2021). *An exploratory study on GIS-based suitability analysis of tertiary hospitals in Quezon City from the transportation perspective*. 27th Annual Conference of the Transportation Science Society of the Philippines. [Conference proceedings](https://ncts.upd.edu.ph/tssp/archives/1529)
