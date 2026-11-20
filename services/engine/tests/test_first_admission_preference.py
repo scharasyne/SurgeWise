@@ -11,7 +11,7 @@ from scripts import export_research_admissions
 
 
 def test_research_explorer_matches_reviewed_matrices():
-    published = json.loads(export_research_admissions.DESTINATION.read_text())
+    published = json.loads(export_research_admissions.DESTINATION.read_text(encoding="utf-8"))
     assert published == export_research_admissions.build()
     hospital_ids = [h["id"] for h in published["hospitals"]]
     for policy, column in [("markov_proximity", "distanceOnly"), ("markov_preference", "withPreference")]:
