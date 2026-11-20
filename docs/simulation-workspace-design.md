@@ -19,6 +19,25 @@ hospital network, source observations and API contracts are unchanged.
   and day in the start date for seasonal planning. Both modes retain their own
   settings. Hospital planning groups capacity, admissions and length of stay
   separately from the choice of hospital.
+- Since 2026-11-19 a second tab row splits the panel into **Scenario** and
+  **Bed capacity**. Bed capacity holds:
+  - **Bed totals** across all hospitals: total beds, dengue, non-dengue, holding
+    spaces and extra staffed beds (read-only);
+  - **Hospital-specific beds**: a search box suggests hospitals as you type
+    (arrow keys and Enter work). For the chosen hospital: total beds with a
+    dengue-share slider and dengue / non-dengue fields, and total holding spaces
+    with the same slider and fields. Editing a total keeps the dengue part;
+    editing one part sets the other to the remainder; the slider sets dengue to
+    that percentage of the total (rounded) and non-dengue to the rest. The
+    sliders move in 1% steps and keep the chosen percent while it still gives
+    the current counts. Total beds and Total holding spaces labels are bold.
+    **Use defaults** returns the hospital to the scenario-wide values;
+  - an import of a CSV/Excel file (template included) for many hospitals.
+    Importing replaces all hospital-specific values; a file with any invalid row
+    is rejected with row numbers and nothing is partly applied.
+  The scenario-wide defaults (20 beds, 75% non-dengue, 10 extra dengue beds from
+  day 7, 5 holding spaces) are no longer edited in the panel. Non-dengue holding
+  spaces are never used for dengue overflow. Both tab panels stay mounted.
 - Playback retains play/pause, restart, previous/next day, speed, final-day jump
   and scrubbing. A peak-demand shortcut uses the backend's saved peak day; it is
   shown after playback starts. It never derives a competing peak in the browser.

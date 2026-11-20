@@ -78,6 +78,10 @@ class FacilityAssumption(StrictModel):
     normalCapacity: int = Field(strict=True, ge=1, le=10000)
     surgeCapacity: int = Field(strict=True, ge=0, le=10000)
     holdingCapacity: int = Field(strict=True, ge=0, le=10000)
+    # Optional per-hospital non-dengue share (user-imported allotment); None uses the scenario-wide value.
+    baselineOccupancy: float | None = Field(default=None, ge=0, le=1)
+    # Extra staffed beds kept for non-dengue patients; they open with the surge beds and never take dengue patients.
+    surgeNonDengueCapacity: int = Field(default=0, strict=True, ge=0, le=10000)
 
 
 class ScenarioInput(StrictModel):

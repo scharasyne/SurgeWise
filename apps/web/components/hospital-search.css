@@ -1,0 +1,14 @@
+/* Hospital search box: same look as the workspace select, with a text field and suggestions. */
+.hs-field { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 6px 0 11px; border: 1px solid var(--sw-border-strong, #adc8bd); border-radius: 7px; background: var(--ws-paper, #fbfdfd); color: var(--ws-accent, #187f78); }
+.hs-field:focus-within { border-color: var(--ws-accent, #187f78); box-shadow: 0 0 0 3px #18796f26; }
+.hs-field[data-disabled] { opacity: .5; }
+.hs-field > svg { flex-shrink: 0; }
+.hs-search .hs-field input { flex: 1; min-width: 0; min-height: 38px; margin: 0; padding: 0; border: 0; outline: none; background: transparent; box-shadow: none; color: var(--ws-ink, #19394d); font: inherit; font-size: 13px; }
+.hs-search .hs-field input::placeholder { color: #7b8f95; }
+.hs-clear.text-button { display: grid; place-items: center; width: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #5a747d; }
+.hs-clear.text-button:hover { background: #e6f1ec; color: #19394d; }
+.hs-options { width: 100%; max-width: none; max-height: 260px; }
+.hs-options li { gap: 10px; padding: 8px 10px; min-height: 0; line-height: 1.4; }
+.hs-options li > span { display: grid; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.hs-options li small { color: #5a747d; font-size: 11px; }
+.hs-options li.hs-empty { color: #5a747d; cursor: default; }

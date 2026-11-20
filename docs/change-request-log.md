@@ -1,5 +1,59 @@
 # User-requested extensions
 
+## 2026-11-20 +08:00 — Bed capacity tab refinements
+
+Follow-up requests on the same branch:
+- Removed the "Default beds per hospital" inputs and the "Default extra capacity"
+  section; kept the bed totals box (now "Bed totals"). The scenario-wide defaults
+  still apply to hospitals without their own values but are not edited here.
+- The hospital picker is now a search box that suggests hospitals as you type
+  (`components/hospital-search.tsx`, matcher in `lib/hospital-search.ts`).
+- Each hospital's editor shows only total beds with dengue / non-dengue beds, and
+  total holding spaces with dengue / non-dengue holding spaces, each with a
+  dengue-share slider that moves in 1% steps (the chosen percent is kept even when
+  several percents round to the same whole-bed count). Total beds and Total
+  holding spaces labels are bold. The extra-staffed-bed fields were removed.
+- Engine: `bedAllotments[].nonDengueHoldingSpaces` (≤ holdingSpaces) keeps that
+  part of a hospital's holding spaces from dengue overflow. Import accepts
+  optional `dengue_holding_spaces` / `non_dengue_holding_spaces` columns (they
+  must add up to `holding_spaces`); the template includes them.
+
+## 2026-11-19 20:51 +08:00 — Bed capacity tab, per-hospital beds and WebP logo
+
+On `tammy-ui-improvements-1` (from `feat/markov-chains` + `dev`), the user asked for:
+1. a separate tab for splitting bed capacity into beds for dengue and non-dengue;
+2. an import button for a CSV/Excel file with each hospital's dengue beds,
+   non-dengue beds and temporary holding spaces;
+3. on the same tab, a way to pick one hospital and edit its split, plus extra
+   staffed beds on top of its capacity, split into dengue and non-dengue;
+4. the logo as WebP instead of PNG.
+
+**UI.** "Scenario | Bed capacity" tabs under the mode tabs. Bed capacity has
+default beds per hospital (split fields, split bar, network totals), default
+extra capacity, and hospital-specific beds (hospital picker, editor, import,
+template download, list of hospitals with their own values, clear all). The
+Scenario tab keeps a summary card that opens Bed capacity.
+
+**Engine.** `FacilityAssumption` gains an optional per-hospital non-dengue share
+and `surgeNonDengueCapacity`. `QCInput.bedAllotments` (max 46, unique approved
+hospital IDs) carries per-hospital dengue/non-dengue beds, holding spaces and
+optional extra dengue/non-dengue beds; hospitals not listed keep the uniform
+values. Extra non-dengue beds open with the surge beds and are assumed full of
+other patients, so they raise supported capacity and non-dengue census but
+never place dengue patients. New `POST /v1/qc-simulation/bed-allotments` parses
+CSV/.xlsx (openpyxl, already a dependency; 1 MB, 500 rows, zip-size guard) and
+matches rows by facility ID or exact name; the web app reaches it through
+`/api/bed-allotments`. All values are user planning assumptions, never verified
+beds, vacancies or PhilHealth figures.
+
+**Logo.** `public/brand/surgewise-mark.webp`, `surgewise-mark-on-dark.webp` and
+`surgewise-logo.webp` replace the PNGs (lossless, pixel-identical, 29–38%
+smaller). `app/icon.png` stays PNG: Next.js icon files must be .ico, .jpg, .png
+or .svg.
+
+Tests: `services/engine/tests/test_bed_allotments.py` (26) and updated
+`lib/workspace-visibility.test.mjs`.
+
 ## 2026-11-19 04:32 +08:00 — Simplify scenario setup
 
 Group the settings by forecast period, case forecast and hospital planning. Use “preferred hospital” throughout the interface. Mark selected tabs and duration presets with a checkmark and teal fill. Presets edit the duration, and Run simulation applies the settings. Numeric fields allow replacement of an initial zero and validate before submission. [Panel behavior](simulation-workspace-design.md#layout-and-interaction)

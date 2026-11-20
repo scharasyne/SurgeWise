@@ -75,16 +75,19 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
             "additionalBedsUpperScenario": needed(max(0, high - capacity)) if bounds_available else None,
             "measurementKind": "modeled_allocation",
             "rangeKind": "Case-range sensitivity with fixed admission fraction, delay, LOS and capacity; not validated bed-occupancy intervals."}
+    # Per-hospital non-dengue share when imported allotments supply one, else the scenario-wide share.
+    non_dengue_shares = {f["facilityId"]: config["baselineOccupancy"] if f.get("baselineOccupancy") is None else f["baselineOccupancy"]
+                         for f in config["facilities"]}
     for day in flow:
         i = day["dayIndex"]
-        capacity = sum(f["normalCapacity"] * (1 - config["baselineOccupancy"]) + f["activatedSurgeCapacity"] for f in day["facilities"])
+        capacity = sum(f["normalCapacity"] * (1 - non_dengue_shares[f["facilityId"]]) + f["activatedSurgeCapacity"] for f in day["facilities"])
         day["bedForecast"] = prediction(central[i], lo_curve[i], hi_curve[i], capacity)
         day["bedForecast"].update({"baselineExpectedBeds": baseline_network[i],
             "baselineStaffedBedsRequired": needed(baseline_network[i]),
             "additionalStaffedBedsDueToSurge": surge_staffing(central[i], baseline_network[i])})
         for facility in day["facilities"]:
             central_hospital, low_hospital, high_hospital = hospital_curves[facility["facilityId"]]
-            supported = facility["normalCapacity"] * (1 - config["baselineOccupancy"]) + facility["activatedSurgeCapacity"]
+            supported = facility["normalCapacity"] * (1 - non_dengue_shares[facility["facilityId"]]) + facility["activatedSurgeCapacity"]
             facility["bedForecast"] = prediction(central_hospital[i], low_hospital[i], high_hospital[i], supported)
             facility["bedForecast"].update({"baselineExpectedBeds": baseline_curves[facility["facilityId"]][i],
                 "baselineStaffedBedsRequired": needed(baseline_curves[facility["facilityId"]][i]),
