@@ -1,5 +1,21 @@
 # User-requested extensions
 
+## 2026-11-20 22:57 +08:00 — Use the same hospital-choice options with optimization in both tabs
+
+Historical replay and Future forecast use the selected Markov matrix for first destinations under every overflow policy. Changing the overflow setting preserves the hospital-choice setting. Optimized placement reserves available staffed beds for first-choice demand before redirecting excess. [Allocation methods](first-admission-matrix.md#using-the-chain-in-the-simulation)
+
+## 2026-11-20 22:31 +08:00 — Remove the initial CSV download from Bed capacity
+
+Keep the [initial reservations CSV](../apps/web/public/data/qc-initial-bed-reservations.csv) in the repository. The panel offers import and the current settings template. [Capacity settings](simulation-workspace-design.md#layout-and-interaction)
+
+## 2026-11-20 22:23 +08:00 — Preserve registered hospital totals and generate initial reservations
+
+Use the dated PhilHealth hospital inventory for fixed simulation totals. Start bed reservations at 2:3, permit split edits and reject imports that change a hospital’s total. Seed all hospitals with five editable temporary holding spaces and provide the initial CSV in the Bed capacity panel. [Capacity settings](simulation-workspace-design.md#layout-and-interaction)
+
+## 2026-11-20 22:01 +08:00 — Initial dengue bed reservations
+
+Simulation → Bed capacity shows a whole-bed reservation for every hospital. The editable default reserves 10% of staffed beds for dengue. Imported totals follow the default, while explicit imported or manually edited splits take priority. Both simulation modes use the displayed starting reservations. [Capacity assumptions and import rules](simulation-workspace-design.md#layout-and-interaction)
+
 ## 2026-11-20 20:49 +08:00 — Explain Markov bed allocation on Research
 
 Add a QC allocation walkthrough between Barangay burden and Hospital capacity replay. Readers can select any barangay, compare its two saved first-admission probability rows, inspect the equations and follow an illustrative stay through to a staffed-bed shortfall. [Research allocation explorer](first-admission-matrix.md#research-page)

@@ -12,7 +12,7 @@ from .bed_forecast import add_bed_forecasts
 from .hospital_demand import hospital_shares
 from .source_calendar import align_historical_run
 
-VERSION = "qc-first-admission-bed-allocation-v4"
+VERSION = "qc-first-admission-bed-allocation-v5"
 
 
 def expansion_ring(center, radius_km):
@@ -154,8 +154,10 @@ def build_movie(run, context, config, first_admission_shares=None):
     barangay_map = {b["id"]: b for b in context["barangays"]}
     split_policy = config.get("arrivalSplitPolicy", "nearest")
     policy = config.get("allocationPolicy", "nearest")
-    if policy == "first_hospital":
-        if first_admission_shares is None or not config.get("autoHotspots"):
+    markov = split_policy in ("markov_proximity", "markov_preference")
+    divert = markov and policy != "first_hospital"
+    if markov or policy == "first_hospital":
+        if not markov or first_admission_shares is None or not config.get("autoHotspots"):
             raise ValueError("First-hospital placement needs validated QC choices and fixed barangay forecast weights")
         shares = first_admission_shares
         # Automatic QC forecasts use the same origin weights on every date. Aggregate
@@ -166,9 +168,18 @@ def build_movie(run, context, config, first_admission_shares=None):
             for h, probability in options:
                 contribution[h][origin] = barangay_map[origin]["weight"] * probability
         fractions = {h: math.fsum(parts.values()) for h, parts in contribution.items()}
-        groups = [[{"originId": None, "cases": d["expectedCases"] * fractions[h], "facilityOrder": [h]}
-                   for h in sorted(eligible)] for d in days]
         origin_mix = {h: {b: w / fractions[h] for b, w in parts.items() if w > 0} for h, parts in contribution.items()}
+        destinations = {}
+        for h in sorted(eligible):
+            destinations[h] = {"originId": None, "facilityOrder": [h]}
+            if divert:
+                costs = {j: distance_km(hospital_map[h]["coordinates"], hospital_map[j]["coordinates"]) for j in eligible}
+                destinations[h].update(firstFacilityId=h, facilityCostsKm=costs,
+                    facilityOrder=[h, *sorted(eligible - {h}, key=lambda j: (costs[j], j))])
+        groups = [[{**dest, "cases": d["expectedCases"] * fractions[h]} for h, dest in destinations.items()] for d in days]
+        if divert:
+            first_leg_km = {h: math.fsum(fraction * distance_km(barangay_map[b]["coordinates"], hospital_map[h]["coordinates"])
+                                         for b, fraction in parts.items()) for h, parts in origin_mix.items()}
         context = {**context, "firstAdmissionOriginShares": origin_mix}
     else:
         orders = {b["id"]: sorted(eligible, key=lambda h: (distance_km(b["coordinates"], hospital_map[h]["coordinates"]), h))
@@ -177,7 +188,7 @@ def build_movie(run, context, config, first_admission_shares=None):
         groups = [[{"originId": b["barangayId"], "cases": b["expectedCases"] * share,
                     "facilityOrder": [ident, *[h for h in orders[b["barangayId"]] if h != ident]]}
                    for b in d["barangays"] for ident, share in shares[b["barangayId"]]] for d in days]
-    if policy == "optimized":
+    if policy == "optimized" and not markov:
         groups = [[{"originId": b["barangayId"], "cases": b["expectedCases"], "facilityOrder": orders[b["barangayId"]]}
                    for b in d["barangays"]] for d in days]
         for groups_for_day in groups:
@@ -185,7 +196,7 @@ def build_movie(run, context, config, first_admission_shares=None):
                 group["facilityCostsKm"] = {ident: distance_km(barangay_map[group["originId"]]["coordinates"], hospital_map[ident]["coordinates"]) for ident in eligible}
     flow = simulate_flow([p["meanCases"] for p in run["weeklyPredictions"]], config["facilities"],
         config["hospitalizationRate"], config["lengthOfStayDays"], config["baselineOccupancy"],
-        config["admissionDelayDays"], config["surgeActivationDay"], daily_groups=groups, assignment_method=config.get("allocationPolicy", "nearest"))
+        config["admissionDelayDays"], config["surgeActivationDay"], daily_groups=groups, assignment_method=policy, divert_overflow=divert)
     cumulative = {b["id"]: 0.0 for b in context["barangays"]}
     cumulative_shock = {b["id"]: 0.0 for b in context["barangays"]}
     baseline_total = shock_total = 0.0
@@ -243,6 +254,11 @@ def build_movie(run, context, config, first_admission_shares=None):
                 b["caseRange"] = {k: (v - d["cumulativeShockCases"]) * weight + cumulative_shock[b["barangayId"]]
                     for k, v in d["caseRange"].items() if k in {"lowerCases", "upperCases"}}
                 b["caseRange"] = {k: max(0.0, v) for k, v in b["caseRange"].items()}
+        if divert:
+            d["expectedPlacementPatientKm"] = math.fsum(
+                (r["supportedPlacements"] + r["holdingPlacements"]) *
+                (first_leg_km[r["firstFacilityId"]] + destinations[r["firstFacilityId"]]["facilityCostsKm"][r["facilityId"]])
+                for r in d["firstHospitalRoutes"])
         merged_routes = {}
         for route in d["assignments"]:
             key = (route["barangayId"], route["facilityId"])
@@ -253,7 +269,9 @@ def build_movie(run, context, config, first_admission_shares=None):
         for route in d["assignments"]:
             route["distanceKm"] = distance_km(barangay_map[route["barangayId"]]["coordinates"], hospital_map[route["facilityId"]]["coordinates"])
     bed_projection = add_bed_forecasts(flow[:duration + 1], days, run, context, config, shares)
-    return {"assignmentEncoding": "hospital_totals_with_origin_shares" if first_admission_shares is not None else "origin_hospital_routes",
+    encoding = "first_hospital_routes_with_origin_shares" if divert else (
+        "hospital_totals_with_origin_shares" if markov else "origin_hospital_routes")
+    return {"assignmentEncoding": encoding,
         "days": flow[:duration + 1], "context": context, "durationDays": duration, "bedProjection": bed_projection,
         "progressionMethod": ("dated_QC_forecast_allocated_by_xgboost_annual_burden_shares" if context.get("hotspotRanking") else "dated_QC_forecast_allocated_by_prior_annual_barangay_shares") if config.get("autoHotspots") else "explicit_hypothetical_radial_shock",
         "mapScaleMaxDailyCases": max(b["expectedCases"] for d in days[:duration] for b in d["barangays"]),

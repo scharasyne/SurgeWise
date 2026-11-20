@@ -6,13 +6,15 @@ from fastapi.testclient import TestClient
 import pytest
 
 from services.engine.api.qc_simulation import QCInput, workspace
+from services.engine.domain.optimizer import overflow_plan
 from services.engine.domain.outbreak import build_movie, distance_km
 from services.engine.main import app
 from services.engine.repositories import first_admission
 from services.engine.upri_data import ROOT
 
 
-def test_local_shortage_survives_spare_beds_elsewhere():
+@pytest.fixture
+def two_site_inputs():
     # Two synthetic origins have the same choices. Of eleven arrivals, ten
     # choose A. A can support six, even though B has nineteen spare slots.
     config = {"startDate": date(2027, 1, 1), "endDate": date(2027, 1, 5),
@@ -24,10 +26,15 @@ def test_local_shortage_survives_spare_beds_elsewhere():
                   {"facilityId": "B", "normalCapacity": 20, "surgeCapacity": 0, "holdingCapacity": 0}]}
     context = {"barangays": [{"id": "X", "weight": .75, "coordinates": [121, 14]},
                              {"id": "Y", "weight": .25, "coordinates": [121.01, 14]}],
-               "hospitals": [{"id": h, "coordinates": [121, 14]} for h in ("A", "B")]}
+               "hospitals": [{"id": "A", "coordinates": [121, 14]}, {"id": "B", "coordinates": [121.2, 14]}]}
     run = {"weeklyPredictions": [{"meanCases": 77} for _ in range(4)],
            "dailyPredictions": [{"meanCases": 11, "lowerCases": 8, "upperCases": 14} for _ in range(28)]}
     matrix = {b: [("A", 10/11), ("B", 1/11)] for b in ("X", "Y")}
+    return run, context, config, matrix
+
+
+def test_local_shortage_survives_spare_beds_elsewhere(two_site_inputs):
+    run, context, config, matrix = two_site_inputs
     movie = build_movie(run, context, config, matrix)
     assert [d["bedForecast"]["hospitalBedsShort"] for d in movie["days"]] == [0, 0, 4, 4, 0]
     frame = movie["days"][2]
@@ -114,8 +121,65 @@ def test_corrupt_matrix_blocks_new_and_saved_results(monkeypatch):
         assert response.json()["detail"]["code"] == "FIRST_ADMISSION_MATRIX_UNAVAILABLE"
 
 
-def test_incompatible_routing_is_rejected_and_legacy_inputs_keep_their_policy():
+@pytest.mark.parametrize("policy", ["optimized", "nearest"])
+def test_only_first_choice_overflow_is_redirected(two_site_inputs, policy):
+    run, context, config, matrix = two_site_inputs
+    config["allocationPolicy"] = policy
+    movie = build_movie(run, context, config, matrix)
+    frame = movie["days"][2]
+    a, b = frame["facilities"]
+    assert [a["firstAdmissionsToday"], b["firstAdmissionsToday"]] == [10, 1]
+    assert [a["supportedCensus"], b["supportedCensus"]] == [6, 5]
+    routes = {(r["firstFacilityId"], r["facilityId"]): r["supportedPlacements"] for r in frame["firstHospitalRoutes"]}
+    assert routes == {("A", "A"): 6, ("A", "B"): 4, ("B", "B"): 1}
+    assert frame["unresolvedToday"] == frame["bedForecast"]["additionalStaffedBedsNeeded"] == 0
+    assert frame["bedForecast"]["hospitalBedsShort"] == 4  # before diversion
+    assert all(abs(d["balanceError"]) < 1e-8 for d in movie["days"])
+    assert all(r["firstFacilityId"] == r["facilityId"] for r in movie["days"][4]["firstHospitalRoutes"])
+    config["facilities"][1].update(normalCapacity=1, holdingCapacity=2)
+    config["facilities"][0]["holdingCapacity"] = 1
+    full = build_movie(run, context, config, matrix)["days"][2]
+    assert [f["holdingPlacementsToday"] for f in full["facilities"]] == [1, 2]
+    assert [f["unplacedToday"] for f in full["facilities"]] == [1, 0]
+    assert full["supportedCensus"] + full["holdingCensus"] + full["unresolvedToday"] == full["arrivals"]
+
+
+def test_optimized_overflow_accounts_for_competing_destinations():
+    # Four sites on a line. A and B overflow by one each, C and D each have one spare.
+    positions = [0, 3, 2, -3]
+    costs = [[abs(a - b) for b in positions] for a in positions]
+    demand, capacity = [2, 2, 1, 1], [1, 1, 2, 2]
+    optimized = overflow_plan(demand, capacity, costs, range(4), True)
+    nearest = overflow_plan(demand, capacity, costs, range(4), False)
+    assert [optimized[i][i] for i in range(4)] == [1, 1, 1, 1]
+    assert optimized[0][3] == optimized[1][2] == 1  # 3 + 1 extra km
+    assert nearest[0][2] == nearest[1][3] == 1  # 2 + 6 extra km
+
+
+@pytest.mark.parametrize("endpoint", ["qc-simulation", "future-simulation"])
+@pytest.mark.parametrize("policy", ["markov_proximity", "markov_preference"])
+def test_optimized_workspace_preserves_choice(endpoint, policy):
+    from services.engine.api.future_simulation import today_qc
+
+    dates = {"endDate": "2025-02-01"} if endpoint == "qc-simulation" else {
+        "startDate": (today_qc() + timedelta(days=1)).isoformat(), "horizonDays": 3}
+    response = TestClient(app).post("/v1/" + endpoint, json={**dates, "allocationPolicy": "optimized",
+        "arrivalSplitPolicy": policy, "compareAllocation": True})
+    assert response.status_code == 200, response.text[:500]
+    result = response.json()
+    assert result["controlValues"]["arrivalSplitPolicy"] == result["bedProjection"]["arrivalSplitPolicy"] == policy
+    assert result["firstAdmissionMatrixSha256"] == first_admission.MATRICES[policy][1]
+    assert result["assignmentEncoding"] == "first_hospital_routes_with_origin_shares"
+    places = result["bedProjection"]["placePeaks"]
+    assert len(places) == 142 and all(len(p["hospitals"]) == 46 for p in places)
+    placed_km = sum(d["expectedPlacementPatientKm"] for d in result["days"])
+    assert placed_km > 0 and result["allocationComparison"]["optimized"]["expectedPatientKm"] == pytest.approx(placed_km)
+    assert result["allocationComparison"]["nearest"]["expectedPatientKm"] > 0
+
+
+def test_incompatible_routing_is_rejected_and_explicit_legacy_inputs_keep_their_policy():
     client = TestClient(app)
-    assert client.post("/v1/qc-simulation", json={"arrivalSplitPolicy": "markov_proximity", "allocationPolicy": "optimized"}).status_code == 422
-    assert QCInput(allocationPolicy="optimized").arrivalSplitPolicy == "nearest_three_equal"
+    assert client.post("/v1/qc-simulation", json={"arrivalSplitPolicy": "nearest_three_equal", "allocationPolicy": "first_hospital"}).status_code == 422
+    assert QCInput(allocationPolicy="optimized").arrivalSplitPolicy == "markov_preference"
+    assert QCInput(allocationPolicy="optimized", arrivalSplitPolicy="nearest_three_equal").arrivalSplitPolicy == "nearest_three_equal"
     assert QCInput(arrivalSplitPolicy="nearest").allocationPolicy == "nearest"

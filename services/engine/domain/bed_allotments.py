@@ -17,6 +17,7 @@ MAX_BEDS = 10000
 HEADER_ALIASES = {
     "facilityId": {"facilityid", "hospitalid", "id"},
     "name": {"hospitalname", "hospital", "name", "facilityname"},
+    "staffedBeds": {"accreditedbeds", "staffedbeds", "totalstaffedbeds", "totalbeds"},
     "dengueBeds": {"denguebeds", "bedsfordengue", "dengue"},
     "nonDengueBeds": {"nondenguebeds", "bedsfornondengue", "nondengue", "otherbeds"},
     "holdingSpaces": {"holdingspaces", "holding", "temporaryholdingspaces", "holdingcapacity"},
@@ -106,6 +107,13 @@ def _whole_number(text, label):
     return number, None
 
 
+def capacity_mismatch(actual, hospital):
+    expected = hospital["accreditedBeds"]
+    if actual != expected:
+        return f"{hospital['id']} has {expected:,} PhilHealth accredited beds. The reservation total must equal {expected:,} (received {actual:,})."
+    return None
+
+
 def parse_allotments(rows, hospitals):
     """Match rows to approved hospitals. Returns allotments, row errors and hospitals not in the file."""
     rows = [row for row in rows if any(str(cell).strip() for cell in row)]
@@ -118,7 +126,9 @@ def parse_allotments(rows, hospitals):
         for field, aliases in HEADER_ALIASES.items():
             if _key(header) in aliases and field not in columns:
                 columns[field] = index
-    missing = [label for field, label in NUMBER_FIELDS.items() if field not in columns]
+    missing = []
+    if "staffedBeds" not in columns and not {"dengueBeds", "nonDengueBeds"}.issubset(columns):
+        missing.append("staffed_beds or both dengue_beds and non_dengue_beds")
     if "facilityId" not in columns and "name" not in columns:
         missing.insert(0, "facility_id or hospital_name")
     if missing:
@@ -150,7 +160,16 @@ def parse_allotments(rows, hospitals):
             errors.append({"row": line, "message": f"{hospital['id']} already appears on row {seen[hospital['id']]}."})
             continue
         values, problems = {}, []
-        for field, label in NUMBER_FIELDS.items():
+        has_total = bool(cell(row, "staffedBeds"))
+        has_split = bool(cell(row, "dengueBeds") or cell(row, "nonDengueBeds"))
+        fields = dict(NUMBER_FIELDS)
+        if not cell(row, "holdingSpaces"):
+            del fields["holdingSpaces"]
+        if has_total:
+            fields["staffedBeds"] = "staffed beds"
+            if not has_split:
+                del fields["dengueBeds"], fields["nonDengueBeds"]
+        for field, label in fields.items():
             values[field], problem = _whole_number(cell(row, field), label.capitalize())
             if problem:
                 problems.append(problem)
@@ -159,6 +178,17 @@ def parse_allotments(rows, hospitals):
                 values[field], problem = _whole_number(cell(row, field), label.capitalize())
                 if problem:
                     problems.append(problem)
+        if not problems and has_total:
+            total = values["staffedBeds"]
+            if total < 1:
+                problems.append("Staffed beds must be at least 1.")
+            elif has_split:
+                if values["dengueBeds"] + values["nonDengueBeds"] != total:
+                    problems.append("Dengue plus non-dengue beds must equal staffed beds.")
+                else:
+                    del values["staffedBeds"]  # Preserve the explicit split, including zero for dengue.
+        if "holdingSpaces" not in values and ("dengueHoldingSpaces" in values or "nonDengueHoldingSpaces" in values):
+            problems.append("Include holding spaces when entering a holding split.")
         if not problems:
             # Holding split: a dengue or non-dengue part (or both, summing to the total) of holding_spaces.
             dengue_hold, other_hold = values.pop("dengueHoldingSpaces", None), values.pop("nonDengueHoldingSpaces", None)
@@ -169,10 +199,15 @@ def parse_allotments(rows, hospitals):
                 problems.append("Dengue plus non-dengue holding spaces must equal holding spaces.")
             elif other_hold is not None:
                 values["nonDengueHoldingSpaces"] = other_hold
-        if not problems and values["dengueBeds"] + values["nonDengueBeds"] < 1:
+        if not problems and has_split and values["dengueBeds"] + values["nonDengueBeds"] < 1:
             problems.append("Dengue plus non-dengue beds must be at least 1.")
-        if not problems and values["dengueBeds"] + values["nonDengueBeds"] > MAX_BEDS:
+        if not problems and has_split and values["dengueBeds"] + values["nonDengueBeds"] > MAX_BEDS:
             problems.append(f"Total beds must be at most {MAX_BEDS:,}.")
+        if not problems:
+            total = values["staffedBeds"] if "staffedBeds" in values else values["dengueBeds"] + values["nonDengueBeds"]
+            mismatch = capacity_mismatch(total, hospital)
+            if mismatch:
+                problems.append(mismatch)
         if problems:
             errors.append({"row": line, "message": " ".join(problems)})
             continue

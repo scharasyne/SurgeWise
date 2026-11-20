@@ -154,3 +154,15 @@ test('probability details distinguish an unknown preference, distance-only mode 
   assert.deepEqual(probabilityFacts(old), [['Modeled probability','4.00%']]);
   assert.match(probabilityNote(old,{},false), /Only the final probability/);
 });
+
+test('overflow placement arrows carry each first hospital’s origin shares to the actual destination', () => {
+  const source = { ...context, firstAdmissionOriginShares: { H1: { B1: .75, B2: .25 }, H2: { B2: 1 } } };
+  const day = { assignments: [], firstHospitalRoutes: [
+    { firstFacilityId: 'H1', facilityId: 'H2', supportedPlacements: 2, holdingPlacements: 2 },
+    { firstFacilityId: 'H2', facilityId: 'H2', supportedPlacements: 3, holdingPlacements: 0 },
+  ] };
+  const placed = focus => simulationConnections(source, day, { ...options, focus, selectedHospital: 'H2' })
+    .filter(c => c.kind === 'placement').map(c => [c.barangayId, c.facilityId, c.patients, c.holding]);
+  assert.deepEqual(placed('hospital'), [['B2', 'H2', 4, .5], ['B1', 'H2', 3, 1.5]]);
+  assert.deepEqual(placed('barangay'), [['B1', 'H2', 3, 1.5]]);
+});
