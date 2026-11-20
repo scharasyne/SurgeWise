@@ -61,7 +61,6 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   const onSelectRef = useRef(onSelect), onHospitalRef = useRef(onHospital);
   const labels = useRef<maplibregl.Marker[]>([]);
   const visualMarkers = useRef(new Map<string, maplibregl.Marker>());
-  const flowRoot = useRef<SVGSVGElement>(null);
   const flowClock = useRef({ key: '', start: 0 });
   const updateFlow = useRef<(() => void) | null>(null);
   const barangayBounds = useRef(new Map<string, SimulationBounds>());
@@ -348,8 +347,8 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   const flowHotspots = probabilityPlace ? undefined : rankedHotspotIds ?? hotspotIds;
   const flowHospitalHotspot = probabilityPlace ? null : hospitalHotspot;
   useEffect(() => {
-    const instance = map.current, svg = flowRoot.current;
-    if (!ready || !instance || !svg || !context || (!connectionFocus && !showLinks) || !showHospitals) return;
+    const instance = map.current;
+    if (!ready || !instance || !context || (!connectionFocus && !showLinks) || !showHospitals) return;
     const connectionOptions = { selected, selectedHospital, hotspotIds: flowHotspots, hospitalHotspot: flowHospitalHotspot };
     const connections = probabilityPlace
       ? probabilityConnections(context, selected, probabilityPlace.hospitals)
@@ -363,10 +362,10 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       const point = instance.project(coordinates), offset = visualMarkers.current.get(id)?.getOffset();
       return { x: point.x + (offset?.x ?? 0), y: point.y + (offset?.y ?? 0) };
     };
-    const flow = drawSimulationFlow(svg, connections, project, reducedMotion || !!probabilityPlace, flowClock.current.start);
+    const flow = drawSimulationFlow(instance, connections, project, reducedMotion || !!probabilityPlace, flowClock.current.start);
     const origin = probabilityPlace && context.barangays.find(b => b.id === selected);
     const removePopup = origin && probabilityPlace
-      ? bindProbabilityPopup(svg, instance, new maplibregl.Popup({ closeButton: false, closeOnClick: false,
+      ? bindProbabilityPopup(flow.svg, instance, new maplibregl.Popup({ closeButton: false, closeOnClick: false,
         focusAfterOpen: false, offset: 8, maxWidth: '240px', className: 'qs-choice-popup' }),
         origin, context.hospitals, probabilityPlace.hospitals, distanceOnly) : undefined;
     updateFlow.current = flow.update;
@@ -417,8 +416,6 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   }, [ready, connectionFocus, selected, selectedHospital, inspectionVersion, probabilityPlace]);
   return <div className="outbreak-map" ref={root} data-presented={presented || Boolean(error)} aria-busy={!presented && !error} aria-label="QC dated place-forecast allocations and hospital demand map">
     <WorkspaceLoader active={!presented && !error} label="Preparing simulation map" />
-    <svg className="qs-flow-overlay" ref={flowRoot} aria-hidden={probabilityPlace ? undefined : true}
-      role={probabilityPlace ? 'group' : undefined} aria-label={probabilityPlace ? 'First-hospital probability arrows' : undefined} />
     {error && <div className="movie-map-error" role="status">{error}</div>}
   </div>;
 }

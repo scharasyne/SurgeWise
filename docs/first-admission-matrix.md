@@ -32,9 +32,9 @@ To refresh the page’s bundled evidence after a reviewed source update, run `py
 
 ### Inspecting hospital probabilities on the map
 
-Advance the timeline and select a barangay. In its inspector, turn on **Show all 46 hospital probabilities**. Each purple arrow gives the modeled chance of choosing its destination **given an admission from that barangay within the QC network**. All 46 probabilities sum to 100% before display rounding. A hospital can have a positive probability on a day when it has zero placements.
+Select a barangay in a loaded scenario, including at day zero. **Show all 46 hospital probabilities** starts enabled. Each purple arrow gives the modeled chance of choosing its destination **given an admission from that barangay within the QC network**. The three hospital cards show the highest probabilities in that barangay’s active matrix, alongside straight-line distances. All 46 probabilities sum to 100% before display rounding. A hospital can have a positive probability on a day when it has zero placements.
 
-Hover, tap or keyboard-focus an arrow to see the straight-line distance, the distance-only probability, the relative preference weight and the final normalized probability from the active matrix. For U.P. Campus → East Avenue Medical Center, 2.33 km gives a baseline of 3.50%. The illustrative 1.5× weight brings its share to 5.17% after normalization. The more distant Bernardino General Hospital still receives 0.57%. Use **Inspect by hospital name** to read the same details when arrows overlap. Turn the option off to return to daily placements and nearby hospitals.
+Hover, tap or keyboard-focus an arrow to see the straight-line distance, the distance-only probability, the relative preference weight and the final normalized probability from the active matrix. For U.P. Campus → East Avenue Medical Center, 2.33 km gives a baseline of 3.50%. The illustrative 1.5× weight brings its share to 5.17% after normalization. The more distant Bernardino General Hospital still receives 0.57%. Type part of a hospital name in **Search hospitals by name** to inspect any destination. Search also works with the probability arrows hidden. Turning off the arrows restores geographic connections and, during playback, modeled placements.
 
 ## Reading the export
 

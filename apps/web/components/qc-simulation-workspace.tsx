@@ -52,7 +52,7 @@ import {
   validateDateWindow,
 } from '@/lib/playback';
 import { addDateDays, CASE_BANDS } from '@/lib/case-bands';
-import { probabilityFacts, probabilityNote } from '@/lib/hospital-probabilities';
+import { probabilityFacts, probabilityNote, probabilityPercent } from '@/lib/hospital-probabilities';
 import { SIMULATION_LINES } from '@/lib/simulation-connections';
 import WorkspaceLoader from '@/components/workspace-loader';
 import {
@@ -139,9 +139,13 @@ function HospitalProbabilityPicker({ origin, choices, hospitals, distanceOnly }:
 }) {
   const [id, setId] = useState('');
   const choice = choices.find(row => row.facilityId === id);
+  const names = new Map(hospitals.map(h => [h.id, h.name]));
+  const options = choices.flatMap(row => {
+    const name = names.get(row.facilityId);
+    return name ? [{ id: row.facilityId, name, note: probabilityPercent(row.share) + ' first-admission probability' }] : [];
+  });
   return <div className="qs-probability-picker">
-    <WorkspaceSelect label="Inspect probability by hospital" value={id} onChange={setId}
-      options={[{ value: '', label: 'Inspect by hospital name' }, ...hospitals.map(h => ({ value: h.id, label: h.name }))]} />
+    <HospitalSearch label="Inspect probability by hospital" placeholder="Search hospitals by name" value={id} onChange={setId} options={options} />
     {choice && <div role="status"><InspectorFacts rows={probabilityFacts(choice)} />
       <small>{probabilityNote(choice, origin, distanceOnly)}</small></div>}
   </div>;
@@ -240,7 +244,7 @@ export default function QCSimulationWorkspace() {
   const [timelineHidden, setTimelineHidden] = useState(false);
   const [numberDrafts, setNumberDrafts] = useState<Partial<Record<keyof QCControls, string>>>({});
   const [startDateDraft, setStartDateDraft] = useState<string | null>(null);
-  const [showProbabilities, setShowProbabilities] = useState(false);
+  const [showProbabilities, setShowProbabilities] = useState(true);
   const [settingsSection, setSettingsSection] = useState<'scenario' | 'capacity'>('scenario');
   const [allotmentImport, setAllotmentImport] = useState<{ status: 'idle' | 'loading' | 'error' | 'done'; fileName?: string; message?: string; result?: BedAllotmentImport }>({ status: 'idle' });
   const [capacityHospital, setCapacityHospital] = useState('');
@@ -290,7 +294,6 @@ export default function QCSimulationWorkspace() {
       setLoading(true);
       setData(null);
       setContext(null);
-      setShowProbabilities(false);
       setNumberDrafts({});
       setStartDateDraft(null);
       setControls(values ?? null);
@@ -504,9 +507,14 @@ export default function QCSimulationWorkspace() {
   const selectedPeriod = scenario?.periodSummary.barangays.find(
     (b) => b.barangayId === selected
   );
-  const selectedBedProjection = scenario?.bedProjection?.placePeaks?.find(
+  // Choice weights are fixed for the loaded scenario, including its day-zero preview.
+  const selectedPlaceRow = data?.bedProjection?.placePeaks?.find(
     (b) => b.barangayId === selected
   );
+  const selectedBedProjection = scenario ? selectedPlaceRow : undefined;
+  const resultSplit = data?.bedProjection?.arrivalSplitPolicy;
+  const markovResult = resultSplit === 'markov_preference' || resultSplit === 'markov_proximity';
+  const choiceRow = markovResult && selectedPlaceRow?.hospitals.length ? selectedPlaceRow : undefined;
   const selectedDaily =
     scenario?.days.slice(1).map((d) => ({
       dayIndex: d.dayIndex,
@@ -567,13 +575,16 @@ export default function QCSimulationWorkspace() {
   const displayedHospitals = inspectedHospital
     ? [
         {
-          facilityId: inspectedHospital.id,
+          hospital: inspectedHospital,
+          share: null,
           distanceKm: hospitalHotspot?.distanceKm ?? null,
         },
       ]
-    : nearest;
+    : (selectedPlaceRow?.hospitals.slice(0, 3) ?? []).flatMap(choice => {
+        const site = context?.hospitals.find(h => h.id === choice.facilityId);
+        return site ? [{ hospital: site, share: choice.share, distanceKm: choice.breakdown?.distanceKm }] : [];
+      });
   function inspectHospital(id: string) {
-    setShowProbabilities(false);
     setHospital(id);
     setShowHotspotDetails(false);
     setPanelView('hospitals');
@@ -619,8 +630,6 @@ export default function QCSimulationWorkspace() {
         : 'Data-based historical forecast replay';
   const chainComparison = scenario?.firstAdmissionComparison;
   const firstHospital = controls?.allocationPolicy === 'first_hospital';
-  const resultSplit = scenario?.bedProjection?.arrivalSplitPolicy;
-  const markovResult = resultSplit === 'markov_preference' || resultSplit === 'markov_proximity';
   const staffedBeds = firstHospital ? snapshot?.bedForecast?.hospitalBedsRequired : snapshot?.bedForecast?.staffedBedsRequired;
   const dailyShortfalls = new Map(snapshot?.barangays.map(b => [b.barangayId, b.expectedBedsShort]));
   const selectedShortfall = dailyShortfalls.get(selected);
@@ -927,7 +936,7 @@ export default function QCSimulationWorkspace() {
     }
     function changed() { if (document.fullscreenElement !== workspace.current) exitExpanded(); }
     function escape(event: globalThis.KeyboardEvent) {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (playbackMenu.current?.open) { playbackMenu.current.open = false; return; }
       if (expandedRef.current && !document.fullscreenElement) exitExpanded();
       else if (!document.fullscreenElement) { setPanelView(null); panelTrigger.current?.focus(); }
@@ -2286,21 +2295,20 @@ export default function QCSimulationWorkspace() {
               </section>
             </div>
           </section>);
-  const probabilityPlace = markovResult && showProbabilities && showHotspotDetails && showHospitals && !hospital
-    ? selectedBedProjection : undefined;
+  const probabilityPlace = showProbabilities && showHotspotDetails && showHospitals && !hospital ? choiceRow : undefined;
   const selectedPlace = area && !inspectedHospital && (showHotspotDetails || panelView === 'hospitals') ? (
     <section className="qs-inspector-block" aria-label="Selected hotspot details" aria-live="polite">
       {selectedShortfall != null && <p className="qs-inspector-note"><strong>{formatFractional(selectedShortfall)} expected beds short</strong> attributable to this barangay on day {day}. Each hospital’s gap is shared in proportion to its modeled arrivals.</p>}
       <div className="qs-place-heading"><span>{markerHotspotIds?.includes(area.id) ? 'Annual high-burden candidate' : 'Selected barangay · outside the top candidates'}</span><h3>{area.name}</h3></div>
       {markovResult && <div className="qs-choice-control">
-        <label><input type="checkbox" checked={!!probabilityPlace} disabled={!selectedBedProjection}
+        <label><input type="checkbox" checked={!!probabilityPlace} disabled={!choiceRow}
           onChange={event => {
             setShowProbabilities(event.target.checked);
             if (event.target.checked) { setShowHospitals(true); setShowHotspotDetails(true); }
           }} /> Show all {context?.hospitals.length} hospital probabilities</label>
-        <small>{selectedBedProjection ? 'Hover, tap or focus an arrow to see how its probability was calculated.' : 'Advance the timeline to see first-hospital choices.'}</small>
-        {probabilityPlace && context && <HospitalProbabilityPicker key={area.id} origin={area} choices={probabilityPlace.hospitals}
-          hospitals={context.hospitals} distanceOnly={scenario?.bedProjection?.arrivalSplitPolicy === 'markov_proximity'} />}
+        {probabilityPlace && <small>Hover, tap or focus an arrow to see its probability breakdown.</small>}
+        {choiceRow && context && <HospitalProbabilityPicker key={area.id} origin={area} choices={choiceRow.hospitals}
+          hospitals={context.hospitals} distanceOnly={resultSplit === 'markov_proximity'} />}
       </div>}
       <h4>Projected cases</h4>
       <InspectorFacts rows={[
@@ -2340,7 +2348,7 @@ export default function QCSimulationWorkspace() {
       <details className="qs-inspector-disclosure qs-hospital-lookup"><summary>Inspect another registered hospital</summary>
         <WorkspaceSelect label="Inspect hospital" value={hospital} disabled={!context} onChange={value => {
           if (value) inspectHospital(value); else { setHospital(''); setShowHotspotDetails(true); }
-        }} options={[{ value: '', label: 'Nearest hospitals to selected barangay' }, ...(context?.hospitals.map(h => ({ value: h.id, label: h.name })) ?? [])]} />
+        }} options={[{ value: '', label: 'Most likely first hospitals' }, ...(context?.hospitals.map(h => ({ value: h.id, label: h.name })) ?? [])]} />
       </details>
       {inspectedHospital && <section className="qs-inspector-block qs-hospital-context"><h4>Nearest ranked barangay</h4>
         <p className="qs-inspector-name">{hospitalHotspotArea?.name ?? (scenario ? 'No ranked candidate in this window' : 'Start playback to view')}</p>
@@ -2350,16 +2358,17 @@ export default function QCSimulationWorkspace() {
           ['Experimental range', range(hospitalHotspotCases?.caseRange)],
         ]} />
         <p className="qs-inspector-note">Closest annual candidate by representative point; not a verified hospital entrance or referral.</p>
-        <div className="qs-inspector-actions"><button type="button" className="text-button" disabled={!hospitalHotspotArea} onClick={() => hospitalHotspotArea && inspectHotspot(hospitalHotspotArea.id)}>Inspect barangay <ChevronRight size={13} /></button><button type="button" className="text-button" onClick={() => { setHospital(''); setShowHotspotDetails(true); }}>Nearby hospitals</button></div>
+        <div className="qs-inspector-actions"><button type="button" className="text-button" disabled={!hospitalHotspotArea} onClick={() => hospitalHotspotArea && inspectHotspot(hospitalHotspotArea.id)}>Inspect barangay <ChevronRight size={13} /></button><button type="button" className="text-button" onClick={() => { setHospital(''); setShowHotspotDetails(true); }}>Most likely first hospitals</button></div>
       </section>}
-      <h3 className="qs-inspector-section-title">{inspectedHospital ? 'Hospital capacity & demand' : 'Nearby hospital details'}</h3>
-      {!inspectedHospital && <p className="qs-inspector-note">Registered sites nearest to {area?.name ?? 'the selected barangay'}. Distances are straight-line proxies, not travel routes.</p>}
-      {displayedHospitals.map((n, index) => {
-        const h = context!.hospitals.find(h => h.id === n.facilityId)!;
+      <h3 className="qs-inspector-section-title">{inspectedHospital ? 'Hospital capacity & demand' : 'Most likely first hospitals'}</h3>
+      {!inspectedHospital && <p className="qs-inspector-note">{displayedHospitals.length
+        ? `Ranked by modeled probability of first admission within the QC network for a patient from ${area?.name}.`
+        : 'Hospital-choice probabilities are unavailable for this barangay in the current scenario.'}</p>}
+      {displayedHospitals.map(({ hospital: h, share, distanceKm }, index) => {
         const stat = snapshot?.facilities.find(item => item.facilityId === h.id);
         const peak = scenario?.bedProjection?.hospitalPeaks.find(item => item.facilityId === h.id);
         return <details key={h.id} className="qs-hospital-entry" open={!!inspectedHospital}>
-          <summary><span className="qs-hospital-entry-name">{h.name}</span><span className="qs-hospital-entry-meta">{inspectedHospital ? 'Selected hospital' : `Nearby site ${index + 1}`} · {n.distanceKm == null ? 'Distance unavailable' : `${n.distanceKm.toFixed(2)} km`}</span></summary>
+          <summary><span className="qs-hospital-entry-name">{h.name}</span><span className="qs-hospital-entry-meta">{share == null ? 'Selected hospital' : `#${index + 1} · ${probabilityPercent(share)} probability`} · {distanceKm == null ? 'Distance unavailable' : `${distanceKm.toFixed(2)} km straight-line`}</span></summary>
           <div className="qs-hospital-entry-body">
             <section className="qs-inspector-section"><h4>Registered inventory</h4>
               <InspectorFacts rows={[
@@ -2430,7 +2439,7 @@ export default function QCSimulationWorkspace() {
           <div className="qs-map-stage">
             <OutbreakMap context={context} snapshot={snapshot ?? null} maximum={data?.mapScaleMaxDailyCases ?? 1}
               selected={selected} selectedHospital={hospital} hotspotIds={markerHotspotIds} rankedHotspotIds={rankedHotspotIds}
-              probabilityPlace={probabilityPlace} distanceOnly={scenario?.bedProjection?.arrivalSplitPolicy === 'markov_proximity'} hospitalHotspot={hospitalHotspot} caseMetric={caseMetric} caseColorMaximum={caseColorMaximum}
+              probabilityPlace={probabilityPlace} distanceOnly={resultSplit === 'markov_proximity'} hospitalHotspot={hospitalHotspot} caseMetric={caseMetric} caseColorMaximum={caseColorMaximum}
               connectionFocus={hospital ? 'hospital' : showHotspotDetails ? 'barangay' : null} inspectionVersion={hospitalInspection}
               animationDurationMs={Math.min(650, 800 / speed)} onSelect={inspectHotspot} onHospital={inspectHospital}
               playing={playing} reducedMotion={reduced} showLinks={links} view={view} buildings3d={buildings3d}
