@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from production.surgewise import predictor
 
+from ..repositories.weekly_handoff import ARCHIVE_ONLY_NOTE, save_handoff
+
 router = APIRouter(prefix="/v1")
 
 
@@ -27,6 +29,7 @@ class LocalObservation(ForecastFields):
 
 
 class WeeklyForecastInput(ForecastFields):
+    prepare_hospital_simulation: bool = False
     weeks_ahead: int = Field(default=predictor.HORIZON, ge=1, le=predictor.HORIZON)
     city_updates: list[CityObservation] = Field(default_factory=list)
     local_updates: list[LocalObservation] = Field(default_factory=list)
@@ -45,6 +48,16 @@ def weekly_forecast(params: WeeklyForecastInput):
         raise HTTPException(503, detail={"code": "FORECAST_MODEL_UNAVAILABLE",
             "message": "Could not load the bundled weekly forecast model and history."}) from None
     try:
-        return predictor.predict(**params.model_dump())
+        inputs = params.model_dump(exclude={"prepare_hospital_simulation"})
+        result = predictor.predict(**inputs)
     except ValueError as error:
         raise HTTPException(400, detail={"code": "INVALID_FORECAST_INPUT", "message": str(error)}) from None
+    if params.prepare_hospital_simulation:
+        if params.city_updates or params.local_updates:
+            return {**result, "hospitalSimulation": {"unavailableReason": ARCHIVE_ONLY_NOTE}}
+        try:
+            result["hospitalSimulation"] = save_handoff(result, inputs["city_updates"], inputs["local_updates"])
+        except (OSError, ValueError):
+            raise HTTPException(503, detail={"code": "FORECAST_HANDOFF_UNAVAILABLE",
+                "message": "Could not save the weekly forecast for hospital simulation."}) from None
+    return result

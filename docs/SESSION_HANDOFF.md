@@ -1,11 +1,21 @@
 # Simulation session handoff
 
-Updated 2026-11-21 02:58 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-21 05:25 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## Barangay shading on the weekly simulation
+
+`forecast/integration` incorporates `origin/main` at `a7f488d` and the map shading from `tammy-barangay-shading` at `deef63b`. The preview is neutral. During playback all 142 polygons use the selected case measure on a scale fixed across that run. The top ten remain in Results. Connection dots appear with their corresponding map layer during a submitted run. LGU reports recognize saved weekly forecasts and archive-based planning dates. [Map semantics](simulation-workspace-design.md#map-semantics)
+
+Chromium compared all 142 MapLibre fills against saved case values for days 7 and 14, switched between accumulated and daily cases, toggled overview dots and rewound to neutral. This check used a plain background style with the application’s QC boundaries and simulation API. The weekly controls, 2012–2022 selector, hospital drilldown, case-to-bed smoke test, lint, TypeScript and production build passed. The suites passed 116 web tests and 176 engine tests, the latter in the isolated checkout with the rebuilt legacy seasonal cache.
 
 ## Weekly case forecasts
 
-Both simulation tabs call the production random forest. Historical replay passes QC observations through the selected issue week. Future planning applies the next weekly forecasts after the latest available observations to a hypothetical hospital timeline. The day and hospital calculations use the forecasts for the individual barangays. [Model and request format](../production/README.md)
+Simulation now draws case history from the 2012–2022 archive. Historical replay opens at 2012 and lists years without annotations. The imputed series is the default for every year. For 2021–2022 an archive-trained past-origin RF forecast remains available. Future planning and the six-week forecast use the final archive observation in week 52 of 2022. Earlier UPRI-based runs retain their own source IDs. Hospital calculations run daily, while the workspace plays weekly snapshots and displays changes in unrounded bed demand and weekly new cases. Bed details opens hospital search and barangay results. [Methods, scope and inputs](../production/README.md#hospital-simulation-and-historical-replay)
+
+The source-archive RF reproduction requires scikit-learn 1.8.0. The current application environment runs its exported forecasts without a training dependency change. The tracked legacy seasonal manifest specifies another environment and its local joblib differs from that manifest. Legacy seasonal tests require rebuilding those separate artifacts in the test checkout as described below.
+
+Verification covered 163 engine tests in the isolated checkout with the legacy seasonal cache rebuilt, 110 web tests, lint, TypeScript, the production build and the HTTP workspace smoke test. Desktop and 390 px Chromium runs verified the eleven year labels, 7-day slider increments, displayed percentages against the underlying forecast, the hospital search and the future planning cutoff. The engine regression checks QC and every hospital’s unrounded percentage, zero-denominator handling, archived case predictions and admission allocation.
 
 ## LGU follow-up report
 

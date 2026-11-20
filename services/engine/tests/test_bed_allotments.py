@@ -92,7 +92,7 @@ def controls():
 def test_qc_simulation_applies_imported_allotments_and_keeps_defaults_elsewhere(controls):
     client = TestClient(app)
     allotment = {"facilityId": "HOSP-614", "dengueBeds": 30, "nonDengueBeds": 70, "holdingSpaces": 7}
-    response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": [allotment]})
+    response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2012-01-08", "bedAllotments": [allotment]})
     assert response.status_code == 200, response.text
     data = response.json()
     facilities = {f["facilityId"]: f for f in data["days"][1]["facilities"]}
@@ -113,7 +113,7 @@ def test_qc_simulation_applies_imported_allotments_and_keeps_defaults_elsewhere(
     [{"facilityId": "HOSP-614", "dengueBeds": 1, "nonDengueBeds": 1, "holdingSpaces": 0}] * 2,
 ], ids=["unknown-hospital", "no-beds", "fractional", "duplicate"])
 def test_invalid_allotments_are_rejected_not_repaired(controls, allotments):
-    response = TestClient(app).post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": allotments})
+    response = TestClient(app).post("/v1/qc-simulation", json={**controls, "endDate": "2012-01-08", "bedAllotments": allotments})
     assert response.status_code == 422, response.text
 
 
@@ -150,7 +150,7 @@ def test_extra_non_dengue_beds_add_capacity_but_no_dengue_room():
 
 def test_qc_simulation_applies_per_hospital_extra_beds(controls):
     allotment = {"facilityId": "HOSP-614", "dengueBeds": 5, "nonDengueBeds": 95, "holdingSpaces": 5, "extraDengueBeds": 9, "extraNonDengueBeds": 3}
-    response = TestClient(app).post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": [allotment]})
+    response = TestClient(app).post("/v1/qc-simulation", json={**controls, "endDate": "2012-01-08", "bedAllotments": [allotment]})
     assert response.status_code == 200, response.text
     data = response.json()
     config = {f["facilityId"]: f for f in data["parameters"]["facilities"]}
@@ -170,12 +170,12 @@ def test_holding_split_columns_are_parsed_and_must_add_up():
 def test_non_dengue_holding_spaces_are_not_used_for_dengue_overflow(controls):
     allotment = {"facilityId": "HOSP-614", "dengueBeds": 5, "nonDengueBeds": 95, "holdingSpaces": 6, "nonDengueHoldingSpaces": 2}
     client = TestClient(app)
-    response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": [allotment]})
+    response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2012-01-08", "bedAllotments": [allotment]})
     assert response.status_code == 200, response.text
     config = {f["facilityId"]: f for f in response.json()["parameters"]["facilities"]}
     assert config["HOSP-614"]["holdingCapacity"] == 4
     too_many = {**allotment, "nonDengueHoldingSpaces": 7}
-    assert client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "bedAllotments": [too_many]}).status_code == 422
+    assert client.post("/v1/qc-simulation", json={**controls, "endDate": "2012-01-08", "bedAllotments": [too_many]}).status_code == 422
 
 
 def test_staffed_total_import_and_explicit_reservations():
@@ -192,7 +192,7 @@ def test_staffed_total_import_and_explicit_reservations():
 @pytest.mark.parametrize("future", [False, True])
 def test_reservations_reach_hospital_bed_forecast(future):
     path = "/v1/future-simulation" if future else "/v1/qc-simulation"
-    params = {"horizonDays": 2} if future else {"endDate": "2025-01-31"}
+    params = {"horizonDays": 2} if future else {"endDate": "2012-01-03"}
     params["bedAllotments"] = [{"facilityId": "HOSP-614", "staffedBeds": 100},
                               {"facilityId": "HOSP-615", "dengueBeds": 0, "nonDengueBeds": 100}]
     for other_share, expected in [(None, [40, 0, 32]), (.8, [20, 0, 16])]:

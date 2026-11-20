@@ -12,7 +12,7 @@ from ..domain.patient_flow import simulate_flow
 from ..domain import patient_flow
 from ..domain.spatial import allocate, annual_backtest
 from ..repositories.facility import DATASET_ID, load_facilities
-from ..repositories.forecast_runs import artifact, load_run, load_runs, FOLDER, ForecastRunNotFound
+from ..repositories.forecast_runs import artifact, load_run, load_runs, load_workspace_run, FOLDER, ForecastRunNotFound
 from ..upri_data import ROOT, sha256
 
 router = APIRouter(prefix="/v1")
@@ -31,9 +31,17 @@ def forecasts(area: Literal["QUEZON_CITY", "NCR"] = "QUEZON_CITY"):
 
 
 @router.get("/forecast-runs/{ident}")
+def forecast_details(ident: str):
+    return resolve_forecast(ident, load_workspace_run)
+
+
 def forecast(ident: str):
+    return resolve_forecast(ident, load_run)
+
+
+def resolve_forecast(ident, loader):
     try:
-        return load_run(ident)
+        return loader(ident)
     except ForecastRunNotFound:
         raise HTTPException(404, detail={"code": "FORECAST_NOT_FOUND"}) from None
     except (OSError, ValueError, KeyError, TypeError):

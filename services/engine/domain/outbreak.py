@@ -39,11 +39,12 @@ def make_context(run, annual, geojson, hospitals, cutoff_year=None, use_xgboost=
     records = {r["ADM4_PCODE"]: r for r in annual}
     ranking = None
     predicted = {}
-    issue_year = min(run.get("spatialWeightsIssueYear", run["issueBlock"]["YR"]), cutoff_year or 9999)
+    reference = run.get("issueBlock") or run["observedReferenceBlock"]
+    issue_year = min(run.get("spatialWeightsIssueYear", reference["YR"]), cutoff_year or 9999)
     production = "scenarioStart" in run
     if production:
         # Annual counts are displayed as historical context only.
-        year = issue_year - 2
+        year = run.get("annualContextYear", issue_year - 2)
         totals = dict.fromkeys(records, 0.0)
         for day in run["dailyPredictions"]:
             local = run["weeklyPredictions"][day["weekIndex"]]["barangayCases"]
@@ -152,6 +153,8 @@ def allocated_forecast_trajectory(run, context, config, duration):
             factor += (config["surgeMultiplier"] - 1) * min(1.0, (i - config["surgeOnsetDay"] + 1) / config["growthDays"])
         additive = config["extraCasesPerWeek"] / 7 * (1.0 if config["shockProfile"] == "step"
                     else min(1.0, (i + 1) / config["growthDays"])) if i < duration else 0.0
+        if run.get("dailyPredictions") and i < duration:
+            factor *= run["dailyPredictions"][i].get("scenarioMultiplier", 1.0)
         shock = baseline * (factor - 1) + additive
         rows = []
         production_day = run["dailyPredictions"][i] if "scenarioStart" in run and i < duration else None
@@ -324,11 +327,11 @@ def build_movie(run, context, config, first_admission_shares=None):
         encoding = "hospital_totals_with_ranked_origin_placements"
     return {"assignmentEncoding": encoding,
         "days": flow[:duration + 1], "context": context, "durationDays": duration, "bedProjection": bed_projection,
-        "progressionMethod": "production_weekly_barangay_forecast" if "scenarioStart" in run else ("dated_QC_forecast_allocated_by_xgboost_annual_burden_shares" if context.get("hotspotRanking") else "dated_QC_forecast_allocated_by_prior_annual_barangay_shares") if config.get("autoHotspots") else "explicit_hypothetical_radial_shock",
+        "progressionMethod": "gp_weekly_barangay_reconstruction" if run.get("caseSourceKind") == "gp_reconstruction" else "production_weekly_barangay_forecast" if "scenarioStart" in run else ("dated_QC_forecast_allocated_by_xgboost_annual_burden_shares" if context.get("hotspotRanking") else "dated_QC_forecast_allocated_by_prior_annual_barangay_shares") if config.get("autoHotspots") else "explicit_hypothetical_radial_shock",
         "mapScaleMaxDailyCases": max(b["expectedCases"] for d in days[:duration] for b in d["barangays"]),
         "measurementKind": "modeled_allocation", "capacityMeasurementKind": "assumption",
-        "calendarStatus": "USER_SELECTED_HYPOTHETICAL_DATES_NOT_SOURCE_WEEK_ALIGNMENT",
-        "assumptions": ("Daily dengue cases use the production model’s weekly barangay forecasts and a uniform within-week split. The configured surge is a scenario assumption. " if "scenarioStart" in run else "Each barangay progresses directly from its dated QC forecast allocation using prior annual spatial shares. No geographic seed, expansion radius, neighbor activation or contagion chain affects forecast demand. These are modeled barangay allocations, not separately trained local forecasts. Configured citywide shocks are separate assumptions. " if config.get("autoHotspots") else "Historical reference blocks mapped onto hypothetical dates; annual weights use only complete years before the reference/scenario cutoff with one extra full-year lag. Additive shock uses an explicit hypothetical radial kernel; radius speed and case ramp are user assumptions, not inferred transmission. ") + "Zero initial dengue census, fixed LOS and occupancy; supported placements, finite holding and unresolved demand are separate from case forecasts.",
+        "calendarStatus": run.get("calendarStatus", "USER_SELECTED_HYPOTHETICAL_DATES_NOT_SOURCE_WEEK_ALIGNMENT"),
+        "assumptions": (run["availabilityAssumption"] + " " if run.get("caseSourceKind") == "gp_reconstruction" else "Daily dengue cases use the production model’s weekly barangay forecasts and a uniform within-week split. The configured surge is a scenario assumption. " if "scenarioStart" in run else "Each barangay progresses directly from its dated QC forecast allocation using prior annual spatial shares. No geographic seed, expansion radius, neighbor activation or contagion chain affects forecast demand. These are modeled barangay allocations, not separately trained local forecasts. Configured citywide shocks are separate assumptions. " if config.get("autoHotspots") else "Historical reference blocks mapped onto hypothetical dates; annual weights use only complete years before the reference/scenario cutoff with one extra full-year lag. Additive shock uses an explicit hypothetical radial kernel; radius speed and case ramp are user assumptions, not inferred transmission. ") + "Zero initial dengue census, fixed LOS and occupancy; supported placements, finite holding and unresolved demand are separate from case forecasts.",
         "disclaimer": "Hypothetical spread and hospital-demand planning movie. No observed daily/weekly barangay spread, clinical eligibility, hospital vacancy or road-route claim. All hospital points are provisional; 2026 inventory is a hypothetical planning network."}
 
 

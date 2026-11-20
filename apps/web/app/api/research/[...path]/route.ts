@@ -33,11 +33,19 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     try { JSON.parse(body); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 422 }); }
   }
   const query = new URL(request.url).searchParams;
+  const params = new URLSearchParams();
+  const weekly = query.get('weeklyForecastId');
+  if (weekly !== null) {
+    if (path !== 'qc-simulation' || request.method !== 'GET' || !/^qc-weekly-[0-9a-f]{64}$/.test(weekly))
+      return NextResponse.json({ error: 'Invalid weekly forecast link.' }, { status: 422 });
+    params.set('weeklyForecastId', weekly);
+  }
   const area = query.get('area');
   if (area && (!['QUEZON_CITY', 'NCR'].includes(area) || (path === 'predict' && area !== 'QUEZON_CITY')))
     return NextResponse.json({ error: 'Unsupported area' }, { status: 422 });
+  if (area) params.set('area', area);
   try {
-    const response = await fetch(`${base.replace(/\/$/, '')}/v1/${path}${area ? `?area=${area}` : ''}`, {
+    const response = await fetch(`${base.replace(/\/$/, '')}/v1/${path}${params.size ? `?${params}` : ''}`, {
       method: request.method, headers: { 'content-type': 'application/json' }, body,
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(20000)]), cache: 'no-store',
     });

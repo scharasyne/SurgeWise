@@ -11,6 +11,10 @@ def surge_staffing(mean, baseline):
     return max(0, needed(mean) - needed(baseline))
 
 
+def change_percent(current, previous):
+    return 100 * (current - previous) / previous if previous > 0 else None
+
+
 def rolling_bed_demand(arrivals, los):
     if type(los) is not int or not 1 <= los <= 30 or any(not math.isfinite(v) or v < 0 for v in arrivals):
         raise ValueError("Invalid LOS or admission trajectory")
@@ -90,14 +94,19 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
         i = day["dayIndex"]
         capacity = sum(f["normalCapacity"] * (1 - non_dengue_shares[f["facilityId"]]) + f["activatedSurgeCapacity"] for f in day["facilities"])
         day["bedForecast"] = prediction(central[i], lo_curve[i], hi_curve[i], capacity)
-        day["bedForecast"].update({"baselineExpectedBeds": baseline_network[i],
+        # Day zero is an assumed empty start, never a measured comparison week.
+        day["weeklyCasesChangePct"] = (change_percent(sum(cases[i-6:i+1]), sum(cases[i-13:i-6]))
+                                       if i >= 14 else None)
+        day["bedForecast"].update({"weeklyDemandChangePct": change_percent(central[i], central[i-7]) if i > 7 else None,
+            "baselineExpectedBeds": baseline_network[i],
             "baselineStaffedBedsRequired": needed(baseline_network[i]),
             "additionalStaffedBedsDueToSurge": surge_staffing(central[i], baseline_network[i])})
         for facility in day["facilities"]:
             central_hospital, low_hospital, high_hospital = hospital_curves[facility["facilityId"]]
             supported = facility["normalCapacity"] * (1 - non_dengue_shares[facility["facilityId"]]) + facility["activatedSurgeCapacity"]
             facility["bedForecast"] = prediction(central_hospital[i], low_hospital[i], high_hospital[i], supported)
-            facility["bedForecast"].update({"baselineExpectedBeds": baseline_curves[facility["facilityId"]][i],
+            facility["bedForecast"].update({"weeklyDemandChangePct": change_percent(central_hospital[i], central_hospital[i-7]) if i > 7 else None,
+                "baselineExpectedBeds": baseline_curves[facility["facilityId"]][i],
                 "baselineStaffedBedsRequired": needed(baseline_curves[facility["facilityId"]][i]),
                 "additionalStaffedBedsDueToSurge": surge_staffing(central_hospital[i], baseline_curves[facility["facilityId"]][i]),
                 "catchmentMethod": config.get("arrivalSplitPolicy", "nearest") + " (assumed first-destination shares)"})

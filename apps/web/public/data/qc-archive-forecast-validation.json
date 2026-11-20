@@ -1,0 +1,88 @@
+{
+  "model": "RF_shallow",
+  "geography": "QUEZON_CITY",
+  "trainingThrough": 2020,
+  "units": "reported QC cases per morbidity week",
+  "archiveSha256": "0848d84bdc4f1da46a91ef3b3aca8ef3e5824ec6e275d68c01857bbb956b1c1b",
+  "source": "outputs/evaluation/weekly_backtest.csv",
+  "holdouts": [
+    {
+      "protocol": "chronological",
+      "weeks": 52,
+      "cityMae": 22.302426911230253,
+      "cityWapePercent": 24.554863421214762,
+      "persistenceMae": 25.096153846153854,
+      "byHorizon": [
+        {
+          "weeksAhead": 1,
+          "n": 9,
+          "cityMae": 16.867454970373803
+        },
+        {
+          "weeksAhead": 2,
+          "n": 9,
+          "cityMae": 14.504927095066998
+        },
+        {
+          "weeksAhead": 3,
+          "n": 9,
+          "cityMae": 20.320719286722284
+        },
+        {
+          "weeksAhead": 4,
+          "n": 9,
+          "cityMae": 21.58371900116234
+        },
+        {
+          "weeksAhead": 5,
+          "n": 8,
+          "cityMae": 30.473813677394283
+        },
+        {
+          "weeksAhead": 6,
+          "n": 8,
+          "cityMae": 32.055538348111256
+        }
+      ]
+    },
+    {
+      "protocol": "random_blocked",
+      "weeks": 52,
+      "cityMae": 25.507210765894552,
+      "cityWapePercent": 32.62112542613174,
+      "persistenceMae": 20.692307692307697,
+      "byHorizon": [
+        {
+          "weeksAhead": 1,
+          "n": 9,
+          "cityMae": 23.127580661426023
+        },
+        {
+          "weeksAhead": 2,
+          "n": 9,
+          "cityMae": 17.38799592099953
+        },
+        {
+          "weeksAhead": 3,
+          "n": 9,
+          "cityMae": 23.986570011500497
+        },
+        {
+          "weeksAhead": 4,
+          "n": 9,
+          "cityMae": 26.55377908303408
+        },
+        {
+          "weeksAhead": 5,
+          "n": 8,
+          "cityMae": 31.855473001175884
+        },
+        {
+          "weeksAhead": 6,
+          "n": 8,
+          "cityMae": 31.50348059055855
+        }
+      ]
+    }
+  ]
+}

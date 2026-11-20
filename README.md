@@ -4,20 +4,8 @@ Map-first public-health research and preparedness prototype using Next.js/MapLib
 
 ## Current implementation
 
-- Open **Forecast** (`/forecast`) to run the bundled `RF_shallow` model for 1–6
-  morbidity weeks in Quezon City. Select the city total or one of 142 barangays.
-  The bundled origin is 2022 week 52. Upload newer weekly observations to advance
-  the origin. The page uses the existing `ENGINE_BASE_URL` connection and calls
-  `POST /v1/predict` on FastAPI. The engine reads the weights and history in
-  `production/surgewise` directly. See the [model and input format](production/README.md).
-
-- Both **Simulation** tabs (`/outbreak-response`) run the same production model.
-  Historical replay uses the QC city counts reported through the selected issue week.
-  Future forecast runs from the latest stored QC observation (2025 week 52) and applies
-  that trajectory to the chosen 1–28-day hospital scenario. Forecast target weeks and
-  scenario dates are reported separately. Each barangay’s weekly point forecast
-  supplies its daily case estimates, admission demand and hospital projections.
-  The release does not supply predictive intervals. [Simulation methods](docs/future-seasonal-simulation.md)
+- **Simulation → Historical replay** uses the weekly imputed QC dataset for **2012–2022**. Choose a year and a window of 7, 14, 21 or 28 days. A past-origin forecast fitted through 2020 is also available for 2021–2022.
+- **Simulation → Future forecast** issues forecasts after the archive’s last observation, week 52 of 2022. Choose a dated hospital planning scenario or the next 1–6 forecast weeks. **Bed details** opens the QC-wide results, a hospital search and barangay results. Weekly percentages compare new cases across successive seven-day periods and expected bed demand at their endpoints. [Data, replay methods and accuracy](production/README.md#hospital-simulation-and-historical-replay)
 
 - `/dashboard` retains the existing map and 17 NCR city/municipality polygons. QC hospital markers use the canonical PhilHealth registry only, with search, ownership filtering, provisional point symbols, source details and a table independent of map availability.
 - Active inventory: **46 QC hospital/infirmary source rows; 9,389 accredited beds**, as of **2026-09-30**. All 46 points are provisional; **zero independently verified emergency entrances**. Accredited beds are not staffed, free or dengue-usable capacity. Local HOSP IDs identify source rows, not official accreditation numbers.

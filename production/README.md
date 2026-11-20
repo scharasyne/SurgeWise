@@ -96,3 +96,70 @@ For a forward simulation, plot `expected_cases` from `POST /predict` as **Foreca
 | `data/gp_cases.csv`, `history.py` | Full weekly GP dataset and lookup for historical displays |
 | `features.py`, `predictor.py` | Feature construction, forest prediction, aggregation and simulation |
 | `api.py` | JSON HTTP endpoint |
+
+## Hospital simulation and historical replay
+
+In **Simulation → Future forecast → Projected dengue cases**, choose **Next 1–6 weeks after the archive**.
+Choose 1–6 weeks and set the case multiplier. Select **Run simulation**.
+The app calls `POST /v1/predict` with `prepare_hospital_simulation: true`, then passes the returned
+forecast ID and the selected hospital settings to `POST /v1/qc-simulation`.
+**Results → Overview** includes the full weekly forecast for QC or a selected barangay.
+**Results → Methods & sources** includes the archive holdout scores. Existing `/forecast` bookmarks open the future simulation settings.
+Saved forecasts are available at `GET /v1/forecast-runs/{id}` and can be reopened in the workspace with `?weeklyForecastId=…`.
+The hospital workspace takes the first 1–28 days of that exact forecast. Each day uses the original barangay counts and the
+corresponding week’s surge factor. Hospitalization fraction, admission delay, stay
+and bed assumptions are editable. The reviewed Markov first-admission probabilities
+assign the resulting demand to the 46 PhilHealth QC hospitals.
+
+Linked results live in the engine’s existing scenario storage under `scenarios/weekly`.
+The engine needs persistent shared storage if links must survive a redeploy or requests
+go to multiple workers on different hosts. The prediction API can evaluate supplied observations independently. The Simulation workspace accepts archive-based case history only.
+
+Under **Simulation → Historical replay → Year**, select a year,
+start day and a 7-, 14-, 21- or 28-day duration. The simulation end is exclusive.
+
+| Case input | Available dates | Information used |
+| --- | --- | --- |
+| Imputed weekly cases (Gaussian process) | All dates in 2012–2022 | Reported QC weekly totals and retrospective annual barangay counts. Cases attributed to the 142 mapped barangays enter the hospital model. The workspace reports unassigned demand separately. |
+| RF forecast from a historical origin | All start weeks in 2021–2022 | Evaluation forest fitted on eligible 2013–2020 targets. All simulated days use one origin immediately before the first selected source week. The latest eligible annual features come from the preceding completed year. |
+| Release forest | Future planning and linked archive forecasts | Final forest refitted on eligible targets through 2022. The first forecast target follows week 52 of 2022. |
+
+Historical replay defaults to the imputed weekly dataset for all eleven years. For 2021–2022, **Historical case source** also offers the evaluation forest. The archive uses 2012 as lag history
+and 2013–2020 for supervised fitting. The release does not provide a held-out forest
+for those earlier targets. Daily historical replay treats each corrected archive date
+as the start of its morbidity interval and divides each weekly value evenly across its
+actual length. The last interval ends January 1, 2023.
+
+### Archive accuracy and reproduction
+
+The source is the top-level training code, datasets and evaluation outputs in
+`SurgeWise_80_10_10.zip` (SHA-256 `0848d84bdc4f1da46a91ef3b3aca8ef3e5824ec6e275d68c01857bbb956b1c1b`).
+The archive selects the forest on validation six-week cumulative city error among the
+ML candidates. The following errors use reported QC weekly totals for the selected
+variant and the archive’s city-persistence comparator. Each test covers 52 weeks.
+
+| Retrospective test | RF weekly MAE, cases | Persistence weekly MAE, cases | RF weighted absolute percentage error |
+| --- | ---: | ---: | ---: |
+| 2022 chronological test | 22.30 | 25.10 | 24.55% |
+| Held-out 2021–2022 blocks | 25.51 | 20.69 | 32.62% |
+
+The two protocols reuse historical weeks. In the blocked protocol some validation
+blocks used for model selection came after some test blocks. Barangay training labels
+were reconstructed and hospital admissions depend on scenario assumptions. The city
+scores establish neither weekly local case accuracy nor hospital admission accuracy.
+
+To rebuild the historical predictions, use a separate training environment with
+`numpy`, `pandas`, `joblib`, `threadpoolctl` and **scikit-learn 1.8.0**.
+Run the following from the repository root.
+
+```sh
+python scripts/build_archive_replay.py
+python -m pytest -q services/engine/tests/test_archive_handoff.py
+```
+
+The builder fits the archive’s evaluation forest through 2020 and generates six
+direct horizons from each of 104 weekly origins. It checks the summed barangay
+forecasts against every archived evaluation target. Runtime uses the generated
+hash-checked array. The regression tests also compare the released web predictor to
+all 1,704 published barangay-week rows for the two 2023 example forecasts.
+[Machine-readable scores by horizon](../apps/web/public/data/qc-archive-forecast-validation.json)

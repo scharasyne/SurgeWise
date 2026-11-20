@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { nextPlaybackDay, validateDateWindow, formatScenarioDate } from './playback.ts';
 test('playback reaches day endpoints and stops at the actual scenario duration', () => {
-  for (const day of [0, 6, 13, 27]) assert.equal(nextPlaybackDay(day, 28), day + 1);
+  for (const [day, next] of [[0, 7], [7, 14], [14, 21], [21, 28], [27, 28]]) assert.equal(nextPlaybackDay(day, 28), next);
   assert.equal(nextPlaybackDay(28, 28), 28);
   assert.equal(nextPlaybackDay(7, 7), 7);
 });

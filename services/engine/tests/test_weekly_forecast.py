@@ -68,7 +68,7 @@ def test_simulators_fail_closed_if_production_forecaster_is_unavailable(monkeypa
         raise FileNotFoundError("missing release file")
 
     monkeypatch.setattr(predictor, "predict", unavailable)
-    for path in ("/v1/qc-simulation", "/v1/future-simulation"):
-        response = client.get(path)
-        assert response.status_code == 503
-        assert response.json()["detail"]["code"] == "PRODUCTION_FORECAST_UNAVAILABLE"
+    assert client.get("/v1/qc-simulation").status_code == 200  # Imputed historical inputs are independent.
+    response = client.get("/v1/future-simulation")
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "PRODUCTION_FORECAST_UNAVAILABLE"

@@ -157,8 +157,8 @@ def test_parameter_audit_zero_admissions_and_unreached_surge_peak():
     assert audit["fullMultiplierReached"] is False
     assert audit["maximumAppliedMultiplier"] == pytest.approx(1 + 9 / 28)
     assert audit["staffedSurgeActivationWithinWindow"] is False
-    assert result["forecastEvidence"]["issueBlock"] == {"YR": 2025, "WN": 52}
-    assert result["forecastEvidence"]["targetWeeks"] == [{"year": 2026, "week": 1}]
+    assert result["forecastEvidence"]["issueBlock"] == {"YR": 2022, "WN": 52}
+    assert result["forecastEvidence"]["targetWeeks"] == [{"year": 2023, "week": 1}]
     assert all(d["bedForecast"]["expectedBeds"] == 0 and d["arrivals"] == 0 for d in result["days"])
     assert result["days"][-1]["shockCases"] > 0
     assert result["futureForecast"]["selectedModel"] == "RF_shallow"
@@ -167,8 +167,8 @@ def test_parameter_audit_zero_admissions_and_unreached_surge_peak():
 def test_planning_dates_reuse_actual_forecast_origin_across_year_boundary():
     result = future_workspace(FutureInput(startDate="2026-12-30", horizonDays=3, surgeEnabled=False))
     assert result["futureForecast"]["parameterAudit"]["endDateExclusive"] == "2027-01-02"
-    assert result["futureForecast"]["sourcePeriodStart"] == "2026-01-01"
-    assert result["forecastEvidence"]["targetWeeks"] == [{"year": 2026, "week": 1}]
+    assert result["futureForecast"]["sourcePeriodStart"] == "2023-01-01"
+    assert result["forecastEvidence"]["targetWeeks"] == [{"year": 2023, "week": 1}]
 
 
 @pytest.mark.parametrize("horizon", [1, 2, 12, 14, 28])
@@ -194,11 +194,7 @@ def test_future_api_rejects_invalid_dates_inputs_and_untrusted_arrays():
 
 def test_future_baseline_matches_released_barangay_predictions_across_weeks(future):
     from production.surgewise.predictor import predict
-    from services.engine.repositories.forecast_runs import artifact
-
-    updates = [dict(year=row["YR"], week=row["WN"], city_cases=row["DC_QC"])
-               for row in artifact("QUEZON_CITY-observations.json")["records"] if row["YR"] >= 2023]
-    direct = predict(weeks_ahead=2, city_updates=updates)
+    direct = predict(weeks_ahead=2)
     for index, day in enumerate(future["days"][1:]):
         horizon = index // 7 + 1
         expected = {b["barangay_code"]: b["expected_cases"] / 7 for b in direct["barangays"] if b["horizon"] == horizon}

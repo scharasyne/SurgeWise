@@ -17,17 +17,17 @@ function load(relative) {
   loaded.filename = filename;
   loaded.paths = require.resolve.paths('react');
   loaded.require = name => {
-    if (name === 'next/link') return { default: ({ children, prefetch, ...props }) => {
+    if (name === 'next/link') return { __esModule: true, default: ({ children, prefetch, ...props }) => {
       void prefetch;
       return React.createElement('a', props, children);
     } };
-    if (name === 'next/navigation') return { usePathname: () => activePath, useRouter: () => ({ push() {}, prefetch() {} }) };
+    if (name === 'next/navigation') return { redirect(href) { throw new Error('Redirect to ' + href); }, usePathname: () => activePath, useRouter: () => ({ push() {}, prefetch() {} }) };
     if (name.endsWith('.css')) return {};
     if (name.startsWith('@/')) return load(`../${name.slice(2)}${name.startsWith('@/lib/') ? '.ts' : '.tsx'}`);
-    return require(name);
+    return createRequire(filename)(name);
   };
   loaded._compile(ts.transpileModule(readFileSync(filename, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: { esModuleInterop: true, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, filename);
   cache.set(filename, loaded.exports);
   return loaded.exports;
@@ -66,12 +66,13 @@ test('Quezon City’s outline is on the dark teal tile, not on the platform', ()
 });
 
 test('persistent navigation identifies each current route including the simulation alias', () => {
-  for (const [path, label] of [['/', 'Home'], ['/dashboard', 'Dashboard'], ['/outbreak-response', 'Simulation'], ['/simulate', 'Simulation'], ['/forecast', 'Forecast'], ['/research', 'Research']]) {
+  for (const [path, label] of [['/', 'Home'], ['/dashboard', 'Dashboard'], ['/outbreak-response', 'Simulation'], ['/simulate', 'Simulation'], ['/research', 'Research']]) {
     activePath = path;
     const nav = renderToStaticMarkup(React.createElement(Navigation));
     assert.equal((nav.match(/aria-current="page"/g) ?? []).length, 1);
     assert.match(nav, new RegExp(`aria-label="${label}" aria-current="page"`));
-    assert.equal((nav.match(/role="tooltip"/g) ?? []).length, 5);
+    assert.equal((nav.match(/role="tooltip"/g) ?? []).length, 4);
+    assert.ok(!nav.includes('href="/forecast"'));
     assert.ok(!nav.includes('title='), 'navigation uses custom descriptions, not browser title tooltips');
     assert.ok(!nav.includes('sw-nav-label'), 'rail is icons-only');
     assert.ok(!nav.includes('QC / PH'));
@@ -86,12 +87,7 @@ test('Home uses the shared light appearance without an isolated theme control', 
   assert.ok(!html.includes('Conceptual model · Not a real facility'));
 });
 
-test('weekly forecast offers an observation-based run before any results are available', () => {
-  const Forecast = load('../app/forecast/page.tsx').default;
-  const markup = renderToStaticMarkup(React.createElement(Forecast));
-  assert.match(markup, /Weekly dengue forecast/);
-  assert.match(markup, /week 52 of 2022/);
-  assert.match(markup, /Run forecast/);
-  assert.match(markup, /type="file"/);
-  assert.doesNotMatch(markup, /<table/);
+test('former Forecast bookmarks open future scenario settings in Simulation', () => {
+  const ForecastRedirect = load('../app/forecast/page.tsx').default;
+  assert.throws(ForecastRedirect, { message: 'Redirect to /outbreak-response?mode=future' });
 });

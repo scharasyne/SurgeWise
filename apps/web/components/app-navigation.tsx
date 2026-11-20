@@ -3,14 +3,13 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, BookOpen, House, Map, TrendingUp } from 'lucide-react';
+import { Activity, BookOpen, House, Map } from 'lucide-react';
 import SurgeWiseMark from '@/components/surgewise-mark';
 
 const DESTINATIONS = [
   { href: '/', label: 'Home', description: 'Your preparedness workspace', Icon: House },
   { href: '/dashboard', label: 'Dashboard', description: 'Geography & historical dengue patterns', Icon: Map },
-  { href: '/forecast', label: 'Forecast', description: 'Weekly dengue cases in Quezon City', Icon: TrendingUp },
-  { href: '/outbreak-response', label: 'Simulation', description: 'Test hospital surge scenarios', Icon: Activity },
+  { href: '/outbreak-response', label: 'Simulation', description: 'Forecast dengue cases and hospital demand', Icon: Activity },
   { href: '/research', label: 'Research', description: 'Data, backtests & explicit assumptions', Icon: BookOpen },
 ];
 

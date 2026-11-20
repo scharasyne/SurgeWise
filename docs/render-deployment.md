@@ -56,7 +56,7 @@ See Render's [FastAPI deployment guide](https://render.com/docs/deploy-fastapi).
 For the frontend, use Root Directory `apps/web`, build `npm ci && npm run build`,
 and start `npm start -- --hostname 0.0.0.0 --port $PORT`.
 
-Deploy the `production/surgewise` package with its `models` and `data` directories and the repository’s audited QC inputs. Both Simulation tabs and the Forecast page load the fitted production model directly. The archived seasonal and annual ranking experiments have separate training scripts.
+Deploy the `production/surgewise` package with its `models` and `data` directories and the repository’s audited QC inputs. Simulation requests the fitted forecasts from the engine. Archive replays use their dated forecast or reconstruction artifacts. The archived seasonal and annual ranking experiments have separate training scripts.
 
 For local Next.js, create `apps/web/.env.local` using `.env.example`, set the
 desired engine URL there and restart Next.js. A `.env` in this repository's root

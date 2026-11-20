@@ -86,11 +86,18 @@ def readiness():
         production = {"ready": True, "model": production_run(today_qc(), 1, planning=True)["model"]}
     except ProductionForecastUnavailable:
         production = {"ready": False, "code": "PRODUCTION_FORECAST_UNAVAILABLE"}
-    return {"schemaVersion": "1.0", "ready": False, "historicalSourceBlockReplayReady": forecast_ready and facility_ready,
+    from services.engine.repositories import gp_runs
+    try:
+        gp_runs.reconstruction_run(gp_runs.FIRST_DAY, 1)
+        gp_runs.holdout_run(gp_runs.RF_START, 1)
+        archive = {"ready": True, "firstYear": 2012, "lastYear": 2022}
+    except (OSError, ValueError, KeyError, IndexError):
+        archive = {"ready": False, "code": "ARCHIVE_REPLAY_UNAVAILABLE"}
+    return {"schemaVersion": "1.0", "ready": False, "archiveReplay": archive, "historicalSourceBlockReplayReady": forecast_ready and facility_ready,
         "seasonalForecast": seasonal,
         "barangayRanking": ranking,
         "productionForecast": production,
-        "qcWorkspaceReady": production["ready"] and facility_ready,
+        "qcWorkspaceReady": archive["ready"] and facility_ready,
         "futureWorkspaceReady": facility_ready and production["ready"],
         "facilities": {"ready": facility_ready, "datasetId": DATASET_ID},
         "blockers": ["Exact source week/calendar alignment and historical publication delays unresolved; live and calendar-dated forecasting unavailable.",

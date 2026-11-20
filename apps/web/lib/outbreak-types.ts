@@ -32,6 +32,7 @@ export interface MovieParameters {
   facilities: { facilityId: string; assumedDengueEligible: true; normalCapacity: number; surgeCapacity: number; holdingCapacity: number }[];
 }
 export interface MovieDay {
+  weeklyCasesChangePct?: number | null;
   arrivalWeekIndex?: number;
   dayIndex: number; date: string; snapshotAt: string; intervalStart: string; intervalEnd: string;
   expectedCases: number; baselineCases: number; shockCases: number; cumulativeCases: number;
@@ -54,6 +55,7 @@ export interface MovieDay {
     normalDengueCensus: number; surgeDengueCensus: number; holdingCensus: number; normalOccupancyPct: number; supportedOccupancyPct: number }[];
 }
 export interface BedForecast {
+  weeklyDemandChangePct?: number | null;
   hospitalBedsRequired?: number; hospitalBedsShort?: number; hospitalsShort?: number;
   demandUtilizationPct?: number | null; utilizationDefinition?: string;
   baselineExpectedBeds?: number; baselineStaffedBedsRequired?: number; additionalStaffedBedsDueToSurge?: number;
@@ -78,6 +80,8 @@ export interface BedProjection extends BedForecast {
 }
 export interface CaseRange { lowerCases: number; upperCases: number; coverageTarget: number; calibrationSamples: number; method: string }
 export interface QCControls {
+  reconstructHistory?: boolean;
+  weeklyForecastId?: string | null;
   startDate: string; endDate: string; mode: 'forecast' | 'hypothetical_shock'; extraCasesPerWeek: number;
   growthDays: number; surgeCapacity: number; holdingCapacity: number;
   hospitalizationRate: number; baselineOccupancy: number; lengthOfStayDays: number;
@@ -103,10 +107,14 @@ export interface BedAllotmentImport {
 export interface QCWorkspaceResult extends OutbreakMovie {
   workspaceTab?: 'future' | 'historical';
   controlValues: QCControls; inputLimits: Record<string, { min: number; max: number; units: string }>;
-  historicalWindows?: { startDate: string; endDate: string }[];
-  forecastEvidence: { id: string; issueBlock: { YR: number; WN: number }; model: string;
+  historicalWindows?: { startDate: string; endDate: string; kind?: 'training_archive' | 'forecast'; forecastAvailableFrom?: string }[];
+  forecastEvidence: { id: string; issueBlock: { YR: number; WN: number } | null; model: string;
+    weeklyCases?: { year: number; week: number; cityCases: number; barangayCases: Record<string, number>;
+      scenarioCityCases?: number; scenarioBarangayCases?: Record<string, number> }[];
+    caseSourceKind?: 'gp_reconstruction' | 'forecast'; observedReferenceBlock?: { YR: number; WN: number };
+    unassignedWindowCases?: number; observationSource?: string;
     environmentalInputs: { sourceColumn: string; valueAtOrigin: number; unit: string; lagsSourceBlocks: number[] }[];
-    observedCasesAtOrigin: number; observedSourceYearToDateCases: number; intervalCoverageTarget: number | null; trainedThrough: number; targetWeeks: { year: number; week: number }[];
+    observedCasesAtOrigin: number | null; observedSourceYearToDateCases: number | null; intervalCoverageTarget: number | null; trainedThrough: number | null; targetWeeks: { year: number; week: number }[];
     intervalCaveat: string; spatialCaveat: string; availabilityAssumption: string };
   periodSummary: { expectedCases: number; caseRange: CaseRange | null; barangays: MovieDay['barangays'] };
   forecastBacktest: { horizon: number; n: number; weatherMae: number; casesOnlyMae: number; persistenceMae: number; empiricalRangeCoverage: number }[];
@@ -121,7 +129,7 @@ export interface QCWorkspaceResult extends OutbreakMovie {
   firstAdmissionComparison?: { arrivalSplitPolicy: ArrivalPolicy; peakBedsShort: number; peakShortageDate: string | null; cumulativeUnresolved: number; peakExpectedBeds: number }[];
 }
 export interface OutbreakMovie {
-  progressionMethod?: 'production_weekly_barangay_forecast' | 'dated_QC_forecast_allocated_by_xgboost_annual_burden_shares' | 'dated_QC_forecast_allocated_by_prior_annual_barangay_shares' | 'explicit_hypothetical_radial_shock';
+  progressionMethod?: 'gp_weekly_barangay_reconstruction' | 'production_weekly_barangay_forecast' | 'dated_QC_forecast_allocated_by_xgboost_annual_burden_shares' | 'dated_QC_forecast_allocated_by_prior_annual_barangay_shares' | 'explicit_hypothetical_radial_shock';
   schemaVersion: string; scenarioId: string; resultSha256: string; runTimestamp: string;
   parameters: MovieParameters; context: MovieContext; days: MovieDay[]; durationDays: number;
   mapScaleMaxDailyCases: number; assumptions: string; disclaimer: string;

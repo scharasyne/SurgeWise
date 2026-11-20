@@ -2,7 +2,7 @@
 
 ## Production case forecasts
 
-Both simulation tabs use the released `RF_shallow` forest trained through 2022. The engine supplies the audited `DC_QC` series from 2023 onward as city observations on the model’s 52-week calendar. Historical replay stops inputs at the issue week and slices the appropriate target days. Future planning uses the latest observed week and schedules the resulting demand on the chosen scenario dates. Moving those dates alone does not change the forecast origin.
+Simulation uses the 2012–2022 training archive. Historical replay defaults to imputed weekly cases. Future planning applies the forecast after week 52 of 2022 to the chosen hospital scenario dates. Earlier releases included 2024–2025 replay windows from the separate UPRI-NOAH QC surveillance series. Those records are retained for research and earlier run provenance. [Forecast inputs and dates](../production/README.md#hospital-simulation-and-historical-replay)
 
 The simulator divides each barangay’s forecast by the number of days in its target source block under the January 1 display assumption. Hospital choice and admission delay apply to that week’s barangay demand. The release supplies point estimates. Earlier seasonal model methods and validation below document the archived implementation. [Production release](../production/README.md)
 

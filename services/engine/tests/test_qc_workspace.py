@@ -69,7 +69,7 @@ def test_automatic_workspace_never_invokes_the_radial_outbreak_path(monkeypatch)
         raise AssertionError("Forecast workspace invoked radial outbreak sequence")
     monkeypatch.setattr(outbreak, "spatial_trajectory", forbidden)
     workspace = default_workspace()
-    assert workspace["progressionMethod"] == "production_weekly_barangay_forecast"
+    assert workspace["progressionMethod"] == "gp_weekly_barangay_reconstruction"
 
 
 def test_changed_simulation_code_blocks_stale_worker_before_loading_or_saving(monkeypatch):
@@ -97,7 +97,7 @@ def test_residual_range_is_data_derived_and_preserves_path_covariance():
 def test_automatic_qc_scope_ranges_and_capacity_definition(result):
     assert result["scope"] == "QUEZON_CITY" and result["parameters"]["autoHotspots"] is True
     assert result["parameters"]["extraCasesPerWeek"] == 0
-    assert result["forecastEvidence"]["model"] == "RF_shallow"
+    assert result["forecastEvidence"]["caseSourceKind"] == "gp_reconstruction"
     assert len(result["context"]["barangays"]) == len(result["periodSummary"]["barangays"]) == 142
     assert len(result["context"]["hospitals"]) == len(result["days"][-1]["facilities"]) == 46
     assert sum(h["accreditedBeds"] for h in result["context"]["hospitals"]) == 9389
@@ -161,7 +161,7 @@ def test_qc_api_bounds_automatic_location_and_fair_comparison(result):
         {"endDate": controls["startDate"]}, {"growthDays": 0}, {"holdingCapacity": -1}]:
         response = client.post("/v1/qc-simulation", json={**controls, **patch})
         assert response.status_code == 422, response.text
-    response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2025-02-05", "allocationPolicy": "next_probability",
+    response = client.post("/v1/qc-simulation", json={**controls, "endDate": "2012-01-08", "allocationPolicy": "next_probability",
         "arrivalSplitPolicy": "markov_preference", "compareAllocation": True})
     assert response.status_code == 200, response.text
     data = response.json()

@@ -52,6 +52,8 @@ class FutureInput(QCInput):
 
     @model_validator(mode="after")
     def validate_future(self):
+        if self.weeklyForecastId:
+            raise ValueError("Open the saved weekly forecast in the linked hospital workspace.")
         if self.startDate < today_qc():
             raise ValueError("Use the historical tab for past dates; future planning starts today or later.")
         if self.extraCasesPerWeek != 0:
@@ -105,7 +107,7 @@ def future_workspace(params: FutureInput):
                 "sourcePeriodStart": run["dailyPredictions"][0]["sourceDate"],
                 "sourcePeriodEnd": run["dailyPredictions"][-1]["sourceDate"]},
             "forecastBacktest": [],
-            "referenceSelectionAssumption": "Scenario day one uses the first forecast week after the latest QC observations. Changing the planning start moves the hospital timeline. It does not advance the model's observation history.",
+            "referenceSelectionAssumption": "Scenario day one uses the first forecast week after the final week of the 2012–2022 archive. Changing the planning start moves the hospital timeline. It does not advance the model's observation history.",
             "rangeInterpretation": INTERVAL_NOTE,
             "periodSummary": {"expectedCases": final["cumulativeCases"], "caseRange": None,
                 "barangays": sorted(final["barangays"], key=lambda b: (-b["cumulativeCases"], b["barangayId"]))},

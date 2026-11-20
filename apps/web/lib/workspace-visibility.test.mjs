@@ -135,6 +135,7 @@ function renderWorkspace(day, stateOverrides = {}) {
     if (name === '@/components/surgewise-mark') return { default: () => null };
     if (name.startsWith('@/lib/'))
       return require(`./${name.slice('@/lib/'.length)}.ts`);
+    if (name.endsWith('qc-archive-forecast-validation.json')) return { default: nativeRequire(name) };
     return nativeRequire(name);
   };
   loaded._compile(compiled, filename);
@@ -177,8 +178,8 @@ function findElements(node, predicate, ancestors = []) {
 }
 
 const controlFixture = {
-  startDate: '2025-07-01',
-  endDate: '2025-07-15',
+  startDate: '2012-07-01',
+  endDate: '2012-07-15',
   mode: 'forecast',
   normalCapacity: 20,
   surgeCapacity: 10,
@@ -268,11 +269,11 @@ test('both modes and scenario assumptions remain accessible in Scenario while ex
   assert.equal(findElements(settings.node, node => node.props?.label === 'How patients choose a hospital').length, 1);
   assert.equal(findElements(settings.node, node => node.props?.label === 'When a hospital is full').length, 1);
   const presets = findElements(settings.node, node => node.props?.['aria-pressed'] !== undefined);
-  assert.equal(presets.length, 5);
+  assert.equal(presets.length, 4);
   assert.deepEqual(presets.filter(({node}) => node.props['aria-pressed']).map(({node}) => node.key), ['14']);
   assert.ok(presets.every(({node}) => node.props.type === 'button'));
   const snapshot = findElements(settings.node, node => node.props?.className === 'qs-window-note')[0].node;
-  assert.match(renderToStaticMarkup(snapshot), /Jul 15, 2025/);
+  assert.match(renderToStaticMarkup(snapshot), /Jul 15, 2012/);
   const exports = findElements(tree, node => node.type === 'button' && node.props.onClick?.name === 'download');
   assert.equal(exports.length, 1);
   assert.ok(exports[0].ancestors.some(node => node.props?.['aria-label'] === 'Simulation results'));
@@ -375,6 +376,33 @@ test('loaded day zero hides projection counts, bed forecasts and historic totals
   assert.ok(!restarted.includes('987,654'));
 });
 
+test('Simulation owns observation inputs and shows dated weekly results only after playback starts', () => {
+  const evidence = { ...fixture.forecastEvidence, weeklyCases: [
+    { year: 2023, week: 1, cityCases: 87.12, barangayCases: { 'fixture-hotspot': 2 },
+      scenarioCityCases: 174.24, scenarioBarangayCases: { 'fixture-hotspot': 4 } },
+  ] };
+  const settings = { 0: 'future', 2: { ...fixture, forecastEvidence: evidence },
+    3: { ...controlFixture, weeklyInput: { weeks: 6, multiplier: '2' } } };
+  const before = renderDay(0, settings);
+  assert.match(before, /aria-label="Case source"/);
+  assert.match(before, /aria-label="Forecast horizon"/);
+  assert.doesNotMatch(before, /Weekly observations|uploaded observations/i);
+  assert.doesNotMatch(before, /Weekly forecast cases|174\.24/);
+  const after = renderDay(1, settings);
+  for (const label of ['Weekly forecast cases', 'Weekly case area', '2023 · week 1', '87.12', '174.24']) assert.ok(after.includes(label), label);
+  const historical = renderDay(1, { 2: { ...fixture, forecastEvidence: { ...evidence, caseSourceKind: 'gp_reconstruction' } } });
+  assert.match(historical, /Imputed weekly cases/);
+  assert.doesNotMatch(historical, /Weekly forecast cases/);
+});
+
+test('the QC timeline distinguishes weekly demand change, staffed totals and extra beds', () => {
+  const days = Array.from({length: 15}, (_, i) => ({...dayFixture(i), weeklyCasesChangePct: -5,
+    bedForecast: {expectedBeds: 10.5, weeklyDemandChangePct: 25, hospitalBedsRequired: 46, hospitalBedsShort: 0} }));
+  const html = renderDay(14, { 2: {...fixture, durationDays: 14, days}, 3: controlFixture });
+  for (const label of ['QC expected bed demand', '↑ 25% vs last week', '↓ 5% vs last week', 'QC staffed beds required', 'QC additional beds needed', 'Hospital bed details']) assert.ok(html.includes(label), label);
+  assert.match(html, /aria-label="Simulation day"[^>]*step="7"/);
+});
+
 test('workspace shows automatic engine startup status and a reload action on failure', () => {
   const starting = renderDay(0, { 2: null, 4: null, 16: true, 20: 'starting' });
   assert.match(
@@ -435,6 +463,7 @@ test('switching tabs and leaving the workspace cancel requests; late old results
       };
     if (name.startsWith('@/lib/'))
       return require(`./${name.slice('@/lib/'.length)}.ts`);
+    if (name.endsWith('qc-archive-forecast-validation.json')) return { default: nativeRequire(name) };
     return nativeRequire(name);
   };
   loaded._compile(compiled, filename);
@@ -545,6 +574,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
     }
     if (name.startsWith('@/lib/'))
       return require(`./${name.slice('@/lib/'.length)}.ts`);
+    if (name.endsWith('qc-archive-forecast-validation.json')) return { default: nativeRequire(name) };
     return nativeRequire(name);
   };
   loaded._compile(compiled, filename);
@@ -586,7 +616,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
   assert.equal(input.value, '2');
   assert.equal(states.get(3).lengthOfStayDays, 2);
   element(render(), node => node.key === '7' && node.props?.['aria-pressed'] === false).props.onClick();
-  assert.equal(states.get(3).endDate, '2025-07-08');
+  assert.equal(states.get(3).endDate, '2012-07-08');
   assert.equal(element(render(), node => node.key === '7' && node.type === 'button').props['aria-pressed'], true);
   assert.deepEqual(requests, []);
   function checkRankedChoice() {
@@ -604,8 +634,8 @@ test('each mode restores its edited dates and input edits invalidate playback re
   changeStart('');
   assert.equal(element(render(), node => node.props?.type === 'submit').props.disabled, true);
   assert.equal(element(render(), node => node.props?.['aria-label'] === 'Duration').props.value, 7);
-  changeStart('2025-08-01');
-  assert.equal(states.get(3).endDate, '2025-08-08');
+  changeStart('2012-08-01');
+  assert.equal(states.get(3).endDate, '2012-08-08');
   assert.equal(states.get(2), null, 'outdated results are cleared');
   assert.equal(states.get(5), 0, 'playback resets to day zero');
   assert.equal(states.get(6), false, 'playback pauses');
@@ -626,7 +656,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
   assert.equal(states.get(3).startDate, '2026-11-16');
   changeStart('2026-12-01');
   await switchMode('historical');
-  assert.equal(states.get(3).startDate, '2025-08-01');
+  assert.equal(states.get(3).startDate, '2012-08-01');
   await switchMode('future');
   assert.equal(states.get(3).startDate, '2026-12-01');
   assert.equal(Object.hasOwn(requests.at(-1).controls, 'weatherProfile'), false);
@@ -694,4 +724,16 @@ test('the loaded mode form enters after asynchronous loading and manual reduced 
   )[0].node;
   const dock = findElements(loaded, node => node.props?.id === 'qs-context-panel')[0].node;
   assert.ok(left); assert.equal(dock.props['data-reduced-motion'], true);
+});
+
+test('historical reconstruction labels the source week without a forecast origin', () => {
+  const result = { ...fixture, forecastEvidence: { ...fixture.forecastEvidence,
+    model: 'GP reconstruction', caseSourceKind: 'gp_reconstruction', issueBlock: null,
+    observedReferenceBlock: { YR: 2012, WN: 1 }, unassignedWindowCases: 0.5,
+    spatialCaveat: 'Retrospective weekly estimates from reported annual totals.',
+  }};
+  const html = renderDay(1, { 2: result });
+  assert.match(html, /2012\/WN 1/);
+  assert.match(html, /Reported QC cases through source week/);
+  assert.match(html, /Unassigned expected cases in this window: 0.5/);
 });

@@ -19,7 +19,7 @@ def _tables():
     weekly = weekly.rename(columns={"source_week": "week"})
     unassigned = weekly.barangay_code.eq("UNASSIGNED")
     barangays = weekly.loc[~unassigned, DISPLAY_COLUMNS].sort_values(["year", "week", "barangay_code"])
-    city = weekly.loc[unassigned, ["year", "week", "observed_city_week_cases", "gp_expected_cases"]]
+    city = weekly.loc[unassigned, ["year", "week", "source_date_corrected", "observed_city_week_cases", "gp_expected_cases"]]
     city = city.rename(columns={"gp_expected_cases": "unassigned_expected_cases"}).sort_values(["year", "week"])
     return barangays, city
 
@@ -44,3 +44,8 @@ def gp_history(*, year=None, week=None, barangay_code=None):
         if barangays.empty:
             raise ValueError("Unknown barangay_code")
     return {"barangays": barangays.to_dict("records"), "city": city.to_dict("records")}
+
+
+def city_history():
+    """One city record per archived morbidity week, including its corrected date."""
+    return _tables()[1].to_dict("records")
