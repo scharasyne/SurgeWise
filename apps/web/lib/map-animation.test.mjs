@@ -15,7 +15,7 @@ const compiled = ts.transpileModule(readFileSync(filename, 'utf8'), {
 }).outputText;
 const require = createRequire(import.meta.url);
 
-test('real map paint interpolates forecast colors, keeps non-candidates neutral and honors reduced motion', () => {
+test('real map paint interpolates forecast colors for every barangay, not only candidates, and honors reduced motion', () => {
   const paints = [], effects = [], refs = [];
   const map = { getLayer: () => true, setPaintProperty: (layer, name, value) => paints.push({ layer, name, value }) };
   let refIndex = 0, stateIndex = 0;
@@ -60,8 +60,12 @@ test('real map paint interpolates forecast colors, keeps non-candidates neutral 
     assert.equal(color()[color().indexOf('A') + 1], caseColor(2, 50));
     frames.shift()(400);
     assert.equal(color()[color().indexOf('A') + 1], caseColor(4, 50));
-    assert.ok(!color().includes('B'));
-    assert.equal(paints.filter(p => p.layer === 'selected-raised' && p.name === 'fill-extrusion-color').at(-1).value, '#edf1ee');
+    // B is not a ranked candidate, yet it is shaded by its own cases too.
+    assert.equal(color()[color().indexOf('B') + 1], caseColor(3, 50));
+    assert.equal(paints.filter(p => p.layer === 'selected-raised' && p.name === 'fill-extrusion-color').at(-1).value, caseColor(3, 50));
+    cleanup();
+    render({ ...props, snapshot: null });
+    assert.deepEqual(color(), ['match', ['get', 'ADM4_PCODE'], '__none__', '#edf1ee', '#edf1ee'], 'the preview stays neutral');
     cleanup();
     render({ ...props, reducedMotion: true });
     assert.equal(frames.length, 0);

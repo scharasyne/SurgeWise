@@ -52,7 +52,7 @@ import {
   nextPlaybackDay,
   validateDateWindow,
 } from '@/lib/playback';
-import { addDateDays, CASE_BANDS } from '@/lib/case-bands';
+import { addDateDays, CASE_BANDS, caseScaleValue } from '@/lib/case-bands';
 import { probabilityFacts, probabilityNote, probabilityPercent } from '@/lib/hospital-probabilities';
 import { SIMULATION_LINES } from '@/lib/simulation-connections';
 import WorkspaceLoader from '@/components/workspace-loader';
@@ -540,14 +540,13 @@ export default function QCSimulationWorkspace() {
   const finalDay = scenario?.days.at(-1);
   const hotspotRanking = context?.hotspotRanking;
   const markerHotspotIds = data ? (hotspotRanking?.candidateIds ?? data.days.at(-1)?.hotspotIds) : undefined;
+  // Map shading covers all barangays, so the fixed window scale spans all of them.
   const caseColorMaximum = Math.max(
     1,
     ...(scenario?.days.flatMap((d) =>
-      d.barangays
-        .filter((b) => markerHotspotIds?.includes(b.barangayId))
-        .map((b) =>
-          caseMetric === 'daily' ? b.expectedCases : b.cumulativeCases
-        )
+      d.barangays.map((b) =>
+        caseMetric === 'daily' ? b.expectedCases : b.cumulativeCases
+      )
     ) ?? [])
   );
   const surgeActive = !!snapshot && snapshot.shockCases > 0;
@@ -2474,7 +2473,7 @@ export default function QCSimulationWorkspace() {
               {timelineHidden ? <><ChevronUp size={15} aria-hidden="true" /><span>Show timeline</span><small>Day {day} / {data?.durationDays ?? '—'}{playing ? ' · Playing' : ''}</small></> : <ChevronDown size={15} aria-hidden="true" />}
               {!timelineHidden && <span className="qs-control-tooltip">Hide timeline</span>}
             </button>
-            <details className="qs-map-key" data-map-overlay><summary><span className="qs-rank-swatch">1</span> Map key <ChevronDown size={12} aria-hidden="true" /></summary><div className="qc-map-legend qs-map-key-content">
+            <details className="qs-map-key" data-map-overlay><summary><span className="qs-key-swatch" aria-hidden="true" /> Map key <ChevronDown size={12} aria-hidden="true" /></summary><div className="qc-map-legend qs-map-key-content">
                 <strong>
                   {scenario
                     ? caseMetric === 'daily'
@@ -2488,7 +2487,7 @@ export default function QCSimulationWorkspace() {
                     <span key={b.min}>
                       <i style={{ background: b.color }} />
                       {scenario
-                        ? format((b.min / 50) * caseColorMaximum)
+                        ? format(caseScaleValue(b.min, caseColorMaximum))
                         : b.min === 0
                           ? 'Low'
                           : b.min === 50
@@ -2499,22 +2498,16 @@ export default function QCSimulationWorkspace() {
                 </div>
                 <div className="qc-marker-key">
                   <span>
-                    <b className="qc-marker-hotspot" aria-hidden="true">
-                      1
-                    </b>
-                    Annual predicted burden · number = rank
-                  </span>
-                  <span>
                     <b className="qc-marker-hospital" aria-hidden="true">
                       ✚
                     </b>
                     Hospital · provisional point, location not verified
                   </span>
-                  <span><b className="qc-marker-linked" aria-hidden="true">•</b>Other linked or selected barangay · unranked</span>
-                  <span>
+                  <span><b className="qc-marker-linked" aria-hidden="true">•</b>Selected or linked barangay · where its lines start</span>
+                  {!scenario && <span>
                     <i className="qc-other-barangay" />
-                    Other barangay · may still have cases
-                  </span>
+                    Barangay · shaded by cases once the scenario plays
+                  </span>}
                   <span><i className="qc-selected-barangay" aria-hidden="true" />Selected barangay boundary</span>
                   {showCityBoundaries && cityBoundaryStatus === 'ready' && <span><i className="qc-city-boundary" aria-hidden="true" />City boundaries · Quezon City highlighted</span>}
                 </div>
@@ -2524,7 +2517,7 @@ export default function QCSimulationWorkspace() {
                     SIMULATION_LINES['hospital-context']]),
                     ...(snapshot?.expansionRing?.length ? [SIMULATION_LINES.front] : []),
                   ].map(line => <span key={line.kind} data-line-kind={line.kind}><i aria-hidden="true" style={{ borderTop: `${line.width}px ${line.dash.length ? 'dashed' : 'solid'} ${line.color}` }} />{line.label}</span>)}
-                  <small>Click a marker to reveal its links. Chevrons point from barangays toward hospitals.</small>
+                  <small>Click a barangay or hospital to reveal its links. Chevrons point from barangays toward hospitals.</small>
                   {!scenario && <small>Modeled placement lines appear only after advancing to a day with saved placements.</small>}
                 </div>
                 <details className="qc-legend-more">
@@ -2533,29 +2526,33 @@ export default function QCSimulationWorkspace() {
                   </summary>
                   <p className="qc-progression-note">
                     {hotspotRanking
-                    ? `XGBoost ranks predicted annual barangay burden for ${hotspotRanking.forecastYear}, trained only through ${hotspotRanking.trainingCutoffYear}. Only the ten highest-burden candidates receive numbered markers. Their modeled annual shares allocate the dated QC forecast; this is not validated weekly hotspot detection.`
+                    ? `XGBoost ranks predicted annual barangay burden for ${hotspotRanking.forecastYear}, trained only through ${hotspotRanking.trainingCutoffYear}. Each barangay's modeled annual share allocates the dated QC forecast; this is not validated weekly hotspot detection. The ten highest-burden candidates are listed in Results.`
                       : 'Places follow dated modeled allocations; local weekly hotspot forecasts are unavailable.'}{' '}
                     All places update together, without a neighbor-triggered
                     outbreak sequence.
                   </p>
                   <small>
                     Smooth shades between these reference values; scale is fixed
-                    for the selected window. Accumulated cases show daily
+                    for the selected window and square-root spaced, so places with
+                    few cases stay distinguishable. Shares are fixed, so every
+                    barangay rises and falls with the citywide curve. Accumulated cases show daily
                     growth; daily forecasts may stay flat within a source week.{' '}
                     {reduced
                       ? 'Reduced motion is on: color animation is disabled.'
                       : 'Colors animate from each place’s forecast values; no geographic infection chain is implied.'}
                   </small>
                   <small>
-                    Only the {markerHotspotIds?.length ?? '—'} highest predicted
-                    annual-burden candidates have numbered markers and case-band
-                    coloring; other barangays remain neutral. Small unnumbered dots identify other barangays linked to an inspected hospital. Positive demand
-                    alone does not make a hotspot. Click a marker to inspect its
-                    hospital connections. {hotspotRanking?.model}; no
-                    confirmed weekly-outbreak claim.
+                    All {context?.barangays.length ?? '—'} barangays are shaded by their modeled cases. Small dots
+                    mark where connection lines start: the inspected barangay,
+                    barangays linked to an inspected hospital and, with overview
+                    connections on, the {markerHotspotIds?.length ?? '—'} highest
+                    predicted annual-burden candidates. Positive demand alone does
+                    not make a hotspot. Click a barangay to inspect its hospital
+                    connections. {hotspotRanking?.model}; no confirmed
+                    weekly-outbreak claim.
                   </small>
                   <small>
-                    Selected links reveal from barangay to hospital, including hospital inspection. Dashed teal links show proximity; dashed ochre links identify a hospital’s nearest ranked barangay. Solid links show saved modeled placements; ochre indicates that some placements use temporary holding. A placement replaces the proximity decoration on the same pair. Markers stay on their locations at every zoom: hospital pins point with their tip and barangay markers are centred. Close markers can overlap (higher ranks on top); zoom in to separate them. Connections end at the markers. Straight-line links are not travel routes or observed patient movement. The raised boundary is decorative. Hospital pins do not report vacancies; all entrance locations remain unverified. Polygon colors show modeled case counts, not hospital pressure or official outbreak thresholds.
+                    Selected links reveal from barangay to hospital, including hospital inspection. Dashed teal links show proximity; dashed ochre links identify a hospital’s nearest ranked barangay. Solid links show saved modeled placements; ochre indicates that some placements use temporary holding. A placement replaces the proximity decoration on the same pair. Markers stay on their locations at every zoom: hospital pins point with their tip and barangay dots are centred. Close markers can overlap; zoom in to separate them. Connections end at the markers. Straight-line links are not travel routes or observed patient movement. The raised boundary is decorative. Hospital pins do not report vacancies; all entrance locations remain unverified. Polygon colors show modeled case counts, not hospital pressure or official outbreak thresholds.
                   </small>
                 </details>
               </div></details>
@@ -2585,7 +2582,7 @@ export default function QCSimulationWorkspace() {
                 : <div><span>Unplaced demand to date</span><strong>{format(snapshot?.cumulativeUnresolved)}</strong><small>Expected patients · cumulative</small></div>}
               <button type="button" className="text-button qs-more-results" onClick={() => openDetail('overview')}>View results <ChevronRight size={14} /></button>
             </div>
-            {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Numbered markers show annual burden rank; H pins are hospitals.</p>}
+            {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Barangay colors show modeled cases; H pins are hospitals.</p>}
           </section>
         </section>
         <aside id="qs-context-panel" className="qs-context-panel" hidden={!panelView} aria-labelledby="qs-panel-title" data-reduced-motion={reduced}>
@@ -2735,9 +2732,9 @@ export default function QCSimulationWorkspace() {
             <label className="qs-layer"><span><MapIcon size={17} /><span>City boundaries<small>{cityBoundaryStatus === 'unavailable' ? 'Unavailable · NCR boundary file could not load' : 'NCR city outlines · Quezon City highlighted'}</small></span></span><input type="checkbox" checked={showCityBoundaries && cityBoundaryStatus !== 'unavailable'} disabled={cityBoundaryStatus === 'unavailable'} onChange={event => setShowCityBoundaries(event.target.checked)} /></label>
             <label className="qs-layer"><span><Layers size={17} /><span>3D view<small>Generalized buildings where mapped</small></span></span><input type="checkbox" checked={buildings3d} onChange={event => setBuildings3d(event.target.checked)} /></label>
             <label className="qs-layer"><span><Satellite size={17} /><span>Satellite imagery<small>Esri World Imagery · capture dates vary</small></span></span><input type="checkbox" checked={satellite} onChange={event => setSatellite(event.target.checked)} /></label>
-            <label className="qs-layer"><span><Activity size={17} /><span>Overview connections<small>Nearby hospitals and daily placements across ranked barangays</small></span></span><input type="checkbox" checked={links} onChange={event => setLinks(event.target.checked)} /></label>
+            <label className="qs-layer"><span><Activity size={17} /><span>Overview connections<small>Nearby hospitals and daily placements for the ten highest-burden barangays</small></span></span><input type="checkbox" checked={links} onChange={event => setLinks(event.target.checked)} /></label>
             <label className="qs-layer"><span><Pause size={17} /><span>Reduced motion<small>Static colors and manual playback</small></span></span><input type="checkbox" checked={reduced} onChange={event => { setReduced(event.target.checked); if(event.target.checked) setPlaying(false); }} /></label>
-            <p className="qs-layer-note">Colors show projected case counts, not official outbreak thresholds. Uncolored barangays may still have cases. Building geometry and hospital entrances are unverified context. Satellite imagery is dated background, not current conditions.</p>
+            <p className="qs-layer-note">Colors show projected case counts, not official outbreak thresholds. Building geometry and hospital entrances are unverified context. Satellite imagery is dated background, not current conditions.</p>
             <details className="qs-national-context" onToggle={event => setLocatorOpen(event.currentTarget.open)}><summary>Philippines locator</summary>{locatorOpen && <PhilippinesOverview />}</details>
             <button type="button" className="text-button qs-source-link" onClick={() => openDetail('methods')}>Run assumptions & sources <ChevronRight size={14} /></button>
           </div>
@@ -2753,7 +2750,7 @@ export default function QCSimulationWorkspace() {
           else if(!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}><section className="qs-guide" role="dialog" aria-modal="true" aria-labelledby="qs-guide-title"><div className="qs-guide-heading"><h2 id="qs-guide-title">Explore a preparedness scenario</h2><button type="button" ref={guideClose} className="text-button qs-panel-icon" aria-label="Close guide" onClick={closeGuide}><X size={18} /></button></div>
-        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers are annual projected-burden ranks, not case counts or confirmed outbreaks. H pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and hospital-choice comparisons, then export the saved scenario.</li></ol>
+        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Barangay colors are modeled case counts, not confirmed outbreaks. H pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and hospital-choice comparisons, then export the saved scenario.</li></ol>
         <details><summary>Terms used in this simulation</summary><dl>{Object.values(GLOSSARY).map(([term, meaning]) => <div key={term}><dt>{term}</dt><dd>{meaning}</dd></div>)}</dl></details>
         <p>Historical source evidence and configured assumptions support this research scenario. Current hospital vacancies, dengue capacity and entrances are not verified. This is not live surveillance or clinical referral guidance.</p><button type="button" className="text-button qs-primary" onClick={closeGuide}>Explore the map</button>
       </section></div>}

@@ -60,11 +60,18 @@ they are not conflated with hospital-wide utilization or real vacancies.
 
 ## Map semantics
 
-The existing numeric case bands and fixed-window scale remain unchanged, with a
-monotonically darker yellow-green/olive/ochre/orange/burnt-orange ramp. These are
-case counts, not official risk thresholds. Neutral polygons may still have cases.
-The numbered markers identify the annual predicted-burden ranking, not cases or
-confirmed weekly outbreaks. Optional connections preserve proximity versus
+User revision 2026-11-21: **all 142 barangays are shaded** by their modeled cases
+(daily or accumulated), and the numbered top-ten markers are removed. The fixed
+window scale now spans every barangay and is square-root spaced, so places with few
+cases stay distinguishable from the busiest; the legend shows the case count at
+each reference colour. The monotonically darker yellow-green/olive/ochre/orange/
+burnt-orange ramp is kept. These are case counts, not official risk thresholds.
+Barangay shares are fixed annual shares, so every place rises and falls with the
+citywide curve; the map key says so. Only the preview (before a run) is neutral.
+The annual top-ten ranking remains in Results and drives overview connections;
+small dots mark where connection lines start (the inspected barangay, barangays
+linked to an inspected hospital and, with overview connections on, the top ten).
+Optional connections preserve proximity versus
 modeled placement meanings. The initial map has no connection network; selecting
 a place reveals its relevant links. The optional all-connections layer remains
 available in Layers.
@@ -72,7 +79,7 @@ available in Layers.
 Dashboard and Simulation now call the same hospital-marker factory and use one
 shared style and SVG. The H pin is a provisional inventory point on both
 pages; Simulation adds assumed demand and capacity in its inspector. The pin's
-outer white border is removed. Both pins and numbered markers breathe subtly;
+outer white border is removed. Pins and barangay dots breathe subtly;
 motion is purely cosmetic and has no live-status or disease-spread meaning.
 Hover/focus pauses the pulse; OS reduced motion and the simulation's manual
 reduced-motion setting disable it.
@@ -115,8 +122,8 @@ endpoints follow the displayed markers. Since 2026-11-21 no marker is offset or
 shrunk for overlap: hospital pins put their tip on the hospital's location and
 barangay markers are centred on the barangay's point, at fixed sizes, so zooming
 never moves them off their locations. Close markers may overlap until the user
-zooms in; numbered barangay markers are drawn above hospital pins (a hovered pin
-comes to the front to show its label) and higher ranks above lower ones.
+zooms in; barangay dots are drawn above hospital pins (a hovered pin comes to the
+front to show its label) and the inspected barangay's dot above other dots.
 Map layers has a **City boundaries** switch (off by default; 2026-11-21): the NCR city
 outlines from `/api/boundaries` in the Dashboard's style, with Quezon City highlighted
 (bright teal over satellite imagery). If the file cannot load, the switch is disabled

@@ -157,8 +157,10 @@ test('legend uses renderer line definitions, preserves day-zero gating and cover
   }
   assert.ok(lines(started).some(({node})=>node.props['data-line-kind']==='holding'));
   const html=renderToStaticMarkup(started);
-  for(const label of ['provisional point, location not verified','unranked','Selected barangay boundary','Click a marker to reveal its links']) assert.ok(html.includes(label),label);
+  for(const label of ['provisional point, location not verified','Selected or linked barangay','Selected barangay boundary','Click a barangay or hospital to reveal its links','barangays are shaded by their modeled cases']) assert.ok(html.includes(label),label);
   assert.ok(!html.includes('Hover or inspect a separated'));
+  // Numbered rank markers were removed: every barangay is shaded instead.
+  for(const removed of ['number = rank','Numbered markers','numbered markers','remain neutral','may still have cases']) assert.ok(!html.includes(removed),removed);
 });
 
 function findElements(node, predicate, ancestors = []) {
