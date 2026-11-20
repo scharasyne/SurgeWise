@@ -35,6 +35,8 @@ import {
   Expand,
   Shrink,
   Flag,
+  FileText,
+  ExternalLink,
   ChartNoAxesCombined,
   Satellite,
   Upload,
@@ -254,6 +256,7 @@ export default function QCSimulationWorkspace() {
   const [sharePercent, setSharePercent] = useState<{ hospital: string; beds?: number; holding?: number }>({ hospital: '' });
   // NCR city outlines, as on Dashboard. Appended last to keep the existing hook order.
   const [showCityBoundaries, setShowCityBoundaries] = useState(false);
+  const [submittedRun, setSubmittedRun] = useState(false);
   const [cityBoundaryStatus, setCityBoundaryStatus] = useState<CityBoundaryStatus>('loading');
   const allotmentFile = useRef<HTMLInputElement>(null);
   const workspace = useRef<HTMLElement>(null);
@@ -278,7 +281,7 @@ export default function QCSimulationWorkspace() {
   const calculate = useCallback(
     async (
       values?: QCControls,
-      autoplay = false,
+      action: 'preview' | 'run' | 'compare' = 'preview',
       targetTab: WorkspaceTab = tabRef.current
     ) => {
       if (values) {
@@ -314,6 +317,7 @@ export default function QCSimulationWorkspace() {
           }
         );
         if (token !== generation.current) return;
+        setSubmittedRun(action !== 'preview');
         setData(result);
         setContext(result.context);
         setControls(result.controlValues);
@@ -327,7 +331,7 @@ export default function QCSimulationWorkspace() {
         setSelected(result.periodSummary.barangays[0].barangayId);
         setHospital('');
         setShowHotspotDetails(false);
-        setPlaying(autoplay && !reducedRef.current);
+        setPlaying(action === 'run' && !reducedRef.current);
         return result;
       } catch (e) {
         if (token === generation.current)
@@ -422,7 +426,7 @@ export default function QCSimulationWorkspace() {
     if (controls && !dateError) savedForms.current[tabRef.current] = controls;
     tabRef.current = next;
     setTab(next);
-    void calculate(savedForms.current[next], false, next);
+    void calculate(savedForms.current[next], 'preview', next);
   }
   function windowControls(
     days: number,
@@ -495,17 +499,19 @@ export default function QCSimulationWorkspace() {
   }
   function runSimulation() {
     if (!controls || !formIsReady()) return;
-    setPanelView(null);
-    void calculate({ ...controls, compareAllocation: false }, !reduced);
+    openDetail('overview');
+    void calculate({ ...controls, compareAllocation: false }, 'run');
   }
   function compareAllocations() {
     if (!controls || !formIsReady()) return;
-    void calculate({ ...controls, compareAllocation: true }, false).then(result => {
+    void calculate({ ...controls, compareAllocation: true }, 'compare').then(result => {
       if (!result) return;
       setDay(result.durationDays); setDetailTab('compare'); setPanelView('results');
     });
   }
   const scenario = day > 0 ? data : null;
+  const activeRun = submittedRun || playing || day > 0 ? data : null;
+  const connectionsEnabled = !!activeRun;
   const snapshot = scenario?.days[day];
   const area = context?.barangays.find((b) => b.id === selected);
   const selectedPeriod = scenario?.periodSummary.barangays.find(
@@ -2310,7 +2316,9 @@ export default function QCSimulationWorkspace() {
             setShowProbabilities(event.target.checked);
             if (event.target.checked) { setShowHospitals(true); setShowHotspotDetails(true); }
           }} /> Show all {context?.hospitals.length} hospital probabilities</label>
-        {probabilityPlace && <small>Hover, tap or focus an arrow to see its probability breakdown.</small>}
+        {probabilityPlace && <small>{connectionsEnabled
+          ? 'Hover, tap or focus an arrow to see its probability breakdown.'
+          : 'Run the simulation or start playback to show the arrows.'}</small>}
         {choiceRow && context && <HospitalProbabilityPicker key={area.id} origin={area} choices={choiceRow.hospitals}
           hospitals={context.hospitals} distanceOnly={resultSplit === 'markov_proximity'} />}
       </div>}
@@ -2446,7 +2454,7 @@ export default function QCSimulationWorkspace() {
               probabilityPlace={probabilityPlace} distanceOnly={resultSplit === 'markov_proximity'} hospitalHotspot={hospitalHotspot} caseMetric={caseMetric} caseColorMaximum={caseColorMaximum}
               connectionFocus={hospital ? 'hospital' : showHotspotDetails ? 'barangay' : null} inspectionVersion={hospitalInspection}
               animationDurationMs={Math.min(650, 800 / speed)} onSelect={inspectHotspot} onHospital={inspectHospital}
-              playing={playing} reducedMotion={reduced} showLinks={links} view={view} buildings3d={buildings3d}
+              playing={playing} reducedMotion={reduced} connectionsEnabled={connectionsEnabled} showLinks={links} view={view} buildings3d={buildings3d}
               showHospitals={showHospitals} satellite={satellite} onReady={setMapController} onStatus={setMapStatus}
             showCityBoundaries={showCityBoundaries} onCityBoundaryStatus={setCityBoundaryStatus} />
             <div className="qs-topbar">
@@ -2518,7 +2526,7 @@ export default function QCSimulationWorkspace() {
                   <span><i className="qc-selected-barangay" aria-hidden="true" />Selected barangay boundary</span>
                   {showCityBoundaries && cityBoundaryStatus === 'ready' && <span><i className="qc-city-boundary" aria-hidden="true" />City boundaries · Quezon City highlighted</span>}
                 </div>
-                <div className="qc-line-key">
+                {connectionsEnabled && <div className="qc-line-key">
                   {[...(probabilityPlace ? [SIMULATION_LINES.probability] : [SIMULATION_LINES.proximity,
                     ...(scenario ? [context?.firstAdmissionOriginShares ? { ...SIMULATION_LINES.placement, label: 'Up to three largest placement flows per selection' } : SIMULATION_LINES.placement, SIMULATION_LINES.holding] : []),
                     SIMULATION_LINES['hospital-context']]),
@@ -2526,7 +2534,7 @@ export default function QCSimulationWorkspace() {
                   ].map(line => <span key={line.kind} data-line-kind={line.kind}><i aria-hidden="true" style={{ borderTop: `${line.width}px ${line.dash.length ? 'dashed' : 'solid'} ${line.color}` }} />{line.label}</span>)}
                   <small>Click a marker to reveal its links. Chevrons point from barangays toward hospitals.</small>
                   {!scenario && <small>Modeled placement lines appear only after advancing to a day with saved placements.</small>}
-                </div>
+                </div>}
                 <details className="qc-legend-more">
                   <summary>
                     More about the map colors, markers and lines
@@ -2595,7 +2603,15 @@ export default function QCSimulationWorkspace() {
           <div className="qs-panel-body" hidden={panelView !== 'scenario'} aria-label="Simulation controls">{settings}</div>
           <div className="qs-panel-body qs-results-body" hidden={panelView !== 'results'} aria-label="Simulation results">
             <div className="qs-result-tools"><WorkspaceSelect label="Result view" value={activeDetail} options={detailTabs.map(item => ({ value: item.id, label: item.label }))} onChange={value => setDetailTab(value as DetailTab)} /><button type="button" className="text-button qs-export" disabled={!scenario} onClick={download} aria-label="Export simulation results"><Download size={15} />Export</button></div>
-            <div className="qs-analysis-scroll">{overview}{activeDetail === 'overview' && <div className="qs-result-actions"><button type="button" className="text-button" disabled={!controls || loading} onClick={compareAllocations}>Compare hospital-choice assumptions <ArrowLeft size={13} /></button><button type="button" className="text-button" onClick={() => openDetail('city-beds')}>Explore daily bed demand <ChevronRight size={13} /></button></div>}
+            <div className="qs-analysis-scroll">{overview}
+              {activeDetail === 'overview' && <div className="qs-result-actions">
+                {activeRun && <a className="qs-report-link" href={`/outbreak-response/report/${activeRun.scenarioId}`} target="_blank" rel="noopener noreferrer">
+                  <FileText size={17} />View LGU report<ExternalLink size={14} />
+                  <span className="qs-sr-only"> (opens in a new tab)</span>
+                </a>}
+                <button type="button" className="text-button" disabled={!controls || loading} onClick={compareAllocations}>Compare hospital-choice assumptions <ArrowLeft size={13} /></button>
+                <button type="button" className="text-button" onClick={() => openDetail('city-beds')}>Explore daily bed demand <ChevronRight size={13} /></button>
+              </div>}
               {activeDetail === 'overview' && <div className="qc-playback-panel">
               <div className="qc-chart-heading">
                 <strong>

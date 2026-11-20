@@ -147,7 +147,7 @@ function renderDay(day, stateOverrides = {}) {
 test('legend uses renderer line definitions, preserves day-zero gating and covers actual marker meanings', () => {
   const lines = tree => findElements(tree, node => node.props?.['data-line-kind']);
   const preview = renderWorkspace(0);
-  assert.deepEqual(lines(preview).map(({node})=>node.props['data-line-kind']), ['proximity','hospital-context']);
+  assert.equal(lines(preview).length, 0);
   const started = renderWorkspace(1);
   for (const { node } of lines(started)) {
     const definition = SIMULATION_LINES[node.props['data-line-kind']];
@@ -305,21 +305,26 @@ test('hospital inspection keeps actions outside explanatory paragraphs and retai
   assert.match(html,/120% of modeled dengue slots/);
 });
 
-test('day-zero barangay inspection shows the saved choice ranking and enables all probabilities by default', () => {
+test('preview keeps hospital rankings and search available, with arrows waiting for a run or playback', () => {
   const hospitals = ['Farther preferred', 'Closest', 'Third', 'Fourth'].map((name, i) => ({ id: 'H' + i, name }));
   const origin = { id: 'fixture-hotspot', name: 'Constructed barangay', nearestHospitals: [{ facilityId: 'H1', distanceKm: 1 }] };
   const choices = hospitals.map((h, i) => ({ ...fixture.bedProjection.placePeaks[0].hospitals[0],
     facilityId: h.id, share: [.4, .35, .15, .1][i], breakdown: { distanceKm: [2, 1, 3, 4][i] } }));
   const place = { barangayId: origin.id, hospitals: choices };
-  const selected = { 4: { barangays: [origin], hospitals }, 10: true, 23: 'hospitals' };
+  const otherOrigin = { id: 'outside-top-ten', name: 'Other constructed barangay', nearestHospitals: [] };
+  const selected = { 4: { barangays: [origin, otherOrigin], hospitals }, 10: true, 23: 'hospitals' };
   for (const policy of ['markov_preference', 'markov_proximity']) {
     const row = policy === 'markov_preference' ? place : { ...place, hospitals: [
       { ...choices[1], share: .4 }, { ...choices[0], share: .35 }, ...choices.slice(2),
     ] };
     const loaded = { ...fixture, bedProjection: { ...fixture.bedProjection, arrivalSplitPolicy: policy, placePeaks: [row] } };
     const tree = renderWorkspace(0, { ...selected, 2: loaded });
-    const map = findElements(tree, node => 'probabilityPlace' in (node.props ?? {}))[0].node;
+    const mapFor = workspace => findElements(workspace, node => 'probabilityPlace' in (node.props ?? {}))[0].node;
+    const map = mapFor(tree);
     assert.equal(map.props.probabilityPlace, row);
+    assert.equal(map.props.connectionsEnabled, false);
+    assert.equal(mapFor(renderWorkspace(0, { ...selected, 2: loaded, 6: true })).props.connectionsEnabled, true);
+    assert.equal(mapFor(renderWorkspace(1, { ...selected, 2: loaded })).props.connectionsEnabled, true);
     assert.equal(map.props.distanceOnly, policy === 'markov_proximity');
     const control = findElements(tree, node => node.props?.className === 'qs-choice-control')[0].node;
     const toggle = findElements(control, node => node.type === 'input')[0].node;
@@ -631,6 +636,28 @@ test('each mode restores its edited dates and input edits invalidate playback re
       '/api/research/future-simulation',
     ]
   );
+
+  // A new run opens Overview immediately, even if the last result view was a table.
+  scrollRegion.props.ref.current.checkValidity = () => true;
+  element(render(), node => node.props?.label === 'Result view').props.onChange('city-beds');
+  element(render(), node => node.props?.['aria-label'] === 'Edit simulation scenario').props.onClick();
+  element(render(), node => node.props?.id === 'qc-settings-form').props.onSubmit({ preventDefault() {} });
+  const connectionsEnabled = () => element(render(), node => 'connectionsEnabled' in (node.props ?? {})).props.connectionsEnabled;
+  const reportLink = () => findElements(render(), node => node.props?.className === 'qs-report-link');
+  assert.equal(reportLink().length, 0, 'no report while the result is pending');
+  assert.equal(connectionsEnabled(), false, 'a pending request cannot show old arrows');
+  assert.equal(element(render(), node => node.props?.['aria-label'] === 'Simulation results').props.hidden, false);
+  assert.equal(element(render(), node => node.props?.label === 'Result view').props.value, 'overview');
+  // Closing the panel while the request is in flight must be respected.
+  element(render(), node => node.props?.['aria-label'] === 'Close simulation panel').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(element(render(), node => node.props?.id === 'qs-context-panel').props.hidden, true);
+  element(render(), node => node.props?.['aria-label'] === 'Pause simulation').props.onClick();
+  assert.equal(connectionsEnabled(), true, 'a submitted run keeps connections available while paused at day zero');
+  assert.equal(reportLink().length, 1, 'the full report is available even if playback is paused on day zero');
+  await switchMode('historical');
+  assert.equal(reportLink().length, 0, 'a new preview cannot expose the previous report');
+  assert.equal(connectionsEnabled(), false, 'automatic loading in another mode returns to preview');
 });
 
 test('the loaded mode form enters after asynchronous loading and manual reduced motion is exposed', () => {

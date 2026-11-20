@@ -15,7 +15,7 @@ import WorkspaceLoader from '@/components/workspace-loader';
 import { CITY_BOUNDARY_STYLE, defaultSimulationCamera, simulationMapPadding, selectionMapBounds, type CityBoundaryStatus, type SimulationBounds, type SimulationMapController, type SimulationMapStatus } from '@/lib/simulation-map';
 
 type Props = { context: MovieContext | null; snapshot: MovieDay | null; maximum: number; selected: string;
-  onSelect: (id: string) => void; onHospital: (id: string) => void; playing: boolean; reducedMotion: boolean; showLinks: boolean;
+  onSelect: (id: string) => void; onHospital: (id: string) => void; playing: boolean; reducedMotion: boolean; showLinks: boolean; connectionsEnabled: boolean;
   selectedHospital?: string; hotspotIds?: string[]; rankedHotspotIds?: string[]; hospitalHotspot?: { barangayId: string; distanceKm: number } | null;
   caseMetric?: 'daily' | 'cumulative';
   caseColorMaximum?: number; animationDurationMs?: number;
@@ -43,7 +43,7 @@ const overlayRects = (mapRoot: HTMLElement | null) => {
     .map(rect => ({ left: rect.left - origin.left - 4, top: rect.top - origin.top - 4, width: rect.width + 8, height: rect.height + 8 }));
 };
 
-export default function OutbreakMap({ context, snapshot, selected, selectedHospital = '', hotspotIds, rankedHotspotIds, hospitalHotspot, onSelect, onHospital, reducedMotion, showLinks, connectionFocus = null, inspectionVersion = 0, probabilityPlace, distanceOnly = false, view = 'qc', caseMetric = 'cumulative', caseColorMaximum = 50, animationDurationMs = 500, buildings3d = false, showHospitals = true, satellite = false, showCityBoundaries = false, onCityBoundaryStatus, onReady, onStatus }: Props) {
+export default function OutbreakMap({ context, snapshot, selected, selectedHospital = '', hotspotIds, rankedHotspotIds, hospitalHotspot, onSelect, onHospital, reducedMotion, showLinks, connectionsEnabled, connectionFocus = null, inspectionVersion = 0, probabilityPlace, distanceOnly = false, view = 'qc', caseMetric = 'cumulative', caseColorMaximum = 50, animationDurationMs = 500, buildings3d = false, showHospitals = true, satellite = false, showCityBoundaries = false, onCityBoundaryStatus, onReady, onStatus }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const onSelectRef = useRef(onSelect), onHospitalRef = useRef(onHospital);
@@ -56,8 +56,9 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   selectionCameraInput.current = { context, snapshot, selected, selectedHospital, connectionFocus, hotspotIds, rankedHotspotIds, hospitalHotspot };
   const displayedCases = useRef(new Map<string, number>());
   const previousMetric = useRef(caseMetric);
-  const options = useRef({ view, reducedMotion, buildings3d, showHospitals, satellite, showCityBoundaries, onCityBoundaryStatus, onReady, onStatus });
-  options.current = { view, reducedMotion, buildings3d, showHospitals, satellite, showCityBoundaries, onCityBoundaryStatus, onReady, onStatus };
+  const showConnections = connectionsEnabled && showHospitals;
+  const options = useRef({ view, reducedMotion, buildings3d, showConnections, satellite, showCityBoundaries, onCityBoundaryStatus, onReady, onStatus });
+  options.current = { view, reducedMotion, buildings3d, showConnections, satellite, showCityBoundaries, onCityBoundaryStatus, onReady, onStatus };
   const resetCamera = useRef<(() => void) | null>(null);
   const initialCameraReady = useRef(false);
   const introducedMarkers = useRef(false);
@@ -278,7 +279,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   }, [view, ready, reducedMotion]);
   const markerKey = hotspotIds?.join('|') ?? '';
   const rankKey = rankedHotspotIds?.join('|') ?? '';
-  const relatedBarangayKey = context && connectionFocus === 'hospital' && showHospitals
+  const relatedBarangayKey = context && connectionFocus === 'hospital' && showConnections
     ? [...new Set(simulationConnections(context, snapshot, { selected, selectedHospital, focus: 'hospital', hotspotIds: rankedHotspotIds ?? hotspotIds, hospitalHotspot, showOverview: false }).map(c => c.barangayId))].join('|') : '';
   useEffect(() => {
     if (!ready || !map.current || !context) return;
@@ -364,7 +365,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   const flowHospitalHotspot = probabilityPlace ? null : hospitalHotspot;
   useEffect(() => {
     const instance = map.current;
-    if (!ready || !instance || !context || (!connectionFocus && !showLinks) || !showHospitals) return;
+    if (!ready || !instance || !context || (!connectionFocus && !showLinks) || !showConnections) return;
     const connectionOptions = { selected, selectedHospital, hotspotIds: flowHotspots, hospitalHotspot: flowHospitalHotspot };
     const connections = probabilityPlace
       ? probabilityConnections(context, selected, probabilityPlace.hospitals)
@@ -387,7 +388,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     updateFlow.current = flow.update;
     instance.on('move', flow.update); instance.on('moveend', flow.update); instance.on('resize', flow.update);
     return () => { instance.off('move', flow.update); instance.off('moveend', flow.update); instance.off('resize', flow.update); updateFlow.current = null; removePopup?.(); flow.destroy(); };
-  }, [ready, context, flowSnapshot, selected, selectedHospital, connectionFocus, inspectionVersion, flowHotspots, flowHospitalHotspot, showHospitals, reducedMotion, view, showLinks, probabilityPlace, distanceOnly]);
+  }, [ready, context, flowSnapshot, selected, selectedHospital, connectionFocus, inspectionVersion, flowHotspots, flowHospitalHotspot, showConnections, reducedMotion, view, showLinks, probabilityPlace, distanceOnly]);
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
@@ -417,10 +418,10 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
         ? input.context.hospitals.find(h => h.id === selectedHospital)
         : input.context.barangays.find(b => b.id === selected);
       if (!primary) return;
-      const connections = options.current.showHospitals ? simulationConnections(input.context, input.snapshot, {
+      const connections = options.current.showConnections && !probabilityPlace ? simulationConnections(input.context, input.snapshot, {
         selected, selectedHospital, focus: connectionFocus, hotspotIds: input.rankedHotspotIds ?? input.hotspotIds,
         hospitalHotspot: input.hospitalHotspot, showOverview: false }) : [];
-      const endpoints = probabilityPlace ? input.context.hospitals.map(h => h.coordinates) : connections.flatMap(c => [c.from, c.to]);
+      const endpoints = options.current.showConnections && probabilityPlace ? input.context.hospitals.map(h => h.coordinates) : connections.flatMap(c => [c.from, c.to]);
       const bounds = selectionMapBounds([primary.coordinates, ...endpoints], connectionFocus === 'barangay' ? barangayBounds.current.get(selected) : undefined);
       if (!bounds) return;
       instance.stop(); instance.resize();
