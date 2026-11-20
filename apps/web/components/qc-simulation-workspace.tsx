@@ -2521,7 +2521,7 @@ export default function QCSimulationWorkspace() {
                     <b className="qc-marker-hospital" aria-hidden="true">
                       ✚
                     </b>
-                    Hospital · provisional point, location not verified
+                    Hospital · amber dot = provisional point
                   </span>
                   <span><b className="qc-marker-linked" aria-hidden="true">•</b>Other linked or selected barangay · unranked</span>
                   <span>
@@ -2597,7 +2597,7 @@ export default function QCSimulationWorkspace() {
                 : <div><span>Unplaced demand to date</span><strong>{format(snapshot?.cumulativeUnresolved)}</strong><small>Expected patients · cumulative</small></div>}
               <button type="button" className="text-button qs-more-results" onClick={() => openDetail('overview')}>View results <ChevronRight size={14} /></button>
             </div>
-            {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Numbered markers show annual burden rank; H pins are hospitals.</p>}
+            {introToast && data && !scenario && <p className="qs-first-hint">Press Play or choose a day. Numbered markers show annual burden rank; cross pins are hospitals.</p>}
           </section>
         </section>
         <aside id="qs-context-panel" className="qs-context-panel" hidden={!panelView} aria-labelledby="qs-panel-title" data-reduced-motion={reduced}>
@@ -2767,7 +2767,7 @@ export default function QCSimulationWorkspace() {
           else if(!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}><section className="qs-guide" role="dialog" aria-modal="true" aria-labelledby="qs-guide-title"><div className="qs-guide-heading"><h2 id="qs-guide-title">Explore a preparedness scenario</h2><button type="button" ref={guideClose} className="text-button qs-panel-icon" aria-label="Close guide" onClick={closeGuide}><X size={18} /></button></div>
-        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers are annual projected-burden ranks, not case counts or confirmed outbreaks. H pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and policy comparisons, then export the saved scenario.</li></ol>
+        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers are annual projected-burden ranks, not case counts or confirmed outbreaks. Cross pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and policy comparisons, then export the saved scenario.</li></ol>
         <details><summary>Terms used in this simulation</summary><dl>{Object.values(GLOSSARY).map(([term, meaning]) => <div key={term}><dt>{term}</dt><dd>{meaning}</dd></div>)}</dl></details>
         <p>Historical source evidence and configured assumptions support this research scenario. Current hospital vacancies, dengue capacity and entrances are not verified. This is not live surveillance or clinical referral guidance.</p><button type="button" className="text-button qs-primary" onClick={closeGuide}>Explore the map</button>
       </section></div>}
