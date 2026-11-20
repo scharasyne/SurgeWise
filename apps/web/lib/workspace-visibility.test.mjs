@@ -185,7 +185,7 @@ const controlFixture = {
   lengthOfStayDays: 4,
   admissionDelayDays: 0,
   surgeActivationDay: 0,
-  allocationPolicy: 'nearest',
+  allocationPolicy: 'first_hospital',
   arrivalSplitPolicy: 'markov_preference',
 };
 
@@ -198,6 +198,23 @@ test('the initial view reserves the map, with one hidden contextual panel and an
   assert.ok(!timeline[0].ancestors.some(node => node.props?.id === 'qs-context-panel'));
   assert.equal(findElements(tree, node => node.type === 'header').length, 0);
   assert.equal(findElements(tree, node => node.type === 'aside').length, 1);
+});
+
+test('future setup offers a case surge and hospital planning without a weather scenario', () => {
+  for (const surgeEnabled of [true, false]) {
+    const controls = { ...controlFixture, surgeEnabled, surgeMultiplier: 2, growthDays: 7, surgeOnsetDay: 0, weatherProfile: 'wetter' };
+    const tree = renderWorkspace(0, { 0: 'future', 3: controls, 23: 'scenario' });
+    const form = findElements(tree, node => node.props?.id === 'qc-settings-form')[0].node;
+    const html = renderToStaticMarkup(form);
+    assert.match(html, /Projected dengue cases/);
+    assert.match(html, /Add a hypothetical surge/);
+    assert.match(html, /Hospital planning/);
+    assert.doesNotMatch(html, /weather|wetter|drier|hotter/i);
+    for (const label of ['Peak case multiplier', 'Days before surge starts', 'Time to peak']) {
+      assert.equal(findElements(form, node => node.props?.['aria-label'] === label).length, Number(surgeEnabled));
+    }
+    assert.doesNotMatch(renderToStaticMarkup(tree), /wetter weather/i);
+  }
 });
 
 test('imported allotments replace the default split only for the hospitals they list', () => {
@@ -423,7 +440,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
     startDate: '2026-11-16',
     endDate: '2026-11-30',
     horizonDays: 14,
-    weatherProfile: 'typical',
+    weatherProfile: 'wetter', // A legacy profile echoed by the engine must not carry into the next request.
   };
   const states = new Map([
     [2, fixture],
@@ -533,17 +550,18 @@ test('each mode restores its edited dates and input edits invalidate playback re
   assert.equal(states.get(3).endDate, '2025-07-08');
   assert.equal(element(render(), node => node.key === '7' && node.type === 'button').props['aria-pressed'], true);
   assert.deepEqual(requests, []);
-  function checkOptimizedChoice() {
+  function checkRankedChoice() {
     const choice = () => element(render(), node => node.props?.label === 'How patients choose a hospital');
     const overflow = () => element(render(), node => node.props?.label === 'When a hospital is full');
     choice().props.onChange('markov_proximity');
-    overflow().props.onChange('optimized');
+    assert.deepEqual(overflow().props.options.map(o => o.value), ['first_hospital', 'next_probability']);
+    overflow().props.onChange('next_probability');
     assert.equal(choice().props.value, 'markov_proximity');
     assert.deepEqual(choice().props.options.map(o => o.label), ['Distance and preferred hospital', 'Distance only']);
     choice().props.onChange('markov_preference');
-    assert.equal(overflow().props.value, 'optimized');
+    assert.equal(overflow().props.value, 'next_probability');
   }
-  checkOptimizedChoice();
+  checkRankedChoice();
   changeStart('');
   assert.equal(element(render(), node => node.props?.type === 'submit').props.disabled, true);
   assert.equal(element(render(), node => node.props?.['aria-label'] === 'Duration').props.value, 7);
@@ -565,13 +583,14 @@ test('each mode restores its edited dates and input edits invalidate playback re
     scrollTo: (options) => scrolls.push(options),
   };
   await switchMode('future');
-  checkOptimizedChoice();
+  checkRankedChoice();
   assert.equal(states.get(3).startDate, '2026-11-16');
   changeStart('2026-12-01');
   await switchMode('historical');
   assert.equal(states.get(3).startDate, '2025-08-01');
   await switchMode('future');
   assert.equal(states.get(3).startDate, '2026-12-01');
+  assert.equal(Object.hasOwn(requests.at(-1).controls, 'weatherProfile'), false);
   assert.deepEqual(scrolls, [{ top: 0 }, { top: 0 }, { top: 0 }]);
   assert.deepEqual(
     requests.map((request) => request.url),

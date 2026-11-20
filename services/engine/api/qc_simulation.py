@@ -12,7 +12,6 @@ from .research import StrictModel, FacilityAssumption, unavailable
 from .outbreak import OutbreakInput, inputs, create_movie
 from ..repositories.forecast_runs import load_environmental_runs, FOLDER
 from ..domain.source_calendar import historical_window
-from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
 from ..repositories.facility import load_facilities
 from ..domain.bed_allotments import AllotmentFileError, MAX_FILE_BYTES, capacity_mismatch, parse_allotments, read_table
 
@@ -78,27 +77,15 @@ class QCInput(StrictModel):
     admissionDelayDays: int = Field(default=0, strict=True, ge=0, le=28)
     surgeActivationDay: int = Field(default=7, strict=True, ge=0, le=28)
     acknowledgeAssumedCapacity: Literal[True] = True
-    allocationPolicy: AllocationPolicy = "first_hospital"
-    arrivalSplitPolicy: ArrivalPolicy = "markov_preference"
+    allocationPolicy: Literal["first_hospital", "next_probability"] = "first_hospital"
+    arrivalSplitPolicy: Literal["markov_preference", "markov_proximity"] = "markov_preference"
     compareAllocation: bool = False
     bedAllotments: list[BedAllotment | StaffedBedTotal] | None = Field(default=None, max_length=46)
-
-    @model_validator(mode="before")
-    @classmethod
-    def resolve_choice_defaults(cls, data):
-        if not isinstance(data, dict):
-            return data
-        values = dict(data)
-        if "arrivalSplitPolicy" in values:
-            values.setdefault("allocationPolicy", "first_hospital" if values["arrivalSplitPolicy"] in ("markov_preference", "markov_proximity") else "nearest")
-        return values
 
     @model_validator(mode="after")
     def check_window(self):
         if self.bedAllotments and len({a.facilityId for a in self.bedAllotments}) != len(self.bedAllotments):
             raise ValueError("Each hospital may appear only once in bed allotments.")
-        if self.allocationPolicy == "first_hospital" and self.arrivalSplitPolicy not in MATRICES:
-            raise ValueError("First-hospital placement requires a Markov choice policy.")
         if not 1 <= (self.endDate - self.startDate).days <= 28:
             raise ValueError("Select a 1–28 elapsed-day date range.")
         if not 2024 <= self.startDate.year <= 2035:
@@ -210,10 +197,8 @@ def workspace(params: QCInput):
         result["assumptions"] = "QC-wide historical case + lagged rainfall/temperature/humidity model; fixed prior annual barangay weights. Daily counts are uniformly disaggregated source-block forecasts. Zero initial dengue census, constant assumed non-dengue occupancy, configured admission fraction/delay and fixed LOS; observed source case totals are not observed hospital admissions. No user-selected infection origin or calibrated transmission model. All 46 hospitals are assumed eligible. Each site uses its PhilHealth accredited bed count as the scenario bed total, with an assumed reservation split and separate temporary holding spaces. " + placement_assumption(params)
         result["assumptions"] = result["assumptions"].replace("fixed prior annual barangay weights", "fixed XGBoost annual barangay burden forecast shares")
         result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is evaluated separately; weekly hotspot and spatial-allocation uncertainty are not validated."
-        if params.compareAllocation and params.allocationPolicy == "first_hospital":
+        if params.compareAllocation:
             result["firstAdmissionComparison"] = compare_first_admissions(model, result)
-        elif params.compareAllocation:
-            result["allocationComparison"] = compare_placements(model, result)
         result["simulationResultSha256"] = core_hash
         result.pop("resultSha256", None)
         result["resultSha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, allow_nan=False).encode()).hexdigest()
@@ -226,40 +211,16 @@ def workspace(params: QCInput):
 def placement_assumption(params):
     if params.allocationPolicy == "first_hospital":
         return "Modeled demand stays at the first hospital selected by the Markov probabilities."
-    if params.arrivalSplitPolicy in MATRICES:
-        policy = ("Optimization minimizes straight-line diversion distance for the overflow placed."
-                  if params.allocationPolicy == "optimized" else "Overflow tries hospitals in order of straight-line distance from the first hospital.")
-        return ("Each hospital serves its own first-choice demand up to available staffed capacity. "
-                "Overflow uses remaining staffed beds, then temporary holding spaces. " + policy)
-    return ("Capacity-constrained placement minimizes straight-line patient-km, with holding considered after staffed beds."
-            if params.allocationPolicy == "optimized" else "Placement follows distance to the nearest available staffed bed, then finite holding space.")
-
-
-def compare_placements(model, movie):
-    other_policy = "nearest" if model.allocationPolicy == "optimized" else "optimized"
-    other = create_movie(model.model_copy(update={"allocationPolicy": other_policy}))
-
-    def metrics(value):
-        days = value["days"]
-        patient_km = math.fsum(
-            d["expectedPlacementPatientKm"] if "expectedPlacementPatientKm" in d else
-            sum((r["supportedPlacements"] + r["holdingPlacements"]) * r["distanceKm"] for r in d["assignments"])
-            for d in days)
-        return {"cumulativeUnresolved": days[-1]["cumulativeUnresolved"], "holdingCensus": days[-1]["holdingCensus"],
-                "maxNormalOccupancyPct": max(f["normalOccupancyPct"] for d in days for f in d["facilities"]),
-                "expectedPatientKm": patient_km}
-
-    note = "Both policies use the same forecast, capacity and admission assumptions."
-    if model.arrivalSplitPolicy in MATRICES:
-        note += (" First-hospital probabilities are identical. Only overflow is redirected."
-                 " Patient-km includes the straight-line distance to the first hospital and any additional distance to placement.")
-    return {model.allocationPolicy: metrics(movie), other_policy: metrics(other), "caveat": note}
+    return ("Each hospital serves its first-choice demand up to available staffed capacity. Overflow tries the "
+            "highest-probability available hospital for its origin barangay. Equal probabilities split demand evenly, "
+            "and competing arrivals share the remaining capacity proportionally. Temporary holding follows staffed beds.")
 
 
 def compare_first_admissions(model, movie):
     other_policy = "markov_proximity" if model.arrivalSplitPolicy == "markov_preference" else "markov_preference"
     other = create_movie(model.model_copy(update={"arrivalSplitPolicy": other_policy}))
     return [{"arrivalSplitPolicy": value["parameters"]["arrivalSplitPolicy"],
+             "cumulativeUnresolved": value["days"][-1]["cumulativeUnresolved"],
              "peakBedsShort": value["bedProjection"]["peakHospitalBedsShort"],
              "peakShortageDate": value["bedProjection"]["peakHospitalShortageDate"],
              "peakExpectedBeds": max(d["bedForecast"]["expectedBeds"] for d in value["days"])}

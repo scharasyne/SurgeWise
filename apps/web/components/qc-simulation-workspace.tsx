@@ -175,7 +175,8 @@ async function fetchWorkspace(
       ? {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(controls),
+          // Future runs use the engine default, including when controlValues echoes a prior profile.
+          body: JSON.stringify(tab === 'future' ? { ...controls, weatherProfile: undefined } : controls),
           signal,
         }
       : { signal },
@@ -239,7 +240,6 @@ export default function QCSimulationWorkspace() {
   const [timelineHidden, setTimelineHidden] = useState(false);
   const [numberDrafts, setNumberDrafts] = useState<Partial<Record<keyof QCControls, string>>>({});
   const [startDateDraft, setStartDateDraft] = useState<string | null>(null);
-  const [usesWeather, setUsesWeather] = useState(true);
   const [showProbabilities, setShowProbabilities] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'scenario' | 'capacity'>('scenario');
   const [allotmentImport, setAllotmentImport] = useState<{ status: 'idle' | 'loading' | 'error' | 'done'; fileName?: string; message?: string; result?: BedAllotmentImport }>({ status: 'idle' });
@@ -316,7 +316,6 @@ export default function QCSimulationWorkspace() {
           setHistoricalWindows(result.historicalWindows);
         if (result.futureForecast) {
           setPlanningAsOf(result.futureForecast.asOfDate);
-          setUsesWeather(result.futureForecast.usesWeather !== false);
         }
         setSelected(result.periodSummary.barangays[0].barangayId);
         setHospital('');
@@ -614,11 +613,10 @@ export default function QCSimulationWorkspace() {
   const scenarioDetail = !controls
     ? 'Loading settings…'
     : tab === 'future'
-      ? `${controls.surgeEnabled ? `Surge up to ${format(controls.surgeMultiplier)}× seasonal baseline` : 'No added surge'} · ${controls.weatherProfile ?? 'typical'} weather`
+      ? (controls.surgeEnabled ? `Surge up to ${format(controls.surgeMultiplier)}× baseline cases` : 'Baseline cases')
       : controls.mode === 'hypothetical_shock'
         ? `Stress overlay · +${format(controls.extraCasesPerWeek)} cases/week`
         : 'Data-based historical forecast replay';
-  const comparison = scenario?.allocationComparison;
   const chainComparison = scenario?.firstAdmissionComparison;
   const firstHospital = controls?.allocationPolicy === 'first_hospital';
   const resultSplit = scenario?.bedProjection?.arrivalSplitPolicy;
@@ -635,13 +633,13 @@ export default function QCSimulationWorkspace() {
     { id: 'place-beds', label: 'Bed demand by barangay' },
     { id: 'city-beds', label: 'City-wide bed demand' },
     { id: 'barangays', label: 'All barangays' },
-    ...(comparison || chainComparison
-      ? [{ id: 'compare' as const, label: 'Policy comparison' }]
+    ...(chainComparison
+      ? [{ id: 'compare' as const, label: 'Hospital-choice comparison' }]
       : []),
     { id: 'methods', label: 'Methods & sources' },
   ];
   const activeDetail: DetailTab =
-    detailTab === 'compare' && !comparison && !chainComparison ? 'overview' : detailTab;
+    detailTab === 'compare' && !chainComparison ? 'overview' : detailTab;
   const panelProps = (id: DetailTab) => ({
     role: 'region', id: `qc-detail-panel-${id}`,
     'aria-label': detailTabs.find(item => item.id === id)?.label,
@@ -1067,7 +1065,7 @@ export default function QCSimulationWorkspace() {
                     </fieldset>
 
                     <fieldset className="qc-fieldset">
-                      <legend><TrendingUp aria-hidden="true" size={16} /> Case forecast</legend>
+                      <legend><TrendingUp aria-hidden="true" size={16} /> {tab === 'future' ? 'Projected dengue cases' : 'Case forecast'}</legend>
                       {tab === 'historical' ? (
                         <>
                           <label>Case scenario
@@ -1083,22 +1081,13 @@ export default function QCSimulationWorkspace() {
                         </>
                       ) : (
                         <>
-                          <label>Weather assumption
-                            <WorkspaceSelect label="Weather assumption" disabled={!usesWeather}
-                              value={controls.weatherProfile ?? 'typical'} onChange={value => update({ weatherProfile: value as QCControls['weatherProfile'] })}
-                              options={[{ value: 'typical', label: 'Typical for this season' }, { value: 'wetter', label: 'Wetter than typical' },
-                                { value: 'drier', label: 'Drier than typical' }, { value: 'hotter', label: 'Hotter than typical' }]} />
-                            <small>{!usesWeather ? 'This model uses seasonal patterns only.' : 'Based on past weather for the selected dates.'}</small>
-                          </label>
-                          <div className="qs-surge-box">
-                            <label className="qc-surge-toggle"><input type="checkbox" checked={controls.surgeEnabled ?? true}
-                              onChange={e => update({ surgeEnabled: e.target.checked })} /> Add a hypothetical surge</label>
-                            {controls.surgeEnabled && <div className="qs-field-pair">
-                              {numeric('surgeMultiplier', 'Peak case multiplier', 1, 10, '× baseline', 0.1)}
-                              {numeric('surgeOnsetDay', 'Days before surge starts', 0, Math.max(0, selectedDays - 1), 'days')}
-                              {numeric('growthDays', 'Time to peak', 1, 28, 'days')}
-                            </div>}
-                          </div>
+                          <label className="qc-surge-toggle"><input type="checkbox" checked={controls.surgeEnabled ?? true}
+                            onChange={e => update({ surgeEnabled: e.target.checked })} /> Add a hypothetical surge</label>
+                          {controls.surgeEnabled && <div className="qs-field-pair">
+                            {numeric('surgeMultiplier', 'Peak case multiplier', 1, 10, '× baseline', 0.1)}
+                            {numeric('surgeOnsetDay', 'Days before surge starts', 0, Math.max(0, selectedDays - 1), 'days')}
+                            {numeric('growthDays', 'Time to peak', 1, 28, 'days')}
+                          </div>}
                         </>
                       )}
                     </fieldset>
@@ -1110,10 +1099,9 @@ export default function QCSimulationWorkspace() {
                           update({ allocationPolicy: value as QCControls['allocationPolicy'], compareAllocation: false })}
                           options={[
                             { value: 'first_hospital', label: 'Record the shortage at that hospital' },
-                            { value: 'nearest', label: 'Try the nearest hospital with space' },
-                            { value: 'optimized', label: 'Optimize placements across hospitals' },
+                            { value: 'next_probability', label: 'Try the next most likely hospital with space' },
                           ]} />
-                        {controls.allocationPolicy !== 'first_hospital' && <small>Patients keep their first choice when a staffed bed is available. Only overflow can go elsewhere. Holding spaces are used after staffed beds fill.</small>}
+                        {controls.allocationPolicy !== 'first_hospital' && <small>If the first hospital is full, try hospitals in order of probability for that barangay. Staffed dengue beds fill before temporary holding spaces.</small>}
                       </label>
                       <label>How patients choose a hospital
                         <WorkspaceSelect label="How patients choose a hospital" value={controls.arrivalSplitPolicy ?? 'markov_preference'} onChange={value =>
@@ -1317,9 +1305,7 @@ export default function QCSimulationWorkspace() {
                       ? `${selectedDays} days · `
                       : ''}
                     {scenarioDetail} ·{' '}
-                    {firstHospital ? 'first-hospital placement' : controls?.allocationPolicy === 'optimized'
-                      ? 'optimized placement'
-                      : 'nearest-capacity placement'}
+                    {firstHospital ? 'first-hospital placement' : 'overflow by hospital-choice probability'}
                   </small>
                 </div>
                 {stale && (
@@ -1444,7 +1430,7 @@ export default function QCSimulationWorkspace() {
                 <ul>
                   <li>
                     {tab === 'future'
-                      ? 'Future seasonal surge planning: new seasonal curves and historical weather analogs; current surveillance and real hospital census are unavailable.'
+                      ? 'Projected dengue cases drive admissions and bed demand under the selected hospital assumptions.'
                       : 'Historical replay: source-based case/environment forecasts for retrospective periods.'}{' '}
                     No place selection is required. QC calculations; Philippines
                     geography is context only.
@@ -1906,7 +1892,7 @@ export default function QCSimulationWorkspace() {
                   {format(staffedBeds)} staffed
                   dengue beds required;{' '}
                   {format(snapshot?.bedForecast?.hospitalBedsShort)}{' '}
-                  additional staffed beds needed across hospitals. Each site’s shortage is rounded up separately.
+                  additional staffed beds needed across hospitals{firstHospital ? '' : ' before diversion'}. Each site’s shortage is rounded up separately.
                 </p>
                 {snapshot && <section aria-label="Hospital bed shortages">
                   <h3>Hospital bed shortages{firstHospital ? '' : ' before diversion'} · day {day}</h3>
@@ -1991,45 +1977,10 @@ export default function QCSimulationWorkspace() {
             {chainComparison && <div {...panelProps('compare')}><section className="qc-comparison">
               <h2>First-hospital bed shortages</h2>
               <p>Both runs use the same forecast, hospital capacities and length of stay. Only the hospital-choice weights change.</p>
-              <div className="qc-table-scroll"><table><thead><tr><th>Hospital choice</th><th>Peak beds short</th><th>First day at peak shortage</th><th>Peak expected beds</th></tr></thead>
+              <div className="qc-table-scroll"><table><thead><tr><th>Hospital choice</th><th>Peak beds short{firstHospital ? '' : ' before diversion'}</th><th>First day at peak shortage</th><th>Peak expected beds</th><th>Unplaced by final day</th></tr></thead>
                 <tbody>{chainComparison.map(row => <tr key={row.arrivalSplitPolicy}><td>{row.arrivalSplitPolicy === 'markov_preference' ? 'Distance and preferred hospital' : 'Distance only'}</td>
-                  <td>{format(row.peakBedsShort)}</td><td>{row.peakShortageDate ? formatScenarioDate(row.peakShortageDate) : 'No shortage'}</td><td>{format(row.peakExpectedBeds)}</td></tr>)}</tbody>
+                  <td>{format(row.peakBedsShort)}</td><td>{row.peakShortageDate ? formatScenarioDate(row.peakShortageDate) : 'No shortage'}</td><td>{format(row.peakExpectedBeds)}</td><td>{formatFractional(row.cumulativeUnresolved)}</td></tr>)}</tbody>
               </table></div></section></div>}
-            {comparison && (
-              <div {...panelProps('compare')}>
-                <section className="qc-comparison">
-                  <h2>Resource allocation comparison</h2>
-                  <p>{comparison.caveat}</p>
-                  <div className="qc-table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Same-input policy</th>
-                          <th>Unresolved demand</th>
-                          <th>Holding census</th>
-                          <th>Peak normal occupancy</th>
-                          <th>Expected patient-km</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(['nearest', 'optimized'] as const).map((policy) => {
-                          const m = comparison[policy];
-                          return (
-                            <tr key={policy}>
-                              <td>{policy}</td>
-                              <td>{format(m.cumulativeUnresolved)}</td>
-                              <td>{format(m.holdingCensus)}</td>
-                              <td>{format(m.maxNormalOccupancyPct)}%</td>
-                              <td>{format(m.expectedPatientKm)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              </div>
-            )}
             <div {...panelProps('methods')}>
               <section
                 className="qc-methods"
@@ -2044,7 +1995,7 @@ export default function QCSimulationWorkspace() {
                 {data?.futureForecast ? (
                   <>
                     <p>{data.futureForecast.stalenessCaveat}</p>
-                    <p>{data.futureForecast.weatherCaveat}</p>
+                    {data.futureForecast.usesWeather && <p>The current case model still uses historical weather inputs. Future simulations use its default seasonal profile.</p>}
                     {timing && <details className="qc-environment">
                       <summary>Forecast period and surge timing</summary>
                       <p>{timing.horizonDays} elapsed days from {formatScenarioDate(timing.startDate)} to the final snapshot on {formatScenarioDate(timing.endDateExclusive)}.</p>
@@ -2054,7 +2005,7 @@ export default function QCSimulationWorkspace() {
                       <p>Extra staffed beds are scheduled for {formatScenarioDate(timing.staffedSurgeActivationSnapshotDate)}{timing.staffedSurgeActivationWithinWindow ? '.' : ', outside this period.'} The assumed admission delay is {timing.admissionDelayDays} days and the stay is {timing.lengthOfStayDays} days.</p>
                       <p>The seasonal pattern repeats from historical evidence. The largest gap from the source data is {timing.sourceYearGap} years. {timing.centralGapEvaluated
                         ? 'The seasonal baseline was evaluated at this gap.'
-                        : 'This weather profile and year gap have no matched evaluation.'} {!timing.rangeEvaluatedAtRequestedGap && 'Range coverage is unverified for this combination of weather, surge and year gap.'}</p>
+                        : 'The baseline has no matched evaluation for this gap.'} {!timing.rangeEvaluatedAtRequestedGap && 'Range coverage is unverified for this scenario and year gap.'}</p>
                     </details>}
                     <p>
                       Selection: {data.futureForecast.selection.criterion}.
@@ -2422,7 +2373,8 @@ export default function QCSimulationWorkspace() {
             <BedUse forecast={stat?.bedForecast} day={day} occupancyPct={stat?.supportedOccupancyPct} />
             <section className="qs-inspector-section"><h4>Scenario capacity · day {day}</h4>
               <InspectorFacts rows={[
-                ['Additional beds needed today', format(stat?.bedForecast?.additionalStaffedBedsNeeded)],
+                [firstHospital ? 'Additional beds needed today' : 'Beds short before diversion', format(stat?.bedForecast?.additionalStaffedBedsNeeded)],
+                ['First-choice arrivals still unplaced today', stat?.unplacedToday == null ? '—' : formatFractional(stat.unplacedToday)],
                 ['Assumed normal capacity', format(stat?.normalCapacity)],
                 ['Activated surge capacity', format(stat?.activatedSurgeCapacity)],
                 ['Residual supported slots', format(stat?.remainingSupportedCapacity)],
@@ -2458,7 +2410,7 @@ export default function QCSimulationWorkspace() {
               ['Expected admissions from this place', format(row.expectedAdmissions)],
               ['Peak staffed beds from this place', format(row.peakStaffedBedsRequired)],
               ['Extra beds from surge', format(row.additionalStaffedBedsDueToSurge)],
-              ['Hospital-wide beds short today', format(stat?.bedForecast?.additionalStaffedBedsNeeded)],
+              [firstHospital ? 'Hospital-wide beds short today' : 'Hospital beds short before diversion', format(stat?.bedForecast?.additionalStaffedBedsNeeded)],
               ['Hospital-wide beds needed', format(stat?.bedForecast?.expectedBeds)],
               ['Assumed dengue slots', format(stat?.bedForecast?.assumedSupportedDengueCapacity)],
               ['Hospital-wide demand percentage', percent(stat?.bedForecast?.demandUtilizationPct)],
@@ -2628,7 +2580,7 @@ export default function QCSimulationWorkspace() {
           <div className="qs-panel-body" hidden={panelView !== 'scenario'} aria-label="Simulation controls">{settings}</div>
           <div className="qs-panel-body qs-results-body" hidden={panelView !== 'results'} aria-label="Simulation results">
             <div className="qs-result-tools"><WorkspaceSelect label="Result view" value={activeDetail} options={detailTabs.map(item => ({ value: item.id, label: item.label }))} onChange={value => setDetailTab(value as DetailTab)} /><button type="button" className="text-button qs-export" disabled={!scenario} onClick={download} aria-label="Export simulation results"><Download size={15} />Export</button></div>
-            <div className="qs-analysis-scroll">{overview}{activeDetail === 'overview' && <div className="qs-result-actions"><button type="button" className="text-button" disabled={!controls || loading} onClick={compareAllocations}>{firstHospital ? 'Compare hospital-choice assumptions' : 'Compare allocation policies'} <ArrowLeft size={13} /></button><button type="button" className="text-button" onClick={() => openDetail('city-beds')}>Explore daily bed demand <ChevronRight size={13} /></button></div>}
+            <div className="qs-analysis-scroll">{overview}{activeDetail === 'overview' && <div className="qs-result-actions"><button type="button" className="text-button" disabled={!controls || loading} onClick={compareAllocations}>Compare hospital-choice assumptions <ArrowLeft size={13} /></button><button type="button" className="text-button" onClick={() => openDetail('city-beds')}>Explore daily bed demand <ChevronRight size={13} /></button></div>}
               {activeDetail === 'overview' && <div className="qc-playback-panel">
               <div className="qc-chart-heading">
                 <strong>
@@ -2737,26 +2689,23 @@ export default function QCSimulationWorkspace() {
                         and bed-occupancy accuracy remain unverified.
                       </p>
                     )}
-                    {source.environmentalInputs.map((f) => (
-                      <div key={f.sourceColumn}>
-                        <span>
-                          {factorName[f.sourceColumn] || f.sourceColumn}
-                        </span>
-                        <strong>
-                          {format(f.valueAtOrigin)} <small>{f.unit}</small>
-                        </strong>
-                      </div>
-                    ))}
-                    <p>
-                      {tab === 'future'
-                        ? 'Values above are assumed historical weather analogs for the selected season. No current-case lags or measured future weather are fabricated.'
-                        : 'Observed inputs at origin; lagged 1, 2 and 4 source blocks in the city model.'}{' '}
-                      No measured barangay microclimate.
-                    </p>
+                    {tab === 'historical' && <>
+                      {source.environmentalInputs.map((f) => (
+                        <div key={f.sourceColumn}>
+                          <span>
+                            {factorName[f.sourceColumn] || f.sourceColumn}
+                          </span>
+                          <strong>
+                            {format(f.valueAtOrigin)} <small>{f.unit}</small>
+                          </strong>
+                        </div>
+                      ))}
+                      <p>Observed inputs at origin, lagged 1, 2 and 4 source blocks in the city model. No measured barangay microclimate.</p>
+                    </>}
                   </>
                 ) : (
                   <p>
-                    Environmental evidence loads with the approved forecast.
+                    {tab === 'future' ? 'Model details load with the case forecast.' : 'Environmental evidence loads with the approved forecast.'}
                   </p>
                 )}
               </details>}
@@ -2788,7 +2737,7 @@ export default function QCSimulationWorkspace() {
           else if(!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}><section className="qs-guide" role="dialog" aria-modal="true" aria-labelledby="qs-guide-title"><div className="qs-guide-heading"><h2 id="qs-guide-title">Explore a preparedness scenario</h2><button type="button" ref={guideClose} className="text-button qs-panel-icon" aria-label="Close guide" onClick={closeGuide}><X size={18} /></button></div>
-        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers are annual projected-burden ranks, not case counts or confirmed outbreaks. H pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and policy comparisons, then export the saved scenario.</li></ol>
+        <ol><li><strong>Play the scenario.</strong> Use the timeline, jump to the final day, or explore the marked peak in bed demand.</li><li><strong>Inspect the map.</strong> Numbered markers are annual projected-burden ranks, not case counts or confirmed outbreaks. H pins are hospitals.</li><li><strong>Try an assumption.</strong> Open Scenario to edit dates, surge and hospital assumptions. Run again to update every result together.</li><li><strong>Explore Results.</strong> Read the case ranges, bed-demand charts and hospital-choice comparisons, then export the saved scenario.</li></ol>
         <details><summary>Terms used in this simulation</summary><dl>{Object.values(GLOSSARY).map(([term, meaning]) => <div key={term}><dt>{term}</dt><dd>{meaning}</dd></div>)}</dl></details>
         <p>Historical source evidence and configured assumptions support this research scenario. Current hospital vacancies, dengue capacity and entrances are not verified. This is not live surveillance or clinical referral guidance.</p><button type="button" className="text-button qs-primary" onClick={closeGuide}>Explore the map</button>
       </section></div>}

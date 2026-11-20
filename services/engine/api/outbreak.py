@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import Field, model_validator
 
 from .research import StrictModel, FacilityAssumption, forecast, annual_data, unavailable
-from ..domain import outbreak, patient_flow, spatial, optimizer, bed_forecast, hospital_demand, barangay_forecast, source_calendar, seasonal_forecast
+from ..domain import outbreak, patient_flow, spatial, optimizer, ranked_placement, bed_forecast, hospital_demand, barangay_forecast, source_calendar, seasonal_forecast
 from ..repositories import seasonal_runs, first_admission
 from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
 from ..domain.outbreak import make_context, build_movie, VERSION
@@ -24,7 +24,7 @@ from ..repositories.barangay_runs import BarangayRankingUnavailable
 
 router = APIRouter(prefix="/v1")
 _CODE_MODULES = [("first_admission", first_admission), ("outbreak", outbreak), ("patient_flow", patient_flow), ("spatial", spatial),
-    ("optimizer", optimizer), ("bed_forecast", bed_forecast), ("hospital_demand", hospital_demand),
+    ("ranked_placement", ranked_placement), ("optimizer", optimizer), ("bed_forecast", bed_forecast), ("hospital_demand", hospital_demand),
     ("barangay_forecast", barangay_forecast), ("source_calendar", source_calendar),
     ("seasonal_forecast", seasonal_forecast), ("seasonal_runs", seasonal_runs)]
 _LOADED_CODE_HASHES = {name: sha256(module.__file__) for name, module in _CODE_MODULES}
@@ -89,7 +89,7 @@ class OutbreakInput(StrictModel):
             raise ValueError("Historical reference mode cannot contain a hypothetical added shock.")
         if self.surgeEnabled and self.surgeOnsetDay >= (self.endDate - self.startDate).days:
             raise ValueError("Surge onset must be within the selected future window.")
-        if self.allocationPolicy == "first_hospital" and self.arrivalSplitPolicy not in MATRICES:
+        if self.allocationPolicy in {"first_hospital", "next_probability"} and self.arrivalSplitPolicy not in MATRICES:
             raise ValueError("First-hospital placement requires Markov destination choice.")
         if self.arrivalSplitPolicy in MATRICES and (not self.autoHotspots or len(self.facilities) != 46):
             raise ValueError("First-admission chains require the full 46-site QC barangay forecast.")
@@ -183,6 +183,8 @@ def create_movie(params: OutbreakInput):
         schema_version = "1.0"
         if shares is not None:
             schema_version = "1.1" if params.allocationPolicy == "first_hospital" else "1.2"
+        if params.allocationPolicy == "next_probability":
+            schema_version = "1.3"
         result = {"schemaVersion": schema_version, "scenarioId": ident, **identity, **build_movie(run, geo, config, shares),
             "runTimestamp": datetime.now(timezone.utc).isoformat(), "seed": None,
             "randomness": "Deterministic expected values; no stochastic draws", "geography": "QUEZON_CITY",

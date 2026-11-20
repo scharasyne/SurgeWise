@@ -1,5 +1,17 @@
 # User-requested extensions
 
+## 2026-11-21 00:57 +08:00 — Remove weather scenarios from Future forecast setup
+
+Use projected dengue cases and the optional surge to explore bed demand. The future workspace omits the weather profile on submission. The current case engine applies its default seasonal profile until the planned model retraining. [Simulation workspace](simulation-workspace-design.md#layout-and-interaction)
+
+## 2026-11-21 00:51 +08:00 — Keep both overflow choices and adopt the circled-H pin
+
+Historical replay and Future forecast retain local shortage recording and probability-ranked overflow. Dashboard and Simulation use the shared circled-H hospital pin from main, with provisional locations identified in the map legends. [Simulation workspace design](simulation-workspace-design.md)
+
+## 2026-11-21 00:27 +08:00 — Limit overflow to local shortage or probability-ranked placement
+
+Use two overflow options in Historical replay and Future forecast. Each barangay’s alternative hospitals follow its selected first-hospital probabilities. Remove the optimizer option and its workspace comparison. [Rules and API changes](first-admission-matrix.md#using-the-chain-in-the-simulation)
+
 ## 2026-11-20 22:57 +08:00 — Use the same hospital-choice options with optimization in both tabs
 
 Historical replay and Future forecast use the selected Markov matrix for first destinations under every overflow policy. Changing the overflow setting preserves the hospital-choice setting. Optimized placement reserves available staffed beds for first-choice demand before redirecting excess. [Allocation methods](first-admission-matrix.md#using-the-chain-in-the-simulation)

@@ -1,5 +1,5 @@
 export type ArrivalPolicy = 'nearest' | 'nearest_three_equal' | 'markov_proximity' | 'markov_preference';
-export type AllocationPolicy = 'first_hospital' | 'nearest' | 'optimized';
+export type AllocationPolicy = 'first_hospital' | 'next_probability' | 'nearest' | 'optimized';
 export interface MovieHospital {
   id: string; name: string; coordinates: [number, number]; coordinateStatus: string;
   coordinateSourceUrl: string; sourceAsOf: string; dengueInpatientEligible: null;
@@ -43,6 +43,7 @@ export interface MovieDay {
   caseRange?: CaseRange; dailyCaseRange?: Pick<CaseRange, 'lowerCases' | 'upperCases'>;
   bedForecast?: BedForecast;
   barangays: { barangayId: string; expectedBedsShort?: number; expectedCases: number; baselineCases: number; shockCases: number; cumulativeCases: number; caseRange?: Pick<CaseRange, 'lowerCases' | 'upperCases'> }[];
+  placementsByOrigin?: Record<string, { supported: number[]; holding: number[] }>;
   firstHospitalRoutes?: { firstFacilityId: string; facilityId: string; supportedPlacements: number; holdingPlacements: number }[];
   assignments: { barangayId: string; facilityId: string; supportedPlacements: number; holdingPlacements: number; distanceKm: number }[];
   facilities: { facilityId: string; normalCapacity: number; activatedSurgeCapacity: number; supportedCensus: number;
@@ -81,7 +82,7 @@ export interface QCControls {
   growthDays: number; surgeCapacity: number; holdingCapacity: number;
   hospitalizationRate: number; baselineOccupancy: number; lengthOfStayDays: number;
   admissionDelayDays: number; surgeActivationDay: number; acknowledgeAssumedCapacity: true;
-  allocationPolicy: AllocationPolicy; compareAllocation: boolean;
+  allocationPolicy: 'first_hospital' | 'next_probability'; compareAllocation: boolean;
   arrivalSplitPolicy?: ArrivalPolicy;
   horizonDays?: number; weatherProfile?: 'typical' | 'wetter' | 'drier' | 'hotter';
   surgeEnabled?: boolean; surgeOnsetDay?: number; surgeMultiplier?: number;
@@ -128,10 +129,8 @@ export interface QCWorkspaceResult extends OutbreakMovie {
     selection: { criterion: string; scores: Record<string, number> };
     validation: { year: number; model: string; n: number; mae: number; rmse: number; meanBias?: number; wapePct?: number | null; empiricalRangeCoverage: number }[];
     stalenessCaveat: string; weatherCaveat: string };
-  firstAdmissionComparison?: { arrivalSplitPolicy: ArrivalPolicy; peakBedsShort: number; peakShortageDate: string | null; peakExpectedBeds: number }[];
-  allocationComparison?: { nearest: AllocationMetrics; optimized: AllocationMetrics; caveat: string };
+  firstAdmissionComparison?: { arrivalSplitPolicy: ArrivalPolicy; peakBedsShort: number; peakShortageDate: string | null; cumulativeUnresolved: number; peakExpectedBeds: number }[];
 }
-export interface AllocationMetrics { cumulativeUnresolved: number; holdingCensus: number; maxNormalOccupancyPct: number; expectedPatientKm: number }
 export interface OutbreakMovie {
   progressionMethod?: 'dated_QC_forecast_allocated_by_xgboost_annual_burden_shares' | 'dated_QC_forecast_allocated_by_prior_annual_barangay_shares' | 'explicit_hypothetical_radial_shock';
   schemaVersion: string; scenarioId: string; resultSha256: string; runTimestamp: string;

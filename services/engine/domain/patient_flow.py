@@ -12,7 +12,7 @@ def non_dengue_share(facility, occupancy):
     return occupancy if share is None else share
 
 
-def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, activation_day=0, daily_groups=None, assignment_method="nearest", divert_overflow=False):
+def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, activation_day=0, daily_groups=None, assignment_method="nearest", divert_overflow=False, ranked_choice=None):
     if len(weekly) != 4 or any(not math.isfinite(v) or v < 0 for v in weekly):
         raise ValueError("Four finite nonnegative QC forecast blocks required")
     if not facilities or not 0 <= admission_rate <= 1 or not 0 <= occupancy <= 1 or not 1 <= los <= 30 or not 0 <= delay <= 28 or not 0 <= activation_day <= 28:
@@ -34,12 +34,14 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
         for groups in daily_groups:
             for group in groups:
                 order = group["facilityOrder"]
-                valid_order = (len(order) == 1 and order[0] in ids if assignment_method == "first_hospital"
+                valid_order = (len(order) == 1 and order[0] in ids if assignment_method in {"first_hospital", "next_probability"}
                                else set(order) == ids and len(order) == len(ids))
                 if not math.isfinite(group["cases"]) or group["cases"] < 0 or not valid_order:
                     raise ValueError("Invalid spatial demand or hospital ordering")
-    if assignment_method not in {"nearest", "optimized", "first_hospital"} or (assignment_method != "nearest" and daily_groups is None):
+    if assignment_method not in {"nearest", "optimized", "first_hospital", "next_probability"} or (assignment_method != "nearest" and daily_groups is None):
         raise ValueError("Invalid assignment method or missing spatial costs")
+    if (assignment_method == "next_probability") != (ranked_choice is not None):
+        raise ValueError("Ranked overflow requires the originating barangay probabilities")
     states = [{"config": f, "cohorts": [], "holding": 0.0} for f in facilities]
     arrivals_total = discharged_total = unmet_total = 0.0
     days = []
@@ -66,6 +68,19 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
         by_id = {s["config"]["facilityId"]: s for s in states}
         local = {ident: {"firstAdmissionsToday": 0.0, "supportedPlacementsToday": 0.0,
                          "holdingPlacementsToday": 0.0, "unplacedToday": 0.0} for ident in ids} if assignment_method == "first_hospital" or divert_overflow else {}
+        if ranked_choice is not None:
+            first_arrivals = {g["facilityOrder"][0]: g["cases"] * admission_rate for g in groups}
+            staffed_capacity = [max(0, s["config"]["normalCapacity"] * (1 - non_dengue_share(s["config"], occupancy))
+                + (s["config"]["surgeCapacity"] if day >= activation_day else 0) - sum(c for _, c in s["cohorts"])) for s in states]
+            holding_capacity = [max(0, s["config"]["holdingCapacity"] - s["holding"]) for s in states]
+            local, actual_origins = ranked_choice.place_day([first_arrivals.get(h, 0.0) for h in ranked_choice.ids],
+                                                          staffed_capacity, holding_capacity)
+            for h, counts in local.items():
+                if counts["supportedPlacementsToday"]:
+                    by_id[h]["cohorts"].append((day + los, counts["supportedPlacementsToday"]))
+                by_id[h]["holding"] += counts["holdingPlacementsToday"]
+                remaining += counts["unplacedToday"]
+            groups = []  # Ranked placements have already been applied to the cohorts.
         plans = None
         if (assignment_method == "optimized" or divert_overflow) and groups:
             from .optimizer import daily_plan
@@ -142,6 +157,8 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             "unresolvedToday": remaining, "cumulativeUnresolved": unmet_total,
             "supportedCensus": inpatient, "holdingCensus": holding, "balanceError": error, "facilities": snapshots,
             "assignments": assignments})
+        if ranked_choice is not None:
+            days[-1]["placementsByOrigin"] = actual_origins
         if divert_overflow:
             days[-1]["firstHospitalRoutes"] = first_routes
     return days

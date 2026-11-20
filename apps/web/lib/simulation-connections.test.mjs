@@ -166,3 +166,13 @@ test('overflow placement arrows carry each first hospital’s origin shares to t
   assert.deepEqual(placed('hospital'), [['B2', 'H2', 4, .5], ['B1', 'H2', 3, 1.5]]);
   assert.deepEqual(placed('barangay'), [['B1', 'H2', 3, 1.5]]);
 });
+
+test('ranked overflow arrows show the actual origin mix of a receiving hospital', () => {
+  const source = { ...context, firstAdmissionOriginShares: { H1: { B1: 1 }, H2: { B1: 1 } } };
+  const day = { assignments: [], placementsByOrigin: { H2: { supported: [2, 3, 0], holding: [0, 1, 0] } },
+    facilities: [{ facilityId: 'H1', supportedPlacementsToday: 1 }, { facilityId: 'H2', supportedPlacementsToday: 5, holdingPlacementsToday: 1 }] };
+  const placed = focus => simulationConnections(source, day, { ...options, focus, selectedHospital: 'H2' })
+    .filter(c => c.kind === 'placement').map(c => [c.barangayId, c.facilityId, c.patients, c.holding]);
+  assert.deepEqual(placed('hospital'), [['B2', 'H2', 4, 1], ['B1', 'H2', 2, 0]]);
+  assert.deepEqual(placed('barangay'), [['B1', 'H2', 2, 0], ['B1', 'H1', 1, 0]]);
+});

@@ -10,7 +10,7 @@ from ..upri_data import ROOT
 from .facility import HOSPITAL_SHA256
 
 ArrivalPolicy = Literal["nearest", "nearest_three_equal", "markov_proximity", "markov_preference"]
-AllocationPolicy = Literal["nearest", "optimized", "first_hospital"]
+AllocationPolicy = Literal["nearest", "optimized", "first_hospital", "next_probability"]
 # Pin the reviewed destination block, independently of the example forecast used in its export.
 MATRICES = {
     "markov_proximity": ("qc_first_admission_v1", "fe0d87cb07d39246e61f283585e5afa767afe1cce89cf45ec1ad0eb7241b0135"),

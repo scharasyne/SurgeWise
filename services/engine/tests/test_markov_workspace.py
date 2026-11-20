@@ -158,28 +158,63 @@ def test_optimized_overflow_accounts_for_competing_destinations():
 
 @pytest.mark.parametrize("endpoint", ["qc-simulation", "future-simulation"])
 @pytest.mark.parametrize("policy", ["markov_proximity", "markov_preference"])
-def test_optimized_workspace_preserves_choice(endpoint, policy):
+def test_ranked_workspace_preserves_choice(endpoint, policy):
     from services.engine.api.future_simulation import today_qc
 
     dates = {"endDate": "2025-02-01"} if endpoint == "qc-simulation" else {
         "startDate": (today_qc() + timedelta(days=1)).isoformat(), "horizonDays": 3}
-    response = TestClient(app).post("/v1/" + endpoint, json={**dates, "allocationPolicy": "optimized",
+    response = TestClient(app).post("/v1/" + endpoint, json={**dates, "allocationPolicy": "next_probability",
         "arrivalSplitPolicy": policy, "compareAllocation": True})
     assert response.status_code == 200, response.text[:500]
     result = response.json()
     assert result["controlValues"]["arrivalSplitPolicy"] == result["bedProjection"]["arrivalSplitPolicy"] == policy
     assert result["firstAdmissionMatrixSha256"] == first_admission.MATRICES[policy][1]
-    assert result["assignmentEncoding"] == "first_hospital_routes_with_origin_shares"
+    assert result["assignmentEncoding"] == "hospital_totals_with_ranked_origin_placements"
     places = result["bedProjection"]["placePeaks"]
     assert len(places) == 142 and all(len(p["hospitals"]) == 46 for p in places)
-    placed_km = sum(d["expectedPlacementPatientKm"] for d in result["days"])
-    assert placed_km > 0 and result["allocationComparison"]["optimized"]["expectedPatientKm"] == pytest.approx(placed_km)
-    assert result["allocationComparison"]["nearest"]["expectedPatientKm"] > 0
+    assert "allocationComparison" not in result
+    assert {v["arrivalSplitPolicy"] for v in result["firstAdmissionComparison"]} == set(first_admission.MATRICES)
+    for d in result["days"]:
+        assert abs(d["balanceError"]) < 1e-8
+        assert sum(f["firstAdmissionsToday"] for f in d["facilities"]) == pytest.approx(d["arrivals"])
 
 
-def test_incompatible_routing_is_rejected_and_explicit_legacy_inputs_keep_their_policy():
-    client = TestClient(app)
-    assert client.post("/v1/qc-simulation", json={"arrivalSplitPolicy": "nearest_three_equal", "allocationPolicy": "first_hospital"}).status_code == 422
-    assert QCInput(allocationPolicy="optimized").arrivalSplitPolicy == "markov_preference"
-    assert QCInput(allocationPolicy="optimized", arrivalSplitPolicy="nearest_three_equal").arrivalSplitPolicy == "nearest_three_equal"
-    assert QCInput(arrivalSplitPolicy="nearest").allocationPolicy == "nearest"
+@pytest.mark.parametrize("endpoint", ["qc-simulation", "future-simulation"])
+@pytest.mark.parametrize("retired", ["nearest", "optimized"])
+def test_retired_workspace_policies_are_rejected(endpoint, retired):
+    assert TestClient(app).post("/v1/" + endpoint, json={"allocationPolicy": retired}).status_code == 422
+
+
+def test_ranked_overflow_uses_each_origin_and_preserves_local_first_choices(two_site_inputs):
+    run, context, config, _ = two_site_inputs
+    config["allocationPolicy"] = "next_probability"
+    config["facilities"].append({"facilityId": "C", "normalCapacity": 5, "surgeCapacity": 0, "holdingCapacity": 0})
+    config["facilities"][0].update(normalCapacity=1, surgeCapacity=0)
+    context["hospitals"].append({"id": "C", "coordinates": [121.01, 14]})
+    # Both originate overflow at A. B is farther from A than C. X prefers B, Y prefers C.
+    matrix = {"X": [("A", .6), ("B", .3), ("C", .1)], "Y": [("A", .6), ("B", .1), ("C", .3)]}
+    movie = build_movie(run, context, config, matrix)
+    day = movie["days"][2]
+    a, b, c = day["facilities"]
+    assert day["arrivals"] == pytest.approx(11)
+    assert [a["firstAdmissionsToday"], b["firstAdmissionsToday"], c["firstAdmissionsToday"]] == pytest.approx([6.6, 2.75, 1.65])
+    assert [a["supportedCensus"], b["supportedCensus"], c["supportedCensus"]] == pytest.approx([1, 6.95, 3.05])
+    assert day["placementsByOrigin"]["B"]["supported"] == pytest.approx([6.675, .275])
+    assert day["placementsByOrigin"]["C"]["supported"] == pytest.approx([.825, 2.225])
+    assert day["unresolvedToday"] == 0
+    assert "A" not in day["placementsByOrigin"]  # Local staffed mix is the original 75:25.
+
+
+def test_ranked_overflow_shares_ties_and_scarce_slots_and_reports_unplaced():
+    from services.engine.domain.ranked_placement import RankedHospitalChoice
+    probabilities = {"X": [("A", .8), ("B", .1), ("C", .1)], "Y": [("A", .7), ("B", .2), ("C", .1)]}
+    mix = {h: {"X": .5, "Y": .5} for h in "ABC"}
+    rank = RankedHospitalChoice([{"id": b} for b in "XY"], [{"facilityId": h} for h in "ABC"], probabilities, mix)
+    local, actual = rank.place_day([12, 0, 0], [0, 3, 6], [1, 0, 1])
+    # X requests 3 at B and 3 at C, Y requests 6 at B. B shares 1:2, and C takes a second round.
+    assert actual["B"]["supported"] == pytest.approx([1, 2])
+    assert actual["C"]["supported"] == pytest.approx([4, 2])
+    assert [local[h]["holdingPlacementsToday"] for h in "ABC"] == pytest.approx([1, 0, 1])
+    assert local["A"]["unplacedToday"] == pytest.approx(1)
+    empty, _ = rank.place_day([12, 0, 0], [0, 0, 0], [0, 0, 0])
+    assert empty["A"]["unplacedToday"] == 12

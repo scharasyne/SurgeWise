@@ -252,7 +252,6 @@
 }
 .qc-controls .qs-window-note { display:flex;justify-content:space-between;gap:6px;margin:11px 0 0;padding-top:9px;border-top:1px solid var(--sw-border);font-size:12px;color:var(--sw-muted); }
 .qs-window-note strong { color:var(--sw-text);font-weight:500; }
-.qs-surge-box { margin-top:12px;padding:10px;border:1px solid var(--sw-border);border-radius:7px;background:var(--sw-panel); }
 .qc-controls .qc-surge-toggle { display:flex;align-items:center;gap:8px;margin:0;cursor:pointer; }
 .qc-controls input[type='checkbox'] { width:17px;height:17px;margin:0;accent-color:var(--sw-link); }
 .qc-assumptions { margin-top:10px;border-top:1px solid var(--sw-border);padding-top:8px; }
