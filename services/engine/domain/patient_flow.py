@@ -12,7 +12,7 @@ def non_dengue_share(facility, occupancy):
     return occupancy if share is None else share
 
 
-def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, activation_day=0, daily_groups=None, assignment_method="nearest"):
+def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, activation_day=0, daily_groups=None, assignment_method="nearest", divert_overflow=False):
     if len(weekly) != 4 or any(not math.isfinite(v) or v < 0 for v in weekly):
         raise ValueError("Four finite nonnegative QC forecast blocks required")
     if not facilities or not 0 <= admission_rate <= 1 or not 0 <= occupancy <= 1 or not 1 <= los <= 30 or not 0 <= delay <= 28 or not 0 <= activation_day <= 28:
@@ -62,13 +62,15 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             if promote:
                 s["cohorts"].append((day + los, promote))
         remaining, assignments = 0.0, []
+        first_routes = []
         by_id = {s["config"]["facilityId"]: s for s in states}
         local = {ident: {"firstAdmissionsToday": 0.0, "supportedPlacementsToday": 0.0,
-                         "holdingPlacementsToday": 0.0, "unplacedToday": 0.0} for ident in ids} if assignment_method == "first_hospital" else {}
+                         "holdingPlacementsToday": 0.0, "unplacedToday": 0.0} for ident in ids} if assignment_method == "first_hospital" or divert_overflow else {}
         plans = None
-        if assignment_method == "optimized" and groups:
+        if (assignment_method == "optimized" or divert_overflow) and groups:
             from .optimizer import daily_plan
-            plans = daily_plan(groups, states, admission_rate, occupancy, day, activation_day)
+            plans = daily_plan(groups, states, admission_rate, occupancy, day, activation_day,
+                               overflow_policy=assignment_method if divert_overflow else None)
         # Explicit group order, then caller-supplied approved distance order.
         # This is a nearest-capacity greedy baseline, not an optimizer or referral.
         for group_index, group in enumerate(groups):
@@ -100,10 +102,12 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             remaining += pending
             if local:
                 ident = group["facilityOrder"][0]
-                placed_here = routes.get(ident, {})
                 local[ident]["firstAdmissionsToday"] += group["cases"] * admission_rate
-                local[ident]["supportedPlacementsToday"] += placed_here.get("supportedPlacements", 0.0)
-                local[ident]["holdingPlacementsToday"] += placed_here.get("holdingPlacements", 0.0)
+                for destination, counts in routes.items():
+                    local[destination]["supportedPlacementsToday"] += counts["supportedPlacements"]
+                    local[destination]["holdingPlacementsToday"] += counts["holdingPlacements"]
+                    if divert_overflow:
+                        first_routes.append({"firstFacilityId": ident, "facilityId": destination, **counts})
                 local[ident]["unplacedToday"] += pending
                 continue
             assignments.extend({"barangayId": group["originId"], "facilityId": ident, **counts} for ident, counts in routes.items())
@@ -138,4 +142,6 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             "unresolvedToday": remaining, "cumulativeUnresolved": unmet_total,
             "supportedCensus": inpatient, "holdingCensus": holding, "balanceError": error, "facilities": snapshots,
             "assignments": assignments})
+        if divert_overflow:
+            days[-1]["firstHospitalRoutes"] = first_routes
     return days

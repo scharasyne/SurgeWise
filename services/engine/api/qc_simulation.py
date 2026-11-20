@@ -2,6 +2,7 @@
 from datetime import date, timedelta
 import json
 import hashlib
+import math
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -13,30 +14,27 @@ from ..repositories.forecast_runs import load_environmental_runs, FOLDER
 from ..domain.source_calendar import historical_window
 from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
 from ..repositories.facility import load_facilities
-from ..domain.bed_allotments import AllotmentFileError, MAX_FILE_BYTES, parse_allotments, read_table
+from ..domain.bed_allotments import AllotmentFileError, MAX_FILE_BYTES, capacity_mismatch, parse_allotments, read_table
 
 router = APIRouter(prefix="/v1")
 LIMITS = {
     "horizonDays": {"min": 1, "max": 28, "shortcuts": [7, 14, 28], "units": "elapsed days"},
     "extraCasesPerWeek": {"min": 0, "max": 100000, "units": "assumed added cases/week at full intensity"},
     "growthDays": {"min": 1, "max": 28, "units": "days"},
-    "normalCapacity": {"min": 1, "max": 10000, "units": "assumed beds/site"},
     "surgeCapacity": {"min": 0, "max": 10000, "units": "assumed supported surge beds/site"},
     "holdingCapacity": {"min": 0, "max": 10000, "units": "assumed holding spaces/site"},
     "hospitalizationRate": {"min": 0, "max": 1, "units": "assumed fraction"},
-    "baselineOccupancy": {"min": 0, "max": 1, "units": "assumed non-dengue occupancy fraction"},
+    "baselineOccupancy": {"min": 0, "max": 1, "units": "assumed staffed-bed share reserved for other care"},
     "lengthOfStayDays": {"min": 1, "max": 30, "units": "days"},
     "admissionDelayDays": {"min": 0, "max": 28, "units": "days"},
     "surgeActivationDay": {"min": 0, "max": 28, "units": "day index"},
 }
 
 
-class BedAllotment(StrictModel):
+class HospitalCapacity(StrictModel):
     """User-imported per-hospital assumption; never verified capacity or a vacancy."""
     facilityId: str = Field(pattern=r"^HOSP-\d{3}$")
-    dengueBeds: int = Field(strict=True, ge=0, le=10000)
-    nonDengueBeds: int = Field(strict=True, ge=0, le=10000)
-    holdingSpaces: int = Field(strict=True, ge=0, le=10000)
+    holdingSpaces: int | None = Field(default=None, strict=True, ge=0, le=10000)
     # Extra staffed beds on top of the hospital's beds; None keeps the scenario default (all for dengue).
     extraDengueBeds: int | None = Field(default=None, strict=True, ge=0, le=10000)
     extraNonDengueBeds: int | None = Field(default=None, strict=True, ge=0, le=10000)
@@ -44,12 +42,26 @@ class BedAllotment(StrictModel):
     nonDengueHoldingSpaces: int | None = Field(default=None, strict=True, ge=0, le=10000)
 
     @model_validator(mode="after")
+    def check_holding(self):
+        if (self.nonDengueHoldingSpaces or 0) > (self.holdingSpaces or 0):
+            raise ValueError("Non-dengue holding spaces cannot exceed the hospital's holding spaces.")
+        return self
+
+
+class BedAllotment(HospitalCapacity):
+    dengueBeds: int = Field(strict=True, ge=0, le=10000)
+    nonDengueBeds: int = Field(strict=True, ge=0, le=10000)
+
+    @model_validator(mode="after")
     def check_total(self):
         if not 1 <= self.dengueBeds + self.nonDengueBeds <= 10000:
             raise ValueError("Each hospital needs 1-10,000 dengue plus non-dengue beds.")
-        if (self.nonDengueHoldingSpaces or 0) > self.holdingSpaces:
-            raise ValueError("Non-dengue holding spaces cannot exceed the hospital's holding spaces.")
         return self
+
+
+class StaffedBedTotal(HospitalCapacity):
+    """A hospital-specific total that follows the scenario reservation percentage."""
+    staffedBeds: int = Field(strict=True, ge=1, le=10000)
 
 
 class QCInput(StrictModel):
@@ -58,11 +70,10 @@ class QCInput(StrictModel):
     mode: Literal["forecast", "hypothetical_shock"] = "forecast"
     extraCasesPerWeek: float = Field(default=0, ge=0, le=100000)
     growthDays: int = Field(default=14, strict=True, ge=1, le=28)
-    normalCapacity: int = Field(default=20, strict=True, ge=1, le=10000)
     surgeCapacity: int = Field(default=10, strict=True, ge=0, le=10000)
     holdingCapacity: int = Field(default=5, strict=True, ge=0, le=10000)
     hospitalizationRate: float = Field(default=.15, ge=0, le=1)
-    baselineOccupancy: float = Field(default=.75, ge=0, le=1)
+    baselineOccupancy: float = Field(default=.6, ge=0, le=1)
     lengthOfStayDays: int = Field(default=4, strict=True, ge=1, le=30)
     admissionDelayDays: int = Field(default=0, strict=True, ge=0, le=28)
     surgeActivationDay: int = Field(default=7, strict=True, ge=0, le=28)
@@ -70,7 +81,7 @@ class QCInput(StrictModel):
     allocationPolicy: AllocationPolicy = "first_hospital"
     arrivalSplitPolicy: ArrivalPolicy = "markov_preference"
     compareAllocation: bool = False
-    bedAllotments: list[BedAllotment] | None = Field(default=None, max_length=46)
+    bedAllotments: list[BedAllotment | StaffedBedTotal] | None = Field(default=None, max_length=46)
 
     @model_validator(mode="before")
     @classmethod
@@ -80,16 +91,14 @@ class QCInput(StrictModel):
         values = dict(data)
         if "arrivalSplitPolicy" in values:
             values.setdefault("allocationPolicy", "first_hospital" if values["arrivalSplitPolicy"] in ("markov_preference", "markov_proximity") else "nearest")
-        elif values.get("allocationPolicy") in ("nearest", "optimized"):
-            values["arrivalSplitPolicy"] = "nearest_three_equal"
         return values
 
     @model_validator(mode="after")
     def check_window(self):
         if self.bedAllotments and len({a.facilityId for a in self.bedAllotments}) != len(self.bedAllotments):
             raise ValueError("Each hospital may appear only once in bed allotments.")
-        if (self.arrivalSplitPolicy in MATRICES) != (self.allocationPolicy == "first_hospital"):
-            raise ValueError("Select first-hospital placement for a Markov choice policy.")
+        if self.allocationPolicy == "first_hospital" and self.arrivalSplitPolicy not in MATRICES:
+            raise ValueError("First-hospital placement requires a Markov choice policy.")
         if not 1 <= (self.endDate - self.startDate).days <= 28:
             raise ValueError("Select a 1–28 elapsed-day date range.")
         if not 2024 <= self.startDate.year <= 2035:
@@ -100,7 +109,7 @@ class QCInput(StrictModel):
 
 
 def facility_assumptions(params, hospitals):
-    """Uniform per-hospital capacity, replaced per hospital by any imported allotment."""
+    """Use each approved accredited total as the scenario bed stock; only its partition can change."""
     allotments = {a.facilityId: a for a in params.bedAllotments or []}
     if not set(allotments).issubset({h["id"] for h in hospitals}):
         raise HTTPException(422, detail={"code": "INVALID_BED_ALLOTMENT",
@@ -108,15 +117,27 @@ def facility_assumptions(params, hospitals):
     facilities = []
     for h in hospitals:
         a = allotments.get(h["id"])
-        if a is None:
-            facilities.append(FacilityAssumption(facilityId=h["id"], assumedDengueEligible=True,
-                normalCapacity=params.normalCapacity, surgeCapacity=params.surgeCapacity, holdingCapacity=params.holdingCapacity))
+        total = h["accreditedBeds"]
+        if a:
+            supplied = a.dengueBeds + a.nonDengueBeds if isinstance(a, BedAllotment) else a.staffedBeds
+            mismatch = capacity_mismatch(supplied, h)
+            if mismatch:
+                raise HTTPException(422, detail={"code": "INVALID_BED_ALLOTMENT", "message": mismatch})
+        if isinstance(a, BedAllotment):
+            other = a.nonDengueBeds
         else:
-            total = a.dengueBeds + a.nonDengueBeds
-            facilities.append(FacilityAssumption(facilityId=h["id"], assumedDengueEligible=True, normalCapacity=total,
-                surgeCapacity=params.surgeCapacity if a.extraDengueBeds is None else a.extraDengueBeds,
-                surgeNonDengueCapacity=a.extraNonDengueBeds or 0,
-                holdingCapacity=a.holdingSpaces - (a.nonDengueHoldingSpaces or 0), baselineOccupancy=a.nonDengueBeds / total))
+            dengue = math.floor(round(total * (1 - params.baselineOccupancy), 10) + 0.5)
+            other = total - dengue
+        holding = a.holdingSpaces if a and a.holdingSpaces is not None else params.holdingCapacity
+        # Nearest whole number to 2/5 of the holding total, with an explicit split taking priority.
+        dengue_holding = (2 * holding + 2) // 5
+        if a and a.nonDengueHoldingSpaces is not None:
+            dengue_holding = holding - a.nonDengueHoldingSpaces
+        facilities.append(FacilityAssumption(facilityId=h["id"], assumedDengueEligible=True,
+            normalCapacity=total, baselineOccupancy=other / total,
+            surgeCapacity=a.extraDengueBeds if a and a.extraDengueBeds is not None else params.surgeCapacity,
+            surgeNonDengueCapacity=(a.extraNonDengueBeds or 0) if a else 0,
+            holdingCapacity=dengue_holding))
     return facilities
 
 
@@ -128,7 +149,7 @@ async def bed_allotments(request: Request):
         raise HTTPException(413, detail={"code": "ALLOTMENT_FILE_TOO_LARGE", "message": "The file is larger than 1 MB."})
     content = await request.body()
     try:
-        hospitals = [{"id": h["id"], "name": h["name"]} for h in load_facilities()]
+        hospitals = load_facilities()
     except (OSError, ValueError, KeyError, TypeError):
         raise unavailable() from None
     try:
@@ -136,7 +157,7 @@ async def bed_allotments(request: Request):
     except AllotmentFileError as error:
         raise HTTPException(422, detail={"code": "ALLOTMENT_FILE_INVALID", "message": str(error)}) from None
     return {**result, "hospitalCount": len(hospitals), "measurementKind": "assumption",
-        "caveat": "Imported allotments are user planning assumptions, not verified staffed beds, vacancies or PhilHealth figures."}
+        "caveat": "Hospital totals come from the PhilHealth register. The split and temporary spaces are planning assumptions."}
 
 
 def select_reference(runs, start, end=None):
@@ -186,20 +207,13 @@ def workspace(params: QCInput):
         final = result["days"][-1]
         result["periodSummary"] = {"expectedCases": final["cumulativeCases"], "caseRange": final["caseRange"],
             "barangays": sorted(final["barangays"], key=lambda b: (-b["cumulativeCases"], b["barangayId"]))}
-        result["assumptions"] = "QC-wide historical case + lagged rainfall/temperature/humidity model; fixed prior annual barangay weights. Daily counts are uniformly disaggregated source-block forecasts. Zero initial dengue census, constant assumed non-dengue occupancy, configured admission fraction/delay and fixed LOS; observed source case totals are not observed hospital admissions. No user-selected infection origin or calibrated transmission model. All 46 registered hospitals are hypothetical eligible sites with separately assumed capacity. " + ("Markov first admissions retain demand at each chosen hospital." if params.allocationPolicy == "first_hospital" else "Minimum-distance capacity-constrained LP; holding solved after supported placements." if params.allocationPolicy == "optimized" else "Deterministic nearest-supported-capacity baseline, then finite holding.")
+        result["assumptions"] = "QC-wide historical case + lagged rainfall/temperature/humidity model; fixed prior annual barangay weights. Daily counts are uniformly disaggregated source-block forecasts. Zero initial dengue census, constant assumed non-dengue occupancy, configured admission fraction/delay and fixed LOS; observed source case totals are not observed hospital admissions. No user-selected infection origin or calibrated transmission model. All 46 hospitals are assumed eligible. Each site uses its PhilHealth accredited bed count as the scenario bed total, with an assumed reservation split and separate temporary holding spaces. " + placement_assumption(params)
         result["assumptions"] = result["assumptions"].replace("fixed prior annual barangay weights", "fixed XGBoost annual barangay burden forecast shares")
         result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is evaluated separately; weekly hotspot and spatial-allocation uncertainty are not validated."
         if params.compareAllocation and params.allocationPolicy == "first_hospital":
             result["firstAdmissionComparison"] = compare_first_admissions(model, result)
         elif params.compareAllocation:
-            counterpart = create_movie(model.model_copy(update={"allocationPolicy": "optimized" if params.allocationPolicy == "nearest" else "nearest"}))
-            def metrics(movie):
-                last = movie["days"][-1]
-                return {"cumulativeUnresolved": last["cumulativeUnresolved"], "holdingCensus": last["holdingCensus"],
-                    "maxNormalOccupancyPct": max(f["normalOccupancyPct"] for d in movie["days"] for f in d["facilities"]),
-                    "expectedPatientKm": sum((r["supportedPlacements"] + r["holdingPlacements"]) * r["distanceKm"] for d in movie["days"] for r in d["assignments"])}
-            result["allocationComparison"] = {params.allocationPolicy: metrics(result), counterpart["parameters"]["allocationPolicy"]: metrics(counterpart),
-                "caveat": "Identical cases, dates, capacity and clinical assumptions; LP maximizes supported placement then minimizes straight-line patient-km. These are modeled comparisons, not demonstrated real-world strain reductions."}
+            result["allocationComparison"] = compare_placements(model, result)
         result["simulationResultSha256"] = core_hash
         result.pop("resultSha256", None)
         result["resultSha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, allow_nan=False).encode()).hexdigest()
@@ -208,6 +222,39 @@ def workspace(params: QCInput):
         raise
     except (OSError, ValueError, KeyError, TypeError):
         raise unavailable() from None
+
+def placement_assumption(params):
+    if params.allocationPolicy == "first_hospital":
+        return "Modeled demand stays at the first hospital selected by the Markov probabilities."
+    if params.arrivalSplitPolicy in MATRICES:
+        policy = ("Optimization minimizes straight-line diversion distance for the overflow placed."
+                  if params.allocationPolicy == "optimized" else "Overflow tries hospitals in order of straight-line distance from the first hospital.")
+        return ("Each hospital serves its own first-choice demand up to available staffed capacity. "
+                "Overflow uses remaining staffed beds, then temporary holding spaces. " + policy)
+    return ("Capacity-constrained placement minimizes straight-line patient-km, with holding considered after staffed beds."
+            if params.allocationPolicy == "optimized" else "Placement follows distance to the nearest available staffed bed, then finite holding space.")
+
+
+def compare_placements(model, movie):
+    other_policy = "nearest" if model.allocationPolicy == "optimized" else "optimized"
+    other = create_movie(model.model_copy(update={"allocationPolicy": other_policy}))
+
+    def metrics(value):
+        days = value["days"]
+        patient_km = math.fsum(
+            d["expectedPlacementPatientKm"] if "expectedPlacementPatientKm" in d else
+            sum((r["supportedPlacements"] + r["holdingPlacements"]) * r["distanceKm"] for r in d["assignments"])
+            for d in days)
+        return {"cumulativeUnresolved": days[-1]["cumulativeUnresolved"], "holdingCensus": days[-1]["holdingCensus"],
+                "maxNormalOccupancyPct": max(f["normalOccupancyPct"] for d in days for f in d["facilities"]),
+                "expectedPatientKm": patient_km}
+
+    note = "Both policies use the same forecast, capacity and admission assumptions."
+    if model.arrivalSplitPolicy in MATRICES:
+        note += (" First-hospital probabilities are identical. Only overflow is redirected."
+                 " Patient-km includes the straight-line distance to the first hospital and any additional distance to placement.")
+    return {model.allocationPolicy: metrics(movie), other_policy: metrics(other), "caveat": note}
+
 
 def compare_first_admissions(model, movie):
     other_policy = "markov_proximity" if model.arrivalSplitPolicy == "markov_preference" else "markov_preference"

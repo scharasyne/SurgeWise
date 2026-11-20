@@ -18,7 +18,7 @@ from services.engine.repositories.seasonal_runs import approved_model, create_se
 @pytest.fixture(scope="module")
 def future():
     return future_workspace(FutureInput(startDate="2027-01-01", horizonDays=12,
-        surgeOnsetDay=3, growthDays=2, normalCapacity=1, surgeCapacity=0,
+        surgeOnsetDay=3, growthDays=2, surgeCapacity=0,
         holdingCapacity=0, baselineOccupancy=1))
 
 

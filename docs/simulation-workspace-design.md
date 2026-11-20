@@ -19,25 +19,11 @@ hospital network, source observations and API contracts are unchanged.
   and day in the start date for seasonal planning. Both modes retain their own
   settings. Hospital planning groups capacity, admissions and length of stay
   separately from the choice of hospital.
-- Since 2026-11-19 a second tab row splits the panel into **Scenario** and
-  **Bed capacity**. Bed capacity holds:
-  - **Bed totals** across all hospitals: total beds, dengue, non-dengue, holding
-    spaces and extra staffed beds (read-only);
-  - **Hospital-specific beds**: a search box suggests hospitals as you type
-    (arrow keys and Enter work). For the chosen hospital: total beds with a
-    dengue-share slider and dengue / non-dengue fields, and total holding spaces
-    with the same slider and fields. Editing a total keeps the dengue part;
-    editing one part sets the other to the remainder; the slider sets dengue to
-    that percentage of the total (rounded) and non-dengue to the rest. The
-    sliders move in 1% steps and keep the chosen percent while it still gives
-    the current counts. Total beds and Total holding spaces labels are bold.
-    **Use defaults** returns the hospital to the scenario-wide values;
-  - an import of a CSV/Excel file (template included) for many hospitals.
-    Importing replaces all hospital-specific values; a file with any invalid row
-    is rejected with row numbers and nothing is partly applied.
-  The scenario-wide defaults (20 beds, 75% non-dengue, 10 extra dengue beds from
-  day 7, 5 holding spaces) are no longer edited in the panel. Non-dengue holding
-  spaces are never used for dengue overflow. Both tab panels stay mounted.
+- In **Hospital planning**, Historical replay and Future forecast offer **Distance and preferred hospital** and **Distance only** with every overflow setting. Optimize placements across hospitals preserves each first-choice arrival that fits in a staffed bed and routes excess to remaining capacity. [First-admission and overflow methods](first-admission-matrix.md#using-the-chain-in-the-simulation)
+- Under **Bed capacity**, both simulation modes use each hospital’s accredited bed count in the 30 September 2026 PhilHealth register as its fixed simulation total. Actual staffed capacity, occupancy and vacancies remain unknown. The default dengue reservation is 40% rounded to the nearest whole bed at each hospital. Other care receives the remainder. Across 46 hospitals this gives 3,756 dengue and 5,633 other-care beds.
+- The starting assumption adds five temporary holding spaces at each hospital, two for dengue overflow and three for other care. Holding spaces are separate from the accredited bed stock and activated surge beds. The common holding total and the hospital-specific holding counts are editable.
+- Choose a hospital to edit the division of beds or holding spaces. The total beside **Accredited beds** is read-only. Changing one side of the bed split assigns the balance to the other. **Use defaults** restores that hospital’s scenario settings.
+- The repository contains the [46 initial allocations](../apps/web/public/data/qc-initial-bed-reservations.csv). **Download template** exports the current settings. CSV and XLSX imports use a facility ID or exact hospital name. If supplied, `accredited_beds` (legacy alias `staffed_beds`) and the sum of the split must match the registered total. An explicit split takes priority over the scenario percentage. Rows with only a matching total follow the percentage. Importing a valid file replaces hospital-specific values. Row errors prevent the entire import from applying.
 - Playback retains play/pause, restart, previous/next day, speed, final-day jump
   and scrubbing. A peak-demand shortcut uses the backend's saved peak day; it is
   shown after playback starts. It never derives a competing peak in the browser.

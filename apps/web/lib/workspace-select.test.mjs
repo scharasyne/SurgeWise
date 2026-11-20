@@ -48,3 +48,14 @@ test('Escape cancels without reaching the explorer Escape handler; Home/End, Tab
   h.key('n'); assert.match(h.trigger().props['aria-activedescendant'], /option-1$/);
   h.key('Tab'); assert.equal(h.trigger().props['aria-expanded'], false); assert.equal(h.value, 'QC');
 });
+
+test('clicking an option commits and suppresses a surrounding label’s default activation', () => {
+  const h = harness();
+  h.trigger().props.onClick();
+  const option = h.tree().props.children[1].props.children[1];
+  const event = new Event('click', { cancelable: true });
+  option.props.onClick(event);
+  assert.ok(event.defaultPrevented);
+  assert.equal(h.value, 'NCR');
+  assert.equal(h.trigger().props['aria-expanded'], false);
+});

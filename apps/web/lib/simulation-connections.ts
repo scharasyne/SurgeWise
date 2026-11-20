@@ -48,24 +48,31 @@ export function simulationConnections(context: MovieContext, snapshot: MovieDay 
     const id = options.hospitalHotspot.barangayId, facilityId = options.selectedHospital;
     if (!result.has(`proximity:${id}:${facilityId}`)) add('hospital-context', id, facilityId);
   }
-  // First-hospital runs store the origin mixture once and each day's placements
-  // at its hospital. Display the three largest flows for each selected place.
+  // A diversion carries the origin mix of the first hospital to the receiving site.
   if (context.firstAdmissionOriginShares && snapshot) {
-    const sites = snapshot.facilities.filter(f => options.focus !== 'hospital' || f.facilityId === options.selectedHospital);
-    const flows = new Map<string, { b: string; h: string; patients: number; held: number }[]>();
-    for (const site of sites) {
-      const supported = site.supportedPlacementsToday ?? 0, held = site.holdingPlacementsToday ?? 0;
-      if (supported + held === 0) continue;
-      for (const [b, fraction] of Object.entries(context.firstAdmissionOriginShares[site.facilityId] ?? {})) {
+    const routes = snapshot.firstHospitalRoutes ?? snapshot.facilities.map(site => ({
+      firstFacilityId: site.facilityId, facilityId: site.facilityId,
+      supportedPlacements: site.supportedPlacementsToday ?? 0, holdingPlacements: site.holdingPlacementsToday ?? 0,
+    }));
+    type Flow = { b: string; h: string; patients: number; held: number };
+    const flows = new Map<string, Map<string, Flow>>();
+    for (const route of routes) {
+      const h = route.facilityId, total = route.supportedPlacements + route.holdingPlacements;
+      if (total <= 0 || (options.focus === 'hospital' && h !== options.selectedHospital)) continue;
+      for (const [b, fraction] of Object.entries(context.firstAdmissionOriginShares[route.firstFacilityId] ?? {})) {
         if (options.focus !== 'hospital' && !candidates.has(b)) continue;
-        const key = options.focus === 'hospital' ? site.facilityId : b;
-        const group = flows.get(key) ?? [];
-        group.push({ b, h: site.facilityId, patients: (supported + held) * fraction, held: held * fraction });
+        const key = options.focus === 'hospital' ? h : b;
+        const peer = options.focus === 'hospital' ? b : h;
+        const group = flows.get(key) ?? new Map<string, Flow>();
+        const flow = group.get(peer) ?? { b, h, patients: 0, held: 0 };
+        flow.patients += total * fraction;
+        flow.held += route.holdingPlacements * fraction;
+        group.set(peer, flow);
         flows.set(key, group);
       }
     }
     for (const group of flows.values()) {
-      const largest = group.sort((a, b) => b.patients - a.patients).slice(0, 3);
+      const largest = [...group.values()].sort((a, b) => b.patients - a.patients).slice(0, 3);
       for (const row of largest) add('placement', row.b, row.h, row.patients, row.held);
     }
   }

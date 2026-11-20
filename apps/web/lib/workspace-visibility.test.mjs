@@ -186,7 +186,7 @@ const controlFixture = {
   admissionDelayDays: 0,
   surgeActivationDay: 0,
   allocationPolicy: 'nearest',
-  arrivalSplitPolicy: 'nearest_three_equal',
+  arrivalSplitPolicy: 'markov_preference',
 };
 
 test('the initial view reserves the map, with one hidden contextual panel and an independent timeline', () => {
@@ -202,19 +202,28 @@ test('the initial view reserves the map, with one hidden contextual panel and an
 
 test('imported allotments replace the default split only for the hospitals they list', () => {
   // Constructed planning assumptions, not source records.
-  const hospitals = [{ id: 'HOSP-614', name: 'Alpha Hospital' }, { id: 'HOSP-615', name: 'Beta Hospital' }];
+  const hospitals = [{ id: 'HOSP-614', name: 'Alpha Hospital', accreditedBeds: 40 }, { id: 'HOSP-615', name: 'Beta Hospital', accreditedBeds: 20 }];
   const bedAllotments = [{ facilityId: 'HOSP-614', dengueBeds: 30, nonDengueBeds: 10, holdingSpaces: 7 }];
   const html = renderToStaticMarkup(renderWorkspace(1, { 3: { ...controlFixture, bedAllotments }, 4: { barangays: ['fixture-hotspot', 'outside-top-ten'].map(id => ({ id, name: id, nearestHospitals: [] })), hospitals }, 23: 'scenario' }));
   assert.ok(html.includes('Import CSV or Excel') && html.includes('Download template'));
   assert.ok(html.includes('1 hospital has its own values · 1 use the defaults'));
   assert.ok(html.includes('Bed totals') && html.includes('Hospital to adjust') && !html.includes('Default beds per hospital'));
   // Network totals: HOSP-614 imported (30/10/7, default extra 10+0) + HOSP-615 default (5/15/5, extra 10+0).
-  for (const [label, value] of [['All 2 hospitals', '60 beds'], ['For dengue', '35'], ['For non-dengue', '25'], ['Holding spaces', '12'], ['Extra staffed beds', '20']])
+  for (const [label, value] of [['All 2 hospitals', '60 beds'], ['Reserved for dengue', '35'], ['Reserved for other care', '25'], ['Holding spaces', '12'], ['Extra staffed beds', '20']])
     assert.ok(html.includes(`<dt>${label}</dt><dd>${value}</dd>`), label);
-  assert.match(html.replace(/<!-- -->/g, ''), /<th scope="row">Alpha Hospital<\/th><td>40<\/td><td>30<\/td><td>10<\/td><td>7<\/td>/);
+  assert.match(html.replace(/<!-- -->/g, ''), /<th scope="row">Alpha Hospital<\/th><td>40<\/td><td>30<\/td><td>10<\/td>/);
   const plain = renderToStaticMarkup(renderWorkspace(1, { 3: controlFixture, 4: { barangays: ['fixture-hotspot', 'outside-top-ten'].map(id => ({ id, name: id, nearestHospitals: [] })), hospitals }, 23: 'scenario' }));
   assert.ok(plain.includes('Import CSV or Excel') && !plain.includes('Clear all hospital-specific values'));
-  assert.ok(plain.includes('<dt>For dengue</dt><dd>10</dd>'));
+  assert.ok(plain.includes('<dt>Reserved for dengue</dt><dd>15</dd>'));
+});
+
+test('capacity table shows whole starting reservations for totals-only and unlisted hospitals', () => {
+  const hospitals = [{ id: 'HOSP-614', name: 'Alpha', accreditedBeds: 85 }, { id: 'HOSP-615', name: 'Beta', accreditedBeds: 20 }];
+  const controls = { ...controlFixture, baselineOccupancy: .9, bedAllotments: [{ facilityId: 'HOSP-614', staffedBeds: 85 }] };
+  const html = renderToStaticMarkup(renderWorkspace(1, { 3: controls, 4: { barangays: ['fixture-hotspot', 'outside-top-ten'].map(id => ({ id, name: id, nearestHospitals: [] })), hospitals }, 23: 'scenario' })).replace(/<!-- -->/g, '');
+  assert.ok(html.includes('<th scope="row">Alpha</th><td>85</td><td>9</td><td>76</td>'));
+  assert.ok(html.includes('<th scope="row">Beta</th><td>20</td><td>2</td><td>18</td>'));
+  assert.ok(html.includes('<dt>Reserved for dengue</dt><dd>11</dd>'));
 });
 
 test('both modes and scenario assumptions remain accessible in Scenario while export has one Results entry point', () => {
@@ -524,6 +533,17 @@ test('each mode restores its edited dates and input edits invalidate playback re
   assert.equal(states.get(3).endDate, '2025-07-08');
   assert.equal(element(render(), node => node.key === '7' && node.type === 'button').props['aria-pressed'], true);
   assert.deepEqual(requests, []);
+  function checkOptimizedChoice() {
+    const choice = () => element(render(), node => node.props?.label === 'How patients choose a hospital');
+    const overflow = () => element(render(), node => node.props?.label === 'When a hospital is full');
+    choice().props.onChange('markov_proximity');
+    overflow().props.onChange('optimized');
+    assert.equal(choice().props.value, 'markov_proximity');
+    assert.deepEqual(choice().props.options.map(o => o.label), ['Distance and preferred hospital', 'Distance only']);
+    choice().props.onChange('markov_preference');
+    assert.equal(overflow().props.value, 'optimized');
+  }
+  checkOptimizedChoice();
   changeStart('');
   assert.equal(element(render(), node => node.props?.type === 'submit').props.disabled, true);
   assert.equal(element(render(), node => node.props?.['aria-label'] === 'Duration').props.value, 7);
@@ -545,6 +565,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
     scrollTo: (options) => scrolls.push(options),
   };
   await switchMode('future');
+  checkOptimizedChoice();
   assert.equal(states.get(3).startDate, '2026-11-16');
   changeStart('2026-12-01');
   await switchMode('historical');

@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, model_validator
 
-from .qc_simulation import QCInput, LIMITS, compare_first_admissions, facility_assumptions
+from .qc_simulation import QCInput, LIMITS, compare_first_admissions, compare_placements, facility_assumptions, placement_assumption
 from .research import unavailable
 from .outbreak import OutbreakInput, inputs, create_movie
 from ..repositories.seasonal_runs import create_seasonal_run, approved_model, FOLDER, SeasonalArtifactError
@@ -122,21 +122,15 @@ def future_workspace(params: FutureInput):
             "rangeInterpretation": "Experimental season-matched historical case error ranges. Bed ranges are low/high case-demand sensitivity conditional on fixed admission fraction, LOS, delay, catchments and capacity; observed bed forecast accuracy is unknown.",
             "periodSummary": {"expectedCases": final["cumulativeCases"], "caseRange": final["caseRange"],
                 "barangays": sorted(final["barangays"], key=lambda b: (-b["cumulativeCases"], b["barangayId"]))},
-            "assumptions": "New seasonal baseline for the requested future dates; historical weather analogs and a configured surge onset/ramp/multiplier. Fixed prior annual spatial weights, zero initial dengue census, fixed assumed q/LOS/delay and non-dengue occupancy. All 46 hospitals are hypothetical eligible sites. Required beds are unconstrained case-to-cohort demand; modeled placement/overflow uses finite assumed normal/surge/holding resources. No current vacancies are inferred.",
+            "assumptions": "New seasonal baseline for the requested future dates; historical weather analogs and a configured surge onset/ramp/multiplier. Fixed prior annual spatial weights, zero initial dengue census, fixed assumed q/LOS/delay and non-dengue occupancy. All 46 hospitals are assumed eligible. Their PhilHealth accredited counts set the scenario bed totals. Reservations and temporary holding spaces are planning assumptions. Required beds are unconstrained case-to-cohort demand; modeled placement/overflow uses finite assumed normal/surge/holding resources. No current vacancies are inferred.",
             "simulationResultSha256": movie["resultSha256"]}
         result["assumptions"] = result["assumptions"].replace("Fixed prior annual spatial weights", "Fixed XGBoost annual barangay burden forecast shares")
+        result["assumptions"] += " " + placement_assumption(params)
         result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is not validated weekly hotspot detection; spatial uncertainty is not included in city case ranges."
         if params.compareAllocation and params.allocationPolicy == "first_hospital":
             result["firstAdmissionComparison"] = compare_first_admissions(model, movie)
         elif params.compareAllocation:
-            other = create_movie(model.model_copy(update={"allocationPolicy": "optimized" if params.allocationPolicy == "nearest" else "nearest"}))
-            def metrics(value):
-                last = value["days"][-1]
-                return {"cumulativeUnresolved": last["cumulativeUnresolved"], "holdingCensus": last["holdingCensus"],
-                    "maxNormalOccupancyPct": max(f["normalOccupancyPct"] for d in value["days"] for f in d["facilities"]),
-                    "expectedPatientKm": sum((r["supportedPlacements"] + r["holdingPlacements"]) * r["distanceKm"] for d in value["days"] for r in d["assignments"])}
-            result["allocationComparison"] = {params.allocationPolicy: metrics(movie), other["parameters"]["allocationPolicy"]: metrics(other),
-                "caveat": "Identical seasonal forecasts, surge, capacities and clinical assumptions. Placement policy changes; no real-world benefit or reduction in infections is claimed."}
+            result["allocationComparison"] = compare_placements(model, movie)
         result.pop("resultSha256", None)
         result["resultSha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, allow_nan=False).encode()).hexdigest()
         return result

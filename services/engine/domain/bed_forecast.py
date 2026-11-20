@@ -97,7 +97,7 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
         day["bedForecast"]["hospitalBedsRequired"] = sum(f["staffedBedsRequired"] for f in forecasts)
         day["bedForecast"]["hospitalBedsShort"] = sum(f["additionalStaffedBedsNeeded"] for f in forecasts)
         day["bedForecast"]["hospitalsShort"] = sum(f["additionalStaffedBedsNeeded"] > 0 for f in forecasts)
-        if "firstAdmissionOriginShares" in context:
+        if config.get("allocationPolicy") == "first_hospital" and "firstAdmissionOriginShares" in context:
             network = day["bedForecast"]
             network["pooledAdditionalStaffedBedsNeeded"] = network["additionalStaffedBedsNeeded"]
             network["additionalStaffedBedsNeeded"] = network["hospitalBedsShort"]
