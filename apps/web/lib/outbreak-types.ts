@@ -60,12 +60,16 @@ export interface BedForecast {
   assumedSupportedDengueCapacity: number; additionalStaffedBedsNeeded: number; additionalBedsUpperScenario: number | null;
   rangeKind: string;
 }
+export interface HospitalChoice {
+  facilityId: string; share: number; expectedAdmissions: number;
+  breakdown?: { distanceKm: number; proximityShare: number; preferenceMultiplier: number };
+  peakStaffedBedsRequired: number; baselinePeakStaffedBedsRequired: number; additionalStaffedBedsDueToSurge: number;
+}
 export interface BedProjection extends BedForecast {
   peakDemandUtilizationPct?: number | null;
   baselinePeakStaffedBedsRequired?: number; peakAdditionalStaffedBedsDueToSurge?: number;
   arrivalSplitPolicy?: ArrivalPolicy;
-  placePeaks?: { barangayId: string; hospitals: { facilityId: string; share: number; expectedAdmissions: number;
-    peakStaffedBedsRequired: number; baselinePeakStaffedBedsRequired: number; additionalStaffedBedsDueToSurge: number }[] }[];
+  placePeaks?: { barangayId: string; hospitals: HospitalChoice[] }[];
   peakDate: string; peakDayIndex: number; peakLowerStaffedBedsRequired: number | null; peakUpperStaffedBedsRequired: number | null;
   peakAdditionalStaffedBedsNeeded: number; initialCensusAssumption: string;
   hospitalPeaks: { facilityId: string; peakStaffedBedsRequired: number; baselinePeakStaffedBedsRequired?: number; additionalStaffedBedsDueToSurge?: number; peakDemandUtilizationPct?: number | null }[];

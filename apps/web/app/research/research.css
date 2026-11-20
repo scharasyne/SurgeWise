@@ -259,3 +259,53 @@
 }
 html:has(.rs-page) { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html:has(.rs-page) { scroll-behavior: auto; } }
+
+/* One-step first admissions and staffed-bed demand */
+.rs-admission-steps { display: grid; grid-template-columns: repeat(5, 1fr); margin: 0 0 14px; padding: 0; list-style: none; border: 1px solid #b4d9d2; border-radius: 10px; background: #edf7f4; }
+.rs-admission-steps li { position: relative; padding: 14px 16px; }
+.rs-admission-steps svg { color: var(--rs-accent-dark); }
+.rs-admission-steps strong, .rs-admission-steps small { display: block; }
+.rs-admission-steps strong { margin: 5px 0 2px; font-size: 12px; }
+.rs-admission-steps small { line-height: 1.4; color: var(--rs-muted); }
+.rs-admission-steps .rs-flow-arrow { position: absolute; top: 17px; right: -4px; }
+.rs-admission-methods h3 { margin-top: 0; }
+.rs-origin-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 18px; margin: 18px 0 12px; }
+.rs-origin-toolbar .rs-control { min-width: min(255px, 100%); }
+.rs-example-button { padding: 5px 0; border: 0; background: transparent; color: var(--rs-accent-dark); cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.rs-choice-reading { padding: 10px 14px; border-left: 3px solid var(--rs-accent); background: #edf7f4; font-size: 12px; }
+.rs-choice-reading strong { color: var(--rs-accent-dark); }
+.rs-share-chart { margin: 20px 0 0; }
+.rs-share-chart figcaption strong, .rs-share-chart figcaption span { display: block; }
+.rs-share-chart figcaption span { color: var(--rs-muted); font-size: 11px; }
+.rs-share-chart table, .rs-stay-table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.rs-share-chart table { table-layout: fixed; }
+.rs-share-chart th, .rs-share-chart td, .rs-stay-table th, .rs-stay-table td { padding: 9px 10px; border-bottom: 1px solid var(--rs-line); text-align: left; line-height: 1.45; }
+.rs-share-chart thead th, .rs-stay-table thead th { color: var(--rs-muted); background: var(--rs-soft); font-weight: 500; }
+.rs-share-chart th:first-child { width: 48%; }
+.rs-share-chart th[scope=row] { font-size: 11px; font-weight: 500; overflow-wrap: anywhere; }
+.rs-share-chart small { display: block; color: var(--rs-muted); }
+.rs-share-track { display: block; height: 5px; margin-top: 4px; overflow: hidden; border-radius: 3px; background: #e7eff0; }
+.rs-share-track i { display: block; height: 100%; background: #64889d; }
+.rs-share-chart td:last-child .rs-share-track i { background: var(--rs-accent); }
+.rs-destinations { min-width: 540px; }
+.rs-admission-methods caption { padding-bottom: 6px; text-align: left; color: var(--rs-muted); font-size: 11px; }
+.rs-page .rs-matrix-blocks tbody th { position: static; }
+.rs-math, .rs-allocation-evidence { font-size: 12px; }
+.rs-equation { margin-top: 8px; padding: 8px 12px; border-radius: 5px; background: var(--rs-soft); color: var(--rs-ink); font-family: ui-monospace, monospace; line-height: 1.6; }
+.rs-admission-methods dl { margin: 10px 0 0; }
+.rs-admission-methods dt { margin-top: 8px; font-weight: 600; }
+.rs-admission-methods dd { margin: 0; color: var(--rs-muted); }
+.rs-admission-methods dd a { text-decoration: underline; text-underline-offset: 2px; }
+.rs-stay-table td, .rs-stay-table th:not(:first-child) { text-align: center; }
+.rs-stay-table tbody th { font-weight: 500; }
+.rs-stay-table tbody tr:last-child { color: var(--rs-accent-dark); background: #edf7f4; }
+.rs-admission-methods .rs-link { margin-top: 12px; }
+@media (max-width: 760px) {
+  .rs-admission-steps { grid-template-columns: 1fr; padding: 8px 14px; }
+  .rs-admission-steps li { display: grid; grid-template-columns: 20px minmax(102px, 1fr) 1.3fr; align-items: center; gap: 8px; padding: 9px 0; }
+  .rs-admission-steps li + li { border-top: 1px solid #cee3dd; }
+  .rs-admission-steps strong { margin: 0; }
+  .rs-admission-steps .rs-flow-arrow { display: none; }
+  .rs-share-chart th, .rs-share-chart td { padding: 8px 5px; }
+  .rs-share-chart th:first-child { width: 43%; }
+}

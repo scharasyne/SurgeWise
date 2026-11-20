@@ -5,6 +5,7 @@ import io
 import math
 from typing import Literal
 
+from ..domain.outbreak import distance_km
 from ..upri_data import ROOT
 from .facility import HOSPITAL_SHA256
 
@@ -53,3 +54,21 @@ def load_matrix(policy, barangays, facility_ids, geometry_hash):
     if favorites.keys() != shares.keys() or any(h and h not in hospitals for h in favorites.values()):
         raise ValueError("Emergency preference evidence does not match the network")
     return shares, favorites
+
+
+def add_choice_breakdowns(place_peaks, context, proximity_shares, policy):
+    """Explain the saved destination probabilities using the pinned distance-only matrix."""
+    origins = {b["id"]: b for b in context["barangays"]}
+    destinations = {h["id"]: h["coordinates"] for h in context["hospitals"]}
+    for place in place_peaks:
+        origin = origins[place["barangayId"]]
+        baseline = dict(proximity_shares[origin["id"]])
+        preferred = origin["mappedFavoriteHospitalId"] if policy == "markov_preference" else None
+        for choice in place["hospitals"]:
+            hospital = choice["facilityId"]
+            choice["breakdown"] = {
+                "distanceKm": distance_km(origin["coordinates"], destinations[hospital]),
+                "proximityShare": baseline[hospital],
+                # The reviewed preference matrix above uses this relative weight.
+                "preferenceMultiplier": 1.5 if hospital == preferred else 1.0,
+            }

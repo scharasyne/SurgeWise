@@ -518,3 +518,29 @@
 .qc-bed-use .qs-inspector-facts dd { font-size:13px;max-width:125px; }
 .qc-bed-use p { color:var(--sw-muted);font-size:11px;line-height:1.85;margin:10px 0 0; }
 .qs-workspace[data-reduced-motion='true'] *, .qs-workspace[data-reduced-motion='true'] *::before,.qs-workspace[data-reduced-motion='true'] *::after { animation:none!important;transition:none!important; }
+
+.qs-choice-control { margin:12px 0 16px;padding:10px 12px;background:var(--sw-panel);border:1px solid var(--sw-border);border-radius:7px; }
+.qs-choice-control label { display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--sw-text-strong);cursor:pointer; }
+.qs-choice-control input { margin:0;accent-color:var(--sw-link);width:16px;height:16px; }
+.qs-choice-control small { display:block;margin:4px 0 0 24px;line-height:1.5; }
+.qs-probability-picker { margin-top:9px; }
+.qs-probability-picker small { margin:5px 0 0; }
+.qs-choice-hit { pointer-events:stroke;cursor:pointer;outline:none; }
+.qs-choice-active line:nth-child(2),.qs-flow-overlay g:focus-within line:nth-child(2) { stroke-width:3.5;stroke-dasharray:none; }
+.qs-choice-popup { z-index:4;pointer-events:none; }
+.qs-choice-popup .maplibregl-popup-content { padding:10px 12px;border-radius:7px;background:var(--sw-card);color:var(--sw-text-strong);font:12px/1.4 'DM Sans',sans-serif;pointer-events:none; }
+.qs-choice-popup strong { display:block;font-size:12px;line-height:1.35; }
+.qs-choice-popup p { margin:3px 0 7px; }
+.qs-choice-popup dl { display:grid;grid-template-columns:1fr auto;gap:2px 12px;margin:0 0 6px; }
+.qs-choice-popup dd { margin:0;text-align:right;font-variant-numeric:tabular-nums; }
+.qs-choice-popup dt:last-of-type,.qs-choice-popup dd:last-child { font-weight:650;color:#574483; }
+.qs-choice-popup small { display:block;line-height:1.35; }
+@media (max-width:700px) {
+  /* The open inspector leaves a shallow map. Keep the entire tapped breakdown in view. */
+  .outbreak-map .qs-choice-popup {
+    top:4px;right:6px;left:auto;z-index:6;transform:none !important;
+    width:min(230px,calc(100% - 12px));max-height:calc(100% - 8px);
+  }
+  .qs-choice-popup .maplibregl-popup-tip { display:none; }
+  .qs-choice-popup .maplibregl-popup-content { min-height:0;overflow-y:auto;pointer-events:auto; }
+}

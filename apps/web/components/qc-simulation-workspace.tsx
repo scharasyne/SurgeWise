@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 import type {
   BedAllotmentImport,
-  BedForecast,
+  BedForecast, HospitalChoice, MovieBarangay, MovieHospital,
   MovieContext,
   QCControls,
   QCWorkspaceResult,
@@ -52,6 +52,7 @@ import {
   validateDateWindow,
 } from '@/lib/playback';
 import { addDateDays, CASE_BANDS } from '@/lib/case-bands';
+import { probabilityFacts, probabilityNote } from '@/lib/hospital-probabilities';
 import { SIMULATION_LINES } from '@/lib/simulation-connections';
 import WorkspaceLoader from '@/components/workspace-loader';
 import {
@@ -132,6 +133,18 @@ const GLOSSARY = {
 } as const;
 function InspectorFacts({ rows }: { rows: Array<[string, ReactNode]> }) {
   return <dl className="qs-inspector-facts">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
+}
+function HospitalProbabilityPicker({ origin, choices, hospitals, distanceOnly }: {
+  origin: MovieBarangay; choices: HospitalChoice[]; hospitals: MovieHospital[]; distanceOnly: boolean;
+}) {
+  const [id, setId] = useState('');
+  const choice = choices.find(row => row.facilityId === id);
+  return <div className="qs-probability-picker">
+    <WorkspaceSelect label="Inspect probability by hospital" value={id} onChange={setId}
+      options={[{ value: '', label: 'Inspect by hospital name' }, ...hospitals.map(h => ({ value: h.id, label: h.name }))]} />
+    {choice && <div role="status"><InspectorFacts rows={probabilityFacts(choice)} />
+      <small>{probabilityNote(choice, origin, distanceOnly)}</small></div>}
+  </div>;
 }
 const percent = (value: number | undefined | null) => value == null ? 'Unavailable' : `${format(value)}%`;
 function BedUse({ forecast, day, occupancyPct }: { forecast?: BedForecast; day: number; occupancyPct?: number }) {
@@ -227,6 +240,7 @@ export default function QCSimulationWorkspace() {
   const [numberDrafts, setNumberDrafts] = useState<Partial<Record<keyof QCControls, string>>>({});
   const [startDateDraft, setStartDateDraft] = useState<string | null>(null);
   const [usesWeather, setUsesWeather] = useState(true);
+  const [showProbabilities, setShowProbabilities] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'scenario' | 'capacity'>('scenario');
   const [allotmentImport, setAllotmentImport] = useState<{ status: 'idle' | 'loading' | 'error' | 'done'; fileName?: string; message?: string; result?: BedAllotmentImport }>({ status: 'idle' });
   const [capacityHospital, setCapacityHospital] = useState('');
@@ -273,6 +287,7 @@ export default function QCSimulationWorkspace() {
       setLoading(true);
       setData(null);
       setContext(null);
+      setShowProbabilities(false);
       setNumberDrafts({});
       setStartDateDraft(null);
       setControls(values ?? null);
@@ -555,6 +570,7 @@ export default function QCSimulationWorkspace() {
       ]
     : nearest;
   function inspectHospital(id: string) {
+    setShowProbabilities(false);
     setHospital(id);
     setShowHotspotDetails(false);
     setPanelView('hospitals');
@@ -2298,10 +2314,22 @@ export default function QCSimulationWorkspace() {
               </section>
             </div>
           </section>);
+  const probabilityPlace = firstHospital && showProbabilities && showHotspotDetails && showHospitals && !hospital
+    ? selectedBedProjection : undefined;
   const selectedPlace = area && !inspectedHospital && (showHotspotDetails || panelView === 'hospitals') ? (
     <section className="qs-inspector-block" aria-label="Selected hotspot details" aria-live="polite">
       {selectedShortfall != null && <p className="qs-inspector-note"><strong>{formatFractional(selectedShortfall)} expected beds short</strong> attributable to this barangay on day {day}. Each hospital’s gap is shared in proportion to its modeled arrivals.</p>}
       <div className="qs-place-heading"><span>{markerHotspotIds?.includes(area.id) ? 'Annual high-burden candidate' : 'Selected barangay · outside the top candidates'}</span><h3>{area.name}</h3></div>
+      {firstHospital && <div className="qs-choice-control">
+        <label><input type="checkbox" checked={!!probabilityPlace} disabled={!selectedBedProjection}
+          onChange={event => {
+            setShowProbabilities(event.target.checked);
+            if (event.target.checked) { setShowHospitals(true); setShowHotspotDetails(true); }
+          }} /> Show all {context?.hospitals.length} hospital probabilities</label>
+        <small>{selectedBedProjection ? 'Hover, tap or focus an arrow to see how its probability was calculated.' : 'Advance the timeline to see first-hospital choices.'}</small>
+        {probabilityPlace && context && <HospitalProbabilityPicker key={area.id} origin={area} choices={probabilityPlace.hospitals}
+          hospitals={context.hospitals} distanceOnly={scenario?.bedProjection?.arrivalSplitPolicy === 'markov_proximity'} />}
+      </div>}
       <h4>Projected cases</h4>
       <InspectorFacts rows={[
         ['Full selected window', format(selectedPeriod?.cumulativeCases)],
@@ -2429,7 +2457,7 @@ export default function QCSimulationWorkspace() {
           <div className="qs-map-stage">
             <OutbreakMap context={context} snapshot={snapshot ?? null} maximum={data?.mapScaleMaxDailyCases ?? 1}
               selected={selected} selectedHospital={hospital} hotspotIds={markerHotspotIds} rankedHotspotIds={rankedHotspotIds}
-              hospitalHotspot={hospitalHotspot} caseMetric={caseMetric} caseColorMaximum={caseColorMaximum}
+              probabilityPlace={probabilityPlace} distanceOnly={scenario?.bedProjection?.arrivalSplitPolicy === 'markov_proximity'} hospitalHotspot={hospitalHotspot} caseMetric={caseMetric} caseColorMaximum={caseColorMaximum}
               connectionFocus={hospital ? 'hospital' : showHotspotDetails ? 'barangay' : null} inspectionVersion={hospitalInspection}
               animationDurationMs={Math.min(650, 800 / speed)} onSelect={inspectHotspot} onHospital={inspectHospital}
               playing={playing} reducedMotion={reduced} showLinks={links} view={view} buildings3d={buildings3d}
@@ -2503,12 +2531,12 @@ export default function QCSimulationWorkspace() {
                   <span><i className="qc-selected-barangay" aria-hidden="true" />Selected barangay boundary</span>
                 </div>
                 <div className="qc-line-key">
-                  {[SIMULATION_LINES.proximity,
+                  {[...(probabilityPlace ? [SIMULATION_LINES.probability] : [SIMULATION_LINES.proximity,
                     ...(scenario ? [context?.firstAdmissionOriginShares ? { ...SIMULATION_LINES.placement, label: 'Up to three largest placement flows per selection' } : SIMULATION_LINES.placement, SIMULATION_LINES.holding] : []),
-                    SIMULATION_LINES['hospital-context'],
+                    SIMULATION_LINES['hospital-context']]),
                     ...(snapshot?.expansionRing?.length ? [SIMULATION_LINES.front] : []),
                   ].map(line => <span key={line.kind} data-line-kind={line.kind}><i aria-hidden="true" style={{ borderTop: `${line.width}px ${line.dash.length ? 'dashed' : 'solid'} ${line.color}` }} />{line.label}</span>)}
-                  <small>Click a marker to reveal its links. All hospital connections in Layers adds overview lines. Chevrons point from barangays toward hospitals.</small>
+                  <small>Click a marker to reveal its links. Chevrons point from barangays toward hospitals.</small>
                   {!scenario && <small>Modeled placement lines appear only after advancing to a day with saved placements.</small>}
                 </div>
                 <details className="qc-legend-more">
@@ -2721,7 +2749,7 @@ export default function QCSimulationWorkspace() {
             <label className="qs-layer"><span><MapPin size={17} /><span>Hospital pins<small>PhilHealth inventory · provisional points</small></span></span><input type="checkbox" checked={showHospitals} onChange={event => setShowHospitals(event.target.checked)} /></label>
             <label className="qs-layer"><span><Layers size={17} /><span>3D view<small>Generalized buildings where mapped</small></span></span><input type="checkbox" checked={buildings3d} onChange={event => setBuildings3d(event.target.checked)} /></label>
             <label className="qs-layer"><span><Satellite size={17} /><span>Satellite imagery<small>Esri World Imagery · capture dates vary</small></span></span><input type="checkbox" checked={satellite} onChange={event => setSatellite(event.target.checked)} /></label>
-            <label className="qs-layer"><span><Activity size={17} /><span>All hospital connections<small>Show beyond the selected place or hospital</small></span></span><input type="checkbox" checked={links} onChange={event => setLinks(event.target.checked)} /></label>
+            <label className="qs-layer"><span><Activity size={17} /><span>Overview connections<small>Nearby hospitals and daily placements across ranked barangays</small></span></span><input type="checkbox" checked={links} onChange={event => setLinks(event.target.checked)} /></label>
             <label className="qs-layer"><span><Pause size={17} /><span>Reduced motion<small>Static colors and manual playback</small></span></span><input type="checkbox" checked={reduced} onChange={event => { setReduced(event.target.checked); if(event.target.checked) setPlaying(false); }} /></label>
             <p className="qs-layer-note">Colors show projected case counts, not official outbreak thresholds. Uncolored barangays may still have cases. Building geometry and hospital entrances are unverified context. Satellite imagery is dated background, not current conditions.</p>
             <details className="qs-national-context" onToggle={event => setLocatorOpen(event.currentTarget.open)}><summary>Philippines locator</summary>{locatorOpen && <PhilippinesOverview />}</details>

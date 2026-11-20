@@ -1,5 +1,13 @@
 # User-requested extensions
 
+## 2026-11-20 20:49 +08:00 — Explain Markov bed allocation on Research
+
+Add a QC allocation walkthrough between Barangay burden and Hospital capacity replay. Readers can select any barangay, compare its two saved first-admission probability rows, inspect the equations and follow an illustrative stay through to a staffed-bed shortfall. [Research allocation explorer](first-admission-matrix.md#research-page)
+
+## 2026-11-19 23:11 +08:00 — Inspect first-hospital probabilities on the map
+
+Add an optional view for the selected barangay showing all 46 destinations, including smaller probabilities. Hover, tap or keyboard focus shows the distance-only probability, straight-line distance, preference weight and final modeled share. [Using the map](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)
+
 ## 2026-11-20 +08:00 — Bed capacity tab refinements
 
 Follow-up requests on the same branch:

@@ -44,7 +44,7 @@ test('actual selection camera frames the clicked network smoothly, cancels stale
     connectionFocus: 'barangay', inspectionVersion: 42, reducedMotion: false, onSelect() {}, onHospital() {}, view: 'qc' };
   const render = values => {
     refIndex = stateIndex = 0; effects.length = 0; loaded.exports.default(values);
-    return effects.find(e => e.dependencies?.length === 5 && e.dependencies.includes(42));
+    return effects.find(e => e.dependencies?.includes(42) && e.dependencies.includes(values.connectionFocus) && !e.dependencies.includes(values.context));
   };
   const previousRAF = globalThis.requestAnimationFrame, previousCancel = globalThis.cancelAnimationFrame;
   globalThis.requestAnimationFrame = callback => { frames.set(++frameId, callback); return frameId; };
@@ -67,6 +67,10 @@ test('actual selection camera frames the clicked network smoothly, cancels stale
     [...frames.values()].at(-1)(); frames.clear();
     assert.equal(fits.at(-1).options.duration, 0);
     assert.equal(stops, 2, 'a new focus interrupts the previous camera transition');
+    const wholeNetwork = { ...context, hospitals: [...context.hospitals, { id: 'far', coordinates: [121.2, 14.9] }] };
+    render({ ...props, context: wholeNetwork, probabilityPlace: { barangayId: 'A', hospitals: [] } }).callback();
+    [...frames.values()].at(-1)(); frames.clear();
+    assert.deepEqual(fits.at(-1).bounds, [[121.02,14.65],[121.2,14.9]]);
     const idle = render({ ...props, connectionFocus: null }); idle.callback();
     assert.equal(frames.size, 0, 'the default selected record does not auto-focus the map');
   } finally {
