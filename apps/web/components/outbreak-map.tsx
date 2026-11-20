@@ -8,12 +8,11 @@ import { caseColor, interpolateCaseValues } from '@/lib/case-bands';
 import { mapSelection } from '@/lib/map-selection';
 import { simulationConnections, drawSimulationFlow, SIMULATION_LINES, type ConnectionFocus } from '@/lib/simulation-connections';
 import { bindProbabilityPopup, probabilityConnections } from '@/lib/hospital-probabilities';
-import { layoutMapMarkers } from '@/lib/marker-layout';
-import { dashboardLayerPaint, hiddenOverImagery, imageryLayerPaint, SATELLITE_IMAGERY } from '@/lib/dashboard-map-style';
+import { addSatelliteImagery, applyBaseMap, dashboardLayerPaint } from '@/lib/dashboard-map-style';
 import { areaBounds } from '@/lib/dashboard-map';
 import { hospitalMarker } from '@/lib/hospital-marker';
 import WorkspaceLoader from '@/components/workspace-loader';
-import { simulationMapPadding, selectionMapBounds, type SimulationBounds, type SimulationMapController, type SimulationMapStatus } from '@/lib/simulation-map';
+import { CITY_BOUNDARY_STYLE, defaultSimulationCamera, simulationMapPadding, selectionMapBounds, type CityBoundaryStatus, type SimulationBounds, type SimulationMapController, type SimulationMapStatus } from '@/lib/simulation-map';
 
 type Props = { context: MovieContext | null; snapshot: MovieDay | null; maximum: number; selected: string;
   onSelect: (id: string) => void; onHospital: (id: string) => void; playing: boolean; reducedMotion: boolean; showLinks: boolean;
@@ -23,24 +22,13 @@ type Props = { context: MovieContext | null; snapshot: MovieDay | null; maximum:
   connectionFocus?: ConnectionFocus; inspectionVersion?: number;
   probabilityPlace?: NonNullable<BedProjection['placePeaks']>[number]; distanceOnly?: boolean;
   buildings3d?: boolean; showHospitals?: boolean; satellite?: boolean;
+  showCityBoundaries?: boolean; onCityBoundaryStatus?: (status: CityBoundaryStatus) => void;
   onReady?: (controller: SimulationMapController | null) => void;
   onStatus?: (status: SimulationMapStatus) => void;
   view?: 'qc' | 'philippines' };
 // Fill for barangays that are not high-burden candidates (and before values are shown).
 // Keep in sync with the literal in the 'barangays' layer (layer objects are validated as plain literals).
 const NEUTRAL_FILL = '#edf1ee';
-// Switches the provider's base layers between street context and imagery; app layers are untouched.
-function applyBaseMap(instance: maplibregl.Map, satellite: boolean, buildings3d: boolean) {
-  for (const layer of instance.getStyle().layers) {
-    if (!('source' in layer) || layer.source !== 'openmaptiles') continue;
-    for (const [property, value] of Object.entries(satellite ? imageryLayerPaint(layer) : dashboardLayerPaint(layer))) instance.setPaintProperty(layer.id, property, value);
-    if (hiddenOverImagery(layer)) instance.setLayoutProperty(layer.id, 'visibility', satellite ? 'none' : 'visible');
-  }
-  if (instance.getLayer(SATELLITE_IMAGERY.layerId)) instance.setLayoutProperty(SATELLITE_IMAGERY.layerId, 'visibility', satellite ? 'visible' : 'none');
-  if (instance.getLayer('building-3d')) instance.setLayoutProperty('building-3d', 'visibility', buildings3d ? 'visible' : 'none');
-  // Flat footprints are redundant over imagery.
-  if (instance.getLayer('building')) instance.setLayoutProperty('building', 'visibility', buildings3d || satellite ? 'none' : 'visible');
-}
 const empty = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] });
 // Floating page panels drawn over the map (marked data-map-overlay) are kept free of map icons.
 const overlayElements = (mapRoot: HTMLElement | null) => {
@@ -55,7 +43,7 @@ const overlayRects = (mapRoot: HTMLElement | null) => {
     .map(rect => ({ left: rect.left - origin.left - 4, top: rect.top - origin.top - 4, width: rect.width + 8, height: rect.height + 8 }));
 };
 
-export default function OutbreakMap({ context, snapshot, selected, selectedHospital = '', hotspotIds, rankedHotspotIds, hospitalHotspot, onSelect, onHospital, reducedMotion, showLinks, connectionFocus = null, inspectionVersion = 0, probabilityPlace, distanceOnly = false, view = 'qc', caseMetric = 'cumulative', caseColorMaximum = 50, animationDurationMs = 500, buildings3d = false, showHospitals = true, satellite = false, onReady, onStatus }: Props) {
+export default function OutbreakMap({ context, snapshot, selected, selectedHospital = '', hotspotIds, rankedHotspotIds, hospitalHotspot, onSelect, onHospital, reducedMotion, showLinks, connectionFocus = null, inspectionVersion = 0, probabilityPlace, distanceOnly = false, view = 'qc', caseMetric = 'cumulative', caseColorMaximum = 50, animationDurationMs = 500, buildings3d = false, showHospitals = true, satellite = false, showCityBoundaries = false, onCityBoundaryStatus, onReady, onStatus }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const onSelectRef = useRef(onSelect), onHospitalRef = useRef(onHospital);
@@ -68,11 +56,10 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   selectionCameraInput.current = { context, snapshot, selected, selectedHospital, connectionFocus, hotspotIds, rankedHotspotIds, hospitalHotspot };
   const displayedCases = useRef(new Map<string, number>());
   const previousMetric = useRef(caseMetric);
-  const options = useRef({ view, reducedMotion, buildings3d, showHospitals, satellite, onReady, onStatus });
-  options.current = { view, reducedMotion, buildings3d, showHospitals, satellite, onReady, onStatus };
+  const options = useRef({ view, reducedMotion, buildings3d, showHospitals, satellite, showCityBoundaries, onCityBoundaryStatus, onReady, onStatus });
+  options.current = { view, reducedMotion, buildings3d, showHospitals, satellite, showCityBoundaries, onCityBoundaryStatus, onReady, onStatus };
   const resetCamera = useRef<(() => void) | null>(null);
   const initialCameraReady = useRef(false);
-  const initialBounds = useRef<SimulationBounds>([[121.0, 14.585], [121.153, 14.782]]);
   const introducedMarkers = useRef(false);
   const [ready, setReady] = useState(false), [error, setError] = useState('');
   const [presented, setPresented] = useState(false);
@@ -105,10 +92,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       }
       if (instance.getLayer('building')) instance.setLayerZoomRange('building', 13, 24);
       // Optional imagery sits under roads and labels (a hybrid view); hidden until chosen.
-      const { layerId, sourceId, ...imagery } = SATELLITE_IMAGERY;
-      if (!instance.getSource(sourceId)) instance.addSource(sourceId, { type: 'raster', ...imagery, tiles: [...imagery.tiles] });
-      const firstRoad = instance.getStyle().layers.find(layer => 'source-layer' in layer && layer['source-layer'] === 'transportation')?.id;
-      if (!instance.getLayer(layerId)) instance.addLayer({ id: SATELLITE_IMAGERY.layerId, type: 'raster', source: SATELLITE_IMAGERY.sourceId, layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 150 } }, firstRoad);
+      addSatelliteImagery(instance);
       applyBaseMap(instance, options.current.satellite, options.current.buildings3d);
     });
     instance.on('load', async () => {
@@ -119,8 +103,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
         const data = await response.json();
         if (controller.signal.aborted) return;
         const bounds = areaBounds(data, 'NCR');
-        if (!bounds) throw Error('QC camera geometry unavailable');
-        initialBounds.current = bounds;
+        if (!bounds) throw Error('QC boundary geometry unavailable');
         for (const feature of data.features) {
           const id = feature.properties?.ADM4_PCODE;
           if (typeof id !== 'string') continue;
@@ -160,8 +143,31 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
         }
         setReady(true);
         setError('');
+        void addCityBoundaries();
       } catch { if (!controller.signal.aborted) { setError('Geography could not load. Open the result tables.'); options.current.onStatus?.('partial'); } }
     });
+    // Optional NCR city outlines: the Dashboard's source (/api/boundaries) and style. A
+    // failure only marks this layer unavailable; the simulation geography is unaffected.
+    const addCityBoundaries = async () => {
+      try {
+        const response = await fetch('/api/boundaries', { signal: controller.signal });
+        if (!response.ok) throw Error('City boundaries unavailable');
+        const cities = await response.json();
+        if (controller.signal.aborted) return;
+        if (!areaBounds(cities, CITY_BOUNDARY_STYLE.highlightedArea)) throw Error('QC city outline unavailable');
+        instance.addSource('ncr-cities', { type: 'geojson', data: cities });
+        // Plain literals (validated by the style test); values match CITY_BOUNDARY_STYLE and Dashboard.
+        // Fill under the barangay colors; outline above them but under links and markers.
+        instance.addLayer({ id: 'city-fill', type: 'fill', source: 'ncr-cities', layout: { visibility: 'none' },
+          paint: { 'fill-color': ['case', ['==', ['get', 'area_id'], 'QUEZON_CITY'], '#32a69a', '#8ea5b0'], 'fill-opacity': ['case', ['==', ['get', 'area_id'], 'QUEZON_CITY'], 0.12, 0.035] } }, 'barangays');
+        instance.addLayer({ id: 'city-border', type: 'line', source: 'ncr-cities', layout: { visibility: 'none' },
+          paint: { 'line-color': '#248e86', 'line-width': ['case', ['==', ['get', 'area_id'], 'QUEZON_CITY'], 2.2, 0.8] } }, 'front-line');
+        const { showCityBoundaries: visible, satellite: imagery } = options.current;
+        for (const id of ['city-fill', 'city-border']) instance.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+        if (imagery) instance.setPaintProperty('city-border', 'line-color', CITY_BOUNDARY_STYLE.line.satelliteColor);
+        options.current.onCityBoundaryStatus?.('ready');
+      } catch { if (!controller.signal.aborted) options.current.onCityBoundaryStatus?.('unavailable'); }
+    };
     const labelStore = labels;
     return () => { window.clearTimeout(timeout); resizeObserver.disconnect(); controller.abort(); labelStore.current.forEach(label => label.remove()); options.current.onReady?.(null); resetCamera.current = null; instance.remove(); map.current = null; };
   }, []);
@@ -239,7 +245,14 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     instance.setPaintProperty('barangays', 'fill-opacity', !satellite ? .63 : colored.length ? ['match', ['get', 'ADM4_PCODE'], colored, .62, .06] : .06);
     instance.setPaintProperty('boundaries', 'line-opacity', satellite ? .75 : .65);
     instance.setPaintProperty('selected-outline', 'line-color', satellite ? '#ffffff' : '#225d61');
+    if (instance.getLayer('city-border')) instance.setPaintProperty('city-border', 'line-color', satellite ? CITY_BOUNDARY_STYLE.line.satelliteColor : CITY_BOUNDARY_STYLE.line.color);
   }, [ready, satellite, snapshot, rankedHotspotIds, hotspotIds]);
+  useEffect(() => {
+    const instance = map.current;
+    if (!ready || !instance) return;
+    // The layers may still be loading; they then start with the current setting.
+    for (const id of ['city-fill', 'city-border']) if (instance.getLayer(id)) instance.setLayoutProperty(id, 'visibility', showCityBoundaries ? 'visible' : 'none');
+  }, [ready, showCityBoundaries]);
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
@@ -252,13 +265,14 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     const fit = (immediate = false) => {
       if (!map.current) return;
       map.current.resize();
-      const padding = simulationMapPadding(root.current?.clientWidth ?? 320, root.current?.clientHeight ?? 640, overlayRects(root.current));
-      map.current.fitBounds(view === 'philippines' ? [[116.8, 4.3], [126.8, 21.2]] : initialBounds.current,
-        { padding: view === 'philippines' ? 30 : padding, pitch: view === 'philippines' ? 0 : options.current.buildings3d ? 50 : 0, bearing: 0, duration: immediate || reducedMotion ? 0 : 650 });
+      // Opening/reset view: the user-chosen QC framing (see DEFAULT_QC_VIEW).
+      const camera = defaultSimulationCamera(root.current?.clientWidth ?? 320, root.current?.clientHeight ?? 640, overlayRects(root.current));
+      map.current.fitBounds(view === 'philippines' ? [[116.8, 4.3], [126.8, 21.2]] : camera.bounds,
+        { padding: view === 'philippines' ? 30 : camera.padding, pitch: view === 'philippines' ? 0 : options.current.buildings3d ? 50 : 0, bearing: 0, duration: immediate || reducedMotion ? 0 : 650 });
     };
     resetCamera.current = fit;
     // Official geometry determines the opening camera independently of engine
-    // timing. Fit and resize before constructing any collision-offset markers.
+    // timing. Fit and resize before constructing any markers.
     fit(!initialCameraReady.current);
     initialCameraReady.current = true;
   }, [view, ready, reducedMotion]);
@@ -278,12 +292,15 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     const add = (id: string, coordinates: [number, number], size: number, button: HTMLButtonElement) => {
       button.style.visibility = 'hidden';
       if (introduce) button.className += ' qs-marker-intro';
-      const marker = new maplibregl.Marker({ element: button, anchor: 'center' }).setLngLat(coordinates).addTo(instance);
+      // Hospital pins point at their location with the tip; barangay markers are centred.
+      const marker = new maplibregl.Marker({ element: button, anchor: id.startsWith('h-') ? 'bottom' : 'center' }).setLngLat(coordinates).addTo(instance);
       entries.push({ id, coordinates, size, marker });
       labels.current.push(marker);
       markerStore.set(id, marker);
     };
-    for (const id of ids) {
+    // Markers added later are drawn on top: unranked first, then ranks from lowest to rank 1.
+    const drawOrder = (id: string) => { const rank = ranks.indexOf(id); return rank < 0 ? -1 : ranks.length - rank; };
+    for (const id of [...ids].sort((a, b) => drawOrder(a) - drawOrder(b))) {
       const b = barangayMap.get(id);
       if (!b) continue;
       const rank = ranks.indexOf(id);
@@ -306,32 +323,31 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       button.onclick = event => { event.stopPropagation(); onHospitalRef.current(h.id); };
       add('h-' + h.id, h.coordinates, 35, button);
     }
+    // Every marker sits exactly on its own coordinates at a fixed size, at every zoom:
+    // hospital pins put their tip on the hospital's point, barangay markers are centred
+    // on the barangay's point. No screen-space overlap offsets or shrinking are applied,
+    // so close markers may overlap (higher ranks are drawn on top) until you zoom in.
+    for (const entry of entries) {
+      entry.marker.setOffset([0, 0]);
+      if (entry.id.startsWith('h-')) continue;
+      const style = entry.marker.getElement().style;
+      style.width = style.height = `${entry.size}px`;
+      style.fontSize = `${entry.size > 20 ? 12 : 10}px`;
+    }
     const position = () => {
       const width = instance.getContainer().clientWidth, height = instance.getContainer().clientHeight;
       if (!width || !height) return;
-      const visibleEntries = entries.filter(entry => {
+      for (const entry of entries) {
         const point = instance.project(entry.coordinates);
         const visible = point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height;
         entry.marker.getElement().style.visibility = visible ? 'visible' : 'hidden';
-        return visible;
-      });
-      const layout = layoutMapMarkers(visibleEntries.map(entry => {
-        const point = instance.project(entry.coordinates);
-        return { id: entry.id, x: point.x, y: point.y, size: entry.size };
-      }), width, height, [{ left: width - 52, top: 0, width: 52, height: 156 }, ...overlayRects(root.current), { left: 0, top: height - 26, width, height: 26 }]);
-      layout.forEach((point, index) => {
-        const entry = visibleEntries[index];
-        entry.marker.getElement().style.width = `${entry.id.startsWith('h-') ? point.size * 28 / 39 : point.size}px`;
-        entry.marker.getElement().style.height = `${point.size}px`;
-        entry.marker.getElement().style.fontSize = `${(entry.id.startsWith('h-') ? 19 : entry.size > 20 ? 12 : 10) * point.scale}px`;
-        entry.marker.setOffset(view === 'qc' ? [point.offsetX, point.offsetY] : [0, 0]);
-      });
+      }
       updateFlow.current?.();
     };
     position();
     if (entries.length) introducedMarkers.current = true;
     instance.on('moveend', position); instance.on('resize', position);
-    // Re-run the layout when a floating panel is minimized or expanded.
+    // Refresh visibility and connections when a floating panel is minimized or expanded.
     const overlayObserver = new ResizeObserver(() => position());
     overlayElements(root.current).forEach(element => overlayObserver.observe(element));
     return () => {

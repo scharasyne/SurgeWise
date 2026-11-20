@@ -71,9 +71,12 @@ test('NCR context never expands QC hospital coverage and unavailable records are
   assert.ok(!failed.includes('0 of 0 hospitals') && !failed.includes('>0</strong>'));
 });
 
-test('Layers retains 3D and overlay controls without deferred imagery options', () => {
+test('Layers retains 3D and overlay controls and offers only the shared Esri satellite imagery', () => {
   const html = harness({ ...ready, 9: 'layers', 13: true }).render();
   assert.match(html, /3D view/); assert.match(html, /data-3d="true"/);
   assert.match(html, /QC hospitals/); assert.match(html, /City boundaries/);
-  assert.ok(!/satellite|regional imagery|maptiler|eox/i.test(html));
+  // User request 2026-11-21: the same satellite option as Simulation, off by default.
+  assert.match(html, /Satellite imagery/); assert.match(html, /Esri World Imagery/);
+  assert.ok(!/regional imagery|maptiler|eox/i.test(html), 'earlier-removed imagery providers stay removed');
+  assert.ok(!/Satellite: Esri/.test(html), 'imagery is off by default');
 });
