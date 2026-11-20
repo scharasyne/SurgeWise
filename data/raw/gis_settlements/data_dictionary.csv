@@ -1,0 +1,21 @@
+field,type_or_units,meaning
+barangay_name,text,Unique name within supplied QC-Brgy layer; primary join field
+barangay_code,text/blank,Official source code where provided; two missing codes preserved
+year,integer,"Label year, 2010 through 2025"
+barangay_area_m2,m2,"Full supplied polygon area in EPSG:32651, fixed across all years"
+settlement_area_m2,m2,Native settlement pixel polygons intersected exactly with barangay polygon
+settlement_proportion,0 to 1,settlement_area_m2 / barangay_area_m2
+settlement_percent,0 to 100,100 times settlement_proportion; floating-point roundoff can be tiny
+source,text,Full source attribution
+measure,text,"Mapped settlement extent, not occupancy"
+source_product,text,WSF Evolution v1 or WSF Tracker GeoZarr
+nominal_resolution_m,metres,30 for Evolution or 10 for Tracker; not a fixed pixel area
+snapshot_date,YYYY-MM-DD,Nominal Dec 31 for Evolution; following Jan 1 for Tracker; not release/availability date
+temporal_definition,text,Explicit meaning of snapshot and label year
+detection_index_cutoff,integer,Evolution year threshold; Tracker biannual code threshold 2*(year-2015)
+join_key,text,Same as barangay_name; only unique within this boundary vintage
+boundary_vintage,text,Supplied geography applied consistently; historical boundary changes not modelled
+product_transition,boolean,"True for 2016 rows, marking change of product from prior label year"
+cross_product_harmonized,boolean,False; no calibration/harmonization between source products
+analysis_crs,EPSG code,EPSG:32651 for area measurements
+temporal_availability,text,Retrospective dataset; operational availability for historical predictions not established

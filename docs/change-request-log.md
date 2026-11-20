@@ -986,3 +986,19 @@ years available under the declared lag before both reference and scenario years.
 The 2026 PhilHealth network is assumed for planning, not evidence of historical
 hospital operations. Unknown eligibility is included only in an explicitly
 assumed network, never silently upgraded to verified capability.
+
+## 2026-11-20 20:54 +08:00 (Asia/Manila)
+
+Request: add a detailed notebook organizing weekly barangay generation from UPRI
+annual barangay counts and QC-wide weekly data, analyze the supplied GIS
+settlement dataset, audit missing entries and explain mathematical recovery
+including median imputation. Store the notebook under `notebooks/` and inputs and
+derivatives in their respective data directories.
+
+Scope and acceptance: [notebook plan](weekly-barangay-notebook-plan.md).
+Implementation: `notebooks/06_weekly_barangay_reconstruction.ipynb`,
+`scripts/generate_weekly_barangay.py` and
+`data/processed/weekly_barangay_reconstruction/`. Preserve all source observations;
+recovered annual values are explicitly assumed estimates. Annual and city totals
+disagree, so annual-preserving weekly targets are explicitly scaled. No runtime
+forecast, model, hospital source or simulation contract is changed.

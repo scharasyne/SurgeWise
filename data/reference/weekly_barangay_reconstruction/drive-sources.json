@@ -1,0 +1,176 @@
+{
+  "schemaVersion": "1.0",
+  "sources": [
+    {
+      "id": "1A5CN8wy8rkuRvf03TSYlhu9swVt4dkvw",
+      "path": "data/raw/gis_settlements/qc_settlement_master_2010_2025.csv",
+      "url": "https://drive.google.com/file/d/1A5CN8wy8rkuRvf03TSYlhu9swVt4dkvw/view",
+      "mime": "text/csv",
+      "modifiedTime": "2026-11-18T08:02:25.855Z",
+      "sha256": "21ee79e3a812918d449f300dead26fa11b266dcbe95662b0e5a93b12593081b2",
+      "bytes": 985278,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "1Vq4EQKkTk5-BDOzFq5pRFRGlfkOK-rBD",
+      "path": "data/raw/gis_settlements/RESULTS_AND_METHOD.md",
+      "url": "https://drive.google.com/file/d/1Vq4EQKkTk5-BDOzFq5pRFRGlfkOK-rBD/view",
+      "mime": "text/markdown",
+      "modifiedTime": "2026-11-18T08:03:32.064Z",
+      "sha256": "774479baebd2265bf256fc9903469a75bfacdc5785c9e64962aeb0460da5c0f8",
+      "bytes": 7548,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "11RnFZABdQBkbB6JUdgqgVKIGsZYSTT1v",
+      "path": "data/raw/gis_settlements/data_dictionary.csv",
+      "url": "https://drive.google.com/file/d/11RnFZABdQBkbB6JUdgqgVKIGsZYSTT1v/view",
+      "mime": "text/csv",
+      "modifiedTime": "2026-11-18T08:03:22.560Z",
+      "sha256": "ee740aba677754bd0701e4e24823a063b984ee12811c6dbfffc150acbbca5b4d",
+      "bytes": 1683,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "1_8hdwEXhejwvvyBQLiBRXfM4iaqu6Ie5",
+      "path": "data/raw/gis_settlements/qc_settlement_master_2010_2025.gpkg",
+      "url": "https://drive.google.com/file/d/1_8hdwEXhejwvvyBQLiBRXfM4iaqu6Ie5/view",
+      "mime": "application/octet-stream",
+      "modifiedTime": "2026-11-18T08:02:44.000Z",
+      "sha256": "c6bda10ba5938bab42aee36a24b369ecf459c816c056eeeabed3407b09611d03",
+      "bytes": 704512,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "1QUDwjiMMfRFQ4iLwEu_k-0bsEmVkTXR-",
+      "path": "data/raw/gis_settlements/qc_tracker_based_annual_2010_2025.csv",
+      "url": "https://drive.google.com/file/d/1QUDwjiMMfRFQ4iLwEu_k-0bsEmVkTXR-/view",
+      "mime": "text/csv",
+      "modifiedTime": "2026-11-18T08:18:39.030Z",
+      "sha256": "c0d69a9fd7c81a3fe923463bd6a2564e822792ca4982f2f138c74fc2196f3ef6",
+      "bytes": 964727,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "17JQan9Vok6M-sT0YxAiENuovctJPtV5V",
+      "path": "data/raw/gis_settlements/TRACKER_BACKCAST_METHOD.md",
+      "url": "https://drive.google.com/file/d/17JQan9Vok6M-sT0YxAiENuovctJPtV5V/view",
+      "mime": "text/markdown",
+      "modifiedTime": "2026-11-18T08:19:03.237Z",
+      "sha256": "7e9e50ee7709d7fb9a55738d90f79dc502c673e85b2499aa0356562e954f5a75",
+      "bytes": 6529,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "14j76S_gpgxPB9cR6VfmLK3m_VZt5-F8m",
+      "path": "data/raw/weekly_barangay_synthetic/metadata.json",
+      "url": "https://drive.google.com/file/d/14j76S_gpgxPB9cR6VfmLK3m_VZt5-F8m/view",
+      "mime": "application/json",
+      "modifiedTime": "2026-11-18T08:45:58.108Z",
+      "sha256": "48686f6c90cfecdd037c8df87af8d337d0bc70732990d4eb629acb356ffb653f",
+      "bytes": 1826,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "1cgnxppRhH1ELkefo5HPeHOXtIOHyKNQ2",
+      "path": "data/raw/weekly_barangay_synthetic/weekly_targets_and_rainfall.csv",
+      "url": "https://drive.google.com/file/d/1cgnxppRhH1ELkefo5HPeHOXtIOHyKNQ2/view",
+      "mime": "text/csv",
+      "modifiedTime": "2026-11-18T08:45:15.939Z",
+      "sha256": "cd770346b14940e8826c8d125f40681ffe1c1439b3bfd32ad55f1266bcf9a8e4",
+      "bytes": 68158,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "1CpDTr3aRmV7mysVPpJJAarQQCls2FFSz",
+      "path": "data/raw/weekly_barangay_synthetic/SELECTED_SCENARIO_beta_0_5.md",
+      "url": "https://drive.google.com/file/d/1CpDTr3aRmV7mysVPpJJAarQQCls2FFSz/view",
+      "mime": "text/markdown",
+      "modifiedTime": "2026-11-18T14:16:50.042Z",
+      "sha256": "5a5bc51ebe60a0a9e1abec09ad6f4d30795622de37dee9144b5555190f9f04eb",
+      "bytes": 2832,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "1x34CmT5itHhVOIM0Q2chD_CK6IrreTOD",
+      "path": "data/raw/weekly_barangay_synthetic/synthetic_weekly_positive_beta_0_5.csv",
+      "url": "https://drive.google.com/file/d/1x34CmT5itHhVOIM0Q2chD_CK6IrreTOD/view",
+      "mime": "text/csv",
+      "modifiedTime": "2026-11-18T14:17:53.075Z",
+      "sha256": "0c9316e52784aba8ad4860e5b7e903c1262c4cf8c9ecaa1527905a24f8e733d0",
+      "bytes": 21408125,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "1wjRHXy-BtRvCa4lXhgG_ef-8YnCTzV1x",
+      "path": "data/raw/drive_qc_prepared/qc_weekly.csv",
+      "url": "https://drive.google.com/file/d/1wjRHXy-BtRvCa4lXhgG_ef-8YnCTzV1x/view",
+      "mime": "text/csv",
+      "modifiedTime": "2026-11-17T05:16:32.841Z",
+      "sha256": "4cb3b05aabf169cf2642170ef14f79a5499eccc89cda2924660325b328e8fe50",
+      "bytes": 83435,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    },
+    {
+      "id": "1jQhJcEH1sZ7E4ChSpeLkQejsneHHhB4b",
+      "path": "data/raw/drive_dengue/dengueweek.csv",
+      "url": "https://drive.google.com/file/d/1jQhJcEH1sZ7E4ChSpeLkQejsneHHhB4b/view",
+      "mime": "text/csv",
+      "modifiedTime": "2026-11-19T08:12:44.716Z",
+      "sha256": "38a8d4c70a346ef10734c0b59cbee712d91dfaf22ddd333091b84d85cf3ee6fe",
+      "bytes": 8178,
+      "retrievedDate": "2026-11-20",
+      "license": "UPRI ODC-ODbL 1.0 per pinned README"
+    },
+    {
+      "id": "1KcLocoBwlX0HL6zuOocAcXMYnXZAZfcf",
+      "path": "data/raw/drive_dengue/QC_YearlyData-Barangay(CSV).csv",
+      "url": "https://drive.google.com/file/d/1KcLocoBwlX0HL6zuOocAcXMYnXZAZfcf/view",
+      "mime": "text/csv",
+      "modifiedTime": "2026-11-08T11:37:31.894Z",
+      "sha256": "50a26b5395d0a096d895932b82832207946133f3c92b66b2a4a3158c81c5ddbd",
+      "bytes": 11303,
+      "retrievedDate": "2026-11-20",
+      "license": "UPRI ODC-ODbL 1.0 per pinned README"
+    },
+    {
+      "id": "1FZ7VSE3APe2N55p7_W5XS2KK_Z8cvXln",
+      "path": "data/raw/drive_dengue/Dengue_Environmental Vars_Dataset.xlsx",
+      "url": "https://drive.google.com/file/d/1FZ7VSE3APe2N55p7_W5XS2KK_Z8cvXln/view",
+      "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "modifiedTime": "2026-11-08T11:37:31.891Z",
+      "sha256": "94c65ce24e13c132007f67da9b4d10f7023e9429fff79c358b1de938f982dd78",
+      "bytes": 1028105,
+      "retrievedDate": "2026-11-20",
+      "license": "UPRI ODC-ODbL 1.0 per pinned README"
+    },
+    {
+      "id": "1gKSVSghNB-EbZ6Ze__4MmPFXpdA2DU2g",
+      "path": "data/raw/gis_settlements/START_HERE.md",
+      "url": "https://drive.google.com/file/d/1gKSVSghNB-EbZ6Ze__4MmPFXpdA2DU2g/view",
+      "mime": "text/markdown",
+      "modifiedTime": "2026-11-18T08:20:22.112Z",
+      "sha256": "61c1f1059d0a3dc1a98a4af9d9fbc1d1d13d23d09a41451e5f0049e42dc01c37",
+      "bytes": 3100,
+      "retrievedDate": "2026-11-20",
+      "license": "See provider/source documentation; public redistribution permission not established by folder access"
+    }
+  ],
+  "scope": "Selected analysis inputs, not a recursive mirror of Drive; no patient-level records.",
+  "folders": [
+    "https://drive.google.com/drive/folders/1Qb_MU2fYhExZgDynXyujf1oqtzXC1r-0",
+    "https://drive.google.com/drive/folders/1Z0lJjFCfMuGOU3L5VKE7y9yFpqdYnV96",
+    "https://drive.google.com/drive/folders/1fsuPPwnbBUmu6sRWWiq4kP-KYP2iKS_D"
+  ]
+}

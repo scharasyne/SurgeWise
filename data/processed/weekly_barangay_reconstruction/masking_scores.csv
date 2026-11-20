@@ -1,0 +1,6 @@
+experiment,method,scored,unrecoverable,MAE_annual_cases,median_absolute_error,bias_cases
+earlier_donors_only,count_median,179,0,28.6033519553,12,7.69832402235
+earlier_donors_only,share_median,179,0,16.7094972067,7,5.37988826816
+retrospective_random_mask,count_mean,657,0,25.4353120244,10,0.79604261796
+retrospective_random_mask,count_median,657,0,24.6499238965,9,-4.38508371385
+retrospective_random_mask,share_median,657,0,15.7762557078,5,-3.38660578387

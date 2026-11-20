@@ -1,0 +1,276 @@
+{
+  "schemaVersion": "1.0",
+  "assumptionVersion": "weekly-reconstruction-v1",
+  "sourceAcquiredDate": "2026-11-20",
+  "geography": "Quezon City; 142 source barangay IDs",
+  "years": [
+    2010,
+    2025
+  ],
+  "measurementKind": "modeled_allocation",
+  "units": "cases per source block",
+  "sourceCalendar": "52 source blocks per year; exact ISO dates unresolved",
+  "status": "retrospective reconstruction; not observed weekly surveillance or prospective forecasts",
+  "settings": {
+    "beta": 0.5,
+    "rainfallLagSourceBlocks": 4,
+    "standardizationDdof": 0,
+    "missingLagInteraction": "neutral z=0, flagged; raw rainfall not imputed",
+    "ipfAbsoluteTolerance": 1e-08,
+    "ipfMaxIterations": 10000,
+    "weeklyTargets": "largest remainder of QC profile scaled to annual known/assumed subtotal",
+    "rounding": "floor plus min-cost transportation increments; HiGHS dual simplex",
+    "medianMinimumObservedDonors": 3,
+    "medianIntegerRounding": "floor(value+0.5)",
+    "medianDonorPolicy": "retrospective other observed years; no chained imputation",
+    "maskSeeds": [
+      17,
+      29,
+      43
+    ]
+  },
+  "software": {
+    "python": "3.13.13",
+    "numpy": "2.5.4",
+    "pandas": "2.3.3",
+    "scipy": "1.17.1",
+    "openpyxl": "3.1.5",
+    "matplotlib": "3.11.2",
+    "shapely": "2.2.0",
+    "pyproj": "3.8.0"
+  },
+  "transformHashes": {
+    "scripts/generate_weekly_barangay.py": "983c0dd97e7d4f1f512a9ae0d27600f9d886daed5bda14582ebd64f38f42dfdf",
+    "notebooks/06_weekly_barangay_reconstruction.ipynb#cell-sources": "26ad7953a6a3621712d9388db4c5ef36fe0dace65320c136eb10d960fe8236a5"
+  },
+  "inputs": [
+    {
+      "path": "data/raw/upri_noah/DC_Regional-Brgy.7z.001",
+      "sha256": "357544d7b563c2b22c1ed2573bd550ae3e7d74d660e9772a1bd1d4dffe7251d4",
+      "sourceUrl": "https://github.com/pelitro-rcw/dengue-environmental-dataset/blob/02926278d570db8950da368d44db544ae0097615/DC_Regional-Brgy.7z.001"
+    },
+    {
+      "path": "data/raw/upri_noah/DC_Regional-Brgy.7z.002",
+      "sha256": "15f7bca16ed1574a8c9e2b1782d7e97e08edeb92be0ec5e46603fb8a9b8e5a73",
+      "sourceUrl": "https://github.com/pelitro-rcw/dengue-environmental-dataset/blob/02926278d570db8950da368d44db544ae0097615/DC_Regional-Brgy.7z.002"
+    },
+    {
+      "path": "data/raw/upri_noah/Dengue_Environmental Vars_Dataset.xlsx",
+      "sha256": "94c65ce24e13c132007f67da9b4d10f7023e9429fff79c358b1de938f982dd78",
+      "sourceUrl": "https://github.com/pelitro-rcw/dengue-environmental-dataset/blob/02926278d570db8950da368d44db544ae0097615/Dengue_Environmental%20Vars_Dataset.xlsx"
+    },
+    {
+      "path": "data/raw/upri_noah/Dengue_Environmental Vars_Validation.R",
+      "sha256": "2be6cdaa401fb29564b5e1f03914c4abff29d501297f68e7013ae6e3f11bf8d0",
+      "sourceUrl": "https://github.com/pelitro-rcw/dengue-environmental-dataset/blob/02926278d570db8950da368d44db544ae0097615/Dengue_Environmental%20Vars_Validation.R"
+    },
+    {
+      "path": "data/raw/upri_noah/QC_YearlyData-Barangay(CSV).csv",
+      "sha256": "50a26b5395d0a096d895932b82832207946133f3c92b66b2a4a3158c81c5ddbd",
+      "sourceUrl": "https://github.com/pelitro-rcw/dengue-environmental-dataset/blob/02926278d570db8950da368d44db544ae0097615/QC_YearlyData-Barangay%28CSV%29.csv"
+    },
+    {
+      "path": "data/raw/upri_noah/README.md",
+      "sha256": "342eabe7e5742cbce77c09f45ecfb8ce8e253573a6de5292b0f5f5e637fbdde4",
+      "sourceUrl": "https://github.com/pelitro-rcw/dengue-environmental-dataset/blob/02926278d570db8950da368d44db544ae0097615/README.md"
+    },
+    {
+      "path": "data/reference/upri_noah/environmental_validation_report.xlsx",
+      "sha256": "9c00abb3b4e8ac8637d7be8e0e159346d201b8c68cd6f298077442ec0c11b254",
+      "sourceUrl": "https://raw.githubusercontent.com/pelitro-rcw/dengue-environmental-dataset/02926278d570db8950da368d44db544ae0097615/environmental_validation_report.xlsx"
+    },
+    {
+      "path": "data/raw/gis_settlements/qc_settlement_master_2010_2025.csv",
+      "sha256": "21ee79e3a812918d449f300dead26fa11b266dcbe95662b0e5a93b12593081b2",
+      "sourceUrl": "https://drive.google.com/file/d/1A5CN8wy8rkuRvf03TSYlhu9swVt4dkvw/view"
+    },
+    {
+      "path": "data/raw/gis_settlements/RESULTS_AND_METHOD.md",
+      "sha256": "774479baebd2265bf256fc9903469a75bfacdc5785c9e64962aeb0460da5c0f8",
+      "sourceUrl": "https://drive.google.com/file/d/1Vq4EQKkTk5-BDOzFq5pRFRGlfkOK-rBD/view"
+    },
+    {
+      "path": "data/raw/gis_settlements/data_dictionary.csv",
+      "sha256": "ee740aba677754bd0701e4e24823a063b984ee12811c6dbfffc150acbbca5b4d",
+      "sourceUrl": "https://drive.google.com/file/d/11RnFZABdQBkbB6JUdgqgVKIGsZYSTT1v/view"
+    },
+    {
+      "path": "data/raw/gis_settlements/qc_settlement_master_2010_2025.gpkg",
+      "sha256": "c6bda10ba5938bab42aee36a24b369ecf459c816c056eeeabed3407b09611d03",
+      "sourceUrl": "https://drive.google.com/file/d/1_8hdwEXhejwvvyBQLiBRXfM4iaqu6Ie5/view"
+    },
+    {
+      "path": "data/raw/gis_settlements/qc_tracker_based_annual_2010_2025.csv",
+      "sha256": "c0d69a9fd7c81a3fe923463bd6a2564e822792ca4982f2f138c74fc2196f3ef6",
+      "sourceUrl": "https://drive.google.com/file/d/1QUDwjiMMfRFQ4iLwEu_k-0bsEmVkTXR-/view"
+    },
+    {
+      "path": "data/raw/gis_settlements/TRACKER_BACKCAST_METHOD.md",
+      "sha256": "7e9e50ee7709d7fb9a55738d90f79dc502c673e85b2499aa0356562e954f5a75",
+      "sourceUrl": "https://drive.google.com/file/d/17JQan9Vok6M-sT0YxAiENuovctJPtV5V/view"
+    },
+    {
+      "path": "data/raw/weekly_barangay_synthetic/metadata.json",
+      "sha256": "48686f6c90cfecdd037c8df87af8d337d0bc70732990d4eb629acb356ffb653f",
+      "sourceUrl": "https://drive.google.com/file/d/14j76S_gpgxPB9cR6VfmLK3m_VZt5-F8m/view"
+    },
+    {
+      "path": "data/raw/weekly_barangay_synthetic/weekly_targets_and_rainfall.csv",
+      "sha256": "cd770346b14940e8826c8d125f40681ffe1c1439b3bfd32ad55f1266bcf9a8e4",
+      "sourceUrl": "https://drive.google.com/file/d/1cgnxppRhH1ELkefo5HPeHOXtIOHyKNQ2/view"
+    },
+    {
+      "path": "data/raw/weekly_barangay_synthetic/SELECTED_SCENARIO_beta_0_5.md",
+      "sha256": "5a5bc51ebe60a0a9e1abec09ad6f4d30795622de37dee9144b5555190f9f04eb",
+      "sourceUrl": "https://drive.google.com/file/d/1CpDTr3aRmV7mysVPpJJAarQQCls2FFSz/view"
+    },
+    {
+      "path": "data/raw/weekly_barangay_synthetic/synthetic_weekly_positive_beta_0_5.csv",
+      "sha256": "0c9316e52784aba8ad4860e5b7e903c1262c4cf8c9ecaa1527905a24f8e733d0",
+      "sourceUrl": "https://drive.google.com/file/d/1x34CmT5itHhVOIM0Q2chD_CK6IrreTOD/view"
+    },
+    {
+      "path": "data/raw/drive_qc_prepared/qc_weekly.csv",
+      "sha256": "4cb3b05aabf169cf2642170ef14f79a5499eccc89cda2924660325b328e8fe50",
+      "sourceUrl": "https://drive.google.com/file/d/1wjRHXy-BtRvCa4lXhgG_ef-8YnCTzV1x/view"
+    },
+    {
+      "path": "data/raw/drive_dengue/dengueweek.csv",
+      "sha256": "38a8d4c70a346ef10734c0b59cbee712d91dfaf22ddd333091b84d85cf3ee6fe",
+      "sourceUrl": "https://drive.google.com/file/d/1jQhJcEH1sZ7E4ChSpeLkQejsneHHhB4b/view"
+    },
+    {
+      "path": "data/raw/drive_dengue/QC_YearlyData-Barangay(CSV).csv",
+      "sha256": "50a26b5395d0a096d895932b82832207946133f3c92b66b2a4a3158c81c5ddbd",
+      "sourceUrl": "https://drive.google.com/file/d/1KcLocoBwlX0HL6zuOocAcXMYnXZAZfcf/view"
+    },
+    {
+      "path": "data/raw/drive_dengue/Dengue_Environmental Vars_Dataset.xlsx",
+      "sha256": "94c65ce24e13c132007f67da9b4d10f7023e9429fff79c358b1de938f982dd78",
+      "sourceUrl": "https://drive.google.com/file/d/1FZ7VSE3APe2N55p7_W5XS2KK_Z8cvXln/view"
+    },
+    {
+      "path": "data/raw/gis_settlements/START_HERE.md",
+      "sha256": "61c1f1059d0a3dc1a98a4af9d9fbc1d1d13d23d09a41451e5f0049e42dc01c37",
+      "sourceUrl": "https://drive.google.com/file/d/1gKSVSghNB-EbZ6Ze__4MmPFXpdA2DU2g/view"
+    },
+    {
+      "path": "data/reference/upri_noah/barangay-crosswalk.json",
+      "sha256": "6b135e388010663770e91f28b35a8a3e58933a0efc7b81e75de4ea6e13d3bccc",
+      "sourceUrl": null
+    }
+  ],
+  "referenceComparison": {
+    "rows": 118144,
+    "floating_max_abs_difference": 7.139413504830827e-10,
+    "integer_cells_differing": 6,
+    "unknown_weekly_cells": 2028,
+    "reference_and_new_margins": "exact integer margins; expectations agree within tolerance"
+  },
+  "nullCounts": {
+    "annualSource": 39,
+    "weeklySourcePreserving": 2028,
+    "weeklyMedianScenario": 0
+  },
+  "limitations": [
+    "Incompatible observed annual/city totals; weekly trial targets are scaled",
+    "Unknown weekly barangay truth",
+    "Same-year/future inputs: retrospective only",
+    "2010\u20132015 Tracker-scale settlement is extrapolated",
+    "Original Evolution/Tracker master is not harmonized",
+    "Median estimates are assumptions; donor spread is not an interval",
+    "Public redistribution terms must be checked"
+  ],
+  "outputs": [
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/annual_missing_entries.csv",
+      "bytes": 1228,
+      "sha256": "6ccb5201d7a12d07275b31a9acb5a0dc9327383e477e9d496529dd020b14322a",
+      "rows": 39
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/annual_qc_reconciliation.csv",
+      "bytes": 857,
+      "sha256": "8602a677e8a19c2605f0b8e548f146ce884f902cb837cfd43f72daba8b504ab7",
+      "rows": 16
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/annual_recovery_count_median.csv",
+      "bytes": 152405,
+      "sha256": "20a93607b3522a4d71871400328710d38767b5aa4816edfbcff943db57944bfa",
+      "rows": 2272
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/annual_recovery_share_median.csv",
+      "bytes": 153257,
+      "sha256": "cc6d8dca6effff3bfe3fdb9d74fa6ff4366168fe4fc51e24872c29a6d6ec6594",
+      "rows": 2272
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/beta_sensitivity.csv",
+      "bytes": 169,
+      "sha256": "2c54decb92e8116115b75871bfa04601ec2b9dea7a5d96fa87de68e230d497be",
+      "rows": 3
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/gis_identifier_crosswalk.csv",
+      "bytes": 7184,
+      "sha256": "cbbc0c8039ecf546abd20b8d1ec11a9b5ae5929f9167f76c93b3f904092b86b7",
+      "rows": 142
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/gis_missingness.csv",
+      "bytes": 757,
+      "sha256": "5df47d30149827f8c180aa6304a6fe9112e3479d461200f5efaf0278f3512b61",
+      "rows": 32
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/margin_checks_count_median.csv",
+      "bytes": 1239,
+      "sha256": "bfa6f64f3ca5234d78a01cc36300360487fd396b92e23a8a4177828c8c62f6f0",
+      "rows": 16
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/margin_checks_source_preserving.csv",
+      "bytes": 1239,
+      "sha256": "39dc26747b3454ad4dc7d053a9735fefd3766fa664f62ff46a53124735e89bc0",
+      "rows": 16
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/masking_predictions.csv",
+      "bytes": 149640,
+      "sha256": "0eb5cc8e4a38fedf48d71f829d02a27444483760bc9a24edd86406e03713da42",
+      "rows": 2329
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/masking_scores.csv",
+      "bytes": 454,
+      "sha256": "f758035832fc729dc703f2a897c4bd4ade46052969091f97ba6bcf7f2bce551b",
+      "rows": 5
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/settlement_product_sensitivity.csv",
+      "bytes": 301,
+      "sha256": "4873267368c178f66b8583481fc6866960d0c7989f117ac92d47fe928eeacd0e",
+      "rows": 16
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/weather_missingness.csv",
+      "bytes": 592,
+      "sha256": "b3b2b418430b1f631342d6135772860fc52937090bc9f6ea5b33c9f91736524b",
+      "rows": 24
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/weekly_count_median_scenario.csv.gz",
+      "bytes": 1733655,
+      "sha256": "885c65b9a501371d3f2f02e7f1f365f9adaf4d1079226857ed2aadf61db66621",
+      "rows": 118144
+    },
+    {
+      "path": "data/processed/weekly_barangay_reconstruction/weekly_source_preserving.csv.gz",
+      "bytes": 1712503,
+      "sha256": "db3376eab9478a9e6d0f53b7a5a12bb93f998bdbb80923633b14b42d78ac2051",
+      "rows": 118144
+    }
+  ]
+}

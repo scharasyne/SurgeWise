@@ -1,0 +1,4 @@
+scenario,sum_abs_expected_difference_from_beta0,largest_expected_cell_difference
+beta=+0.5,25731.7637577,26.4197624873
+beta=-0.5,29202.4152454,102.294911072
+beta=+0,0,0

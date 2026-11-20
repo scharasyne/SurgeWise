@@ -1,0 +1,31 @@
+{
+  "status": "synthetic allocation trial; not observed or validated weekly barangay cases",
+  "rows": 354432,
+  "scenarios": [
+    -0.5,
+    0.0,
+    0.5
+  ],
+  "rainfall_lag_source_blocks": 4,
+  "input_files": {
+    "/workspace/scratch/eb63738fedf6/provided_project/PJDSC/data/processed/qc_weekly.csv": "4cb3b05aabf169cf2642170ef14f79a5499eccc89cda2924660325b328e8fe50",
+    "/workspace/scratch/eb63738fedf6/provided_project/PJDSC/data/raw/QC_YearlyData-Barangay(CSV).csv": "50a26b5395d0a096d895932b82832207946133f3c92b66b2a4a3158c81c5ddbd",
+    "/workspace/scratch/eb63738fedf6/provided_project/PJDSC/data/gis/06_Tracker_Backcast_2010_2025/qc_tracker_based_annual_2010_2025.csv": "c0d69a9fd7c81a3fe923463bd6a2564e822792ca4982f2f138c74fc2196f3ef6"
+  },
+  "missing_annual_barangay_years": 39,
+  "policy": "annual_preserving_trial",
+  "preserves_known_annual_barangay_counts": true,
+  "preserves_observed_qc_weekly_counts": false,
+  "seed_formula": "exp(beta * within-year settlement_z * within-year lagged_city_rainfall_z)",
+  "beta_interpretation": "unidentified sensitivity parameter, not an estimated dengue effect",
+  "initial_missing_lag_policy": "neutral interaction z=0, flagged; observed rainfall not imputed",
+  "limitations": [
+    "Unknown annual counts remain missing, not zero.",
+    "Weekly margins are explicitly scaled/rounded scenario targets, not observed QC counts.",
+    "Only one QC rainfall series is used; no barangay rainfall is inferred.",
+    "Within-year standardization and annual totals use future information; retrospective only.",
+    "2010\u20132015 settlement was extrapolated from later Tracker data.",
+    "Constraint agreement is not validation of unobserved weekly disease timing.",
+    "Do not report model accuracy against these synthetic labels as real dengue forecast accuracy."
+  ]
+}

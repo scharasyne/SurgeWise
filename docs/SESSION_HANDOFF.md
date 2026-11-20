@@ -1,5 +1,51 @@
 # Simulation session handoff
 
+## 2026-11-20 — Weekly barangay reconstruction notebook
+
+Checked `brgy-forecasting` at `e87ab36a3b90e6c32c650533654a0168a2aa86f7`;
+initial working tree clean, task changes now uncommitted. Added
+`notebooks/06_weekly_barangay_reconstruction.ipynb` (35 cells, all 17 code cells
+executed), optional notebook requirements, tested pure math/CLI in
+`scripts/generate_weekly_barangay.py`, selected immutable Drive snapshots and
+hashed exports in `data/processed/weekly_barangay_reconstruction/`. See
+[scope/decisions](weekly-barangay-notebook-plan.md) and
+[run instructions](../notebooks/README.md). Existing runtime/model/hospital inputs
+are unchanged.
+
+Source findings: 39 blank annual barangay cells; 832 complete QC weekly case
+blocks; 32 GIS source-null codes resolved only with the existing two-name project
+crosswalk. No explicit annual zeros occur in the extract; blanks cannot be
+assumed zero. Annual known subtotals and observed QC weekly sums differ in every
+year. The annual-preserving trial uses explicitly scaled weekly targets. Original
+Evolution/Tracker measurements have a product break; pre-2016 Tracker-scale
+backcasts remain estimates. The extra dengueweek.csv lacks geographic metadata
+and is excluded from allocation.
+
+The source-preserving weekly table retains 2,028 unknown entries. A separate
+count-median scenario estimates all 39 annual blanks (193 assumed cases across
+16 years), retaining raw blanks and donor ledgers. City-normalized median is a
+sensitivity comparison. Random-mask annual MAE: count median 24.65, mean 25.44,
+city-normalized median 15.78 cases, on the same 657 held-out entries; earlier-donor
+checks also reported. These are annual artificial-missingness results, not
+validation on actual missing cells or observed weekly barangay cases. Independent
+IPF expectations match the Drive beta +0.5 trial within 7.14e-10 cases. Six integer
+cells differ under independent constrained rounding; both margins remain exact.
+
+Test-first evidence: 13 intended failures against explicit unimplemented math
+interfaces, then 13 passes; a later CLI provenance test failed because its output
+manifest was absent, then passed with the manifest and input-kind labels.
+Final `.venv/bin/python -m pytest -q`: **128 passed**, one existing Starlette
+warning. Notebook schema/all executed cells, source/code/output hashes and a
+second execution reproducing all 15 table hashes passed. Compileall and whitespace
+checks passed. Main-session review covered scientific labeling, null preservation,
+donors/cutoffs, margin feasibility, integer rounding, source joins and provenance;
+no unresolved blocking findings. No independent agent review (routine main-session
+work), frontend checks, HTTP/browser simulation checks, model retraining, commit,
+merge, push or deployment. Next: review notebook outputs and ask the data provider
+whether annual blanks denote omitted zeros or unreported counts before interpreting
+an imputed scenario as source correction.
+
+
 ## 2026-11-20 13:59 +0800 — Dev simulation interface with synthetic barangay demand
 
 The local brgy-forecasting branch fast-forwarded from 94ad7f3 to dev at 0c3f29bcbb84cea899e89216b1d756556d8026ad. The model integration and earlier working-tree changes are uncommitted. The simplified simulation settings, first-hospital policies, map flows, comparison and results export now use saved RandomForest demand for each covered barangay and source week. Admission delay determines the map's arrival mix. Assumed length of stay determines a barangay's share of a hospital's occupied-bed shortage. The full hospital-choice matrix is validated even for a partial forecast. [Contract and assumptions](synthetic-barangay-replay.md#hospital-planning)
