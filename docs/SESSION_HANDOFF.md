@@ -1,7 +1,11 @@
 # Simulation session handoff
 
-Updated 2026-11-21 00:51 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-21 00:57 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## Future forecast setup
+
+The Future forecast form exposes the case-surge controls and hospital assumptions. The client omits weather profiles on all future requests, including reruns and comparisons. The API still defaults to its typical seasonal profile. Methods and exported run metadata describe the current forecast model. Training a replacement without weather inputs is pending.
 
 ## Hospital choice and overflow
 

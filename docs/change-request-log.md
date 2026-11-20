@@ -1,5 +1,9 @@
 # User-requested extensions
 
+## 2026-11-21 00:57 +08:00 — Remove weather scenarios from Future forecast setup
+
+Use projected dengue cases and the optional surge to explore bed demand. The future workspace omits the weather profile on submission. The current case engine applies its default seasonal profile until the planned model retraining. [Simulation workspace](simulation-workspace-design.md#layout-and-interaction)
+
 ## 2026-11-21 00:51 +08:00 — Keep both overflow choices and adopt the circled-H pin
 
 Historical replay and Future forecast retain local shortage recording and probability-ranked overflow. Dashboard and Simulation use the shared circled-H hospital pin from main, with provisional locations identified in the map legends. [Simulation workspace design](simulation-workspace-design.md)

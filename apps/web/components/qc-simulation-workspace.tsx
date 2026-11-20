@@ -175,7 +175,8 @@ async function fetchWorkspace(
       ? {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(controls),
+          // Future runs use the engine default, including when controlValues echoes a prior profile.
+          body: JSON.stringify(tab === 'future' ? { ...controls, weatherProfile: undefined } : controls),
           signal,
         }
       : { signal },
@@ -239,7 +240,6 @@ export default function QCSimulationWorkspace() {
   const [timelineHidden, setTimelineHidden] = useState(false);
   const [numberDrafts, setNumberDrafts] = useState<Partial<Record<keyof QCControls, string>>>({});
   const [startDateDraft, setStartDateDraft] = useState<string | null>(null);
-  const [usesWeather, setUsesWeather] = useState(true);
   const [showProbabilities, setShowProbabilities] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'scenario' | 'capacity'>('scenario');
   const [allotmentImport, setAllotmentImport] = useState<{ status: 'idle' | 'loading' | 'error' | 'done'; fileName?: string; message?: string; result?: BedAllotmentImport }>({ status: 'idle' });
@@ -316,7 +316,6 @@ export default function QCSimulationWorkspace() {
           setHistoricalWindows(result.historicalWindows);
         if (result.futureForecast) {
           setPlanningAsOf(result.futureForecast.asOfDate);
-          setUsesWeather(result.futureForecast.usesWeather !== false);
         }
         setSelected(result.periodSummary.barangays[0].barangayId);
         setHospital('');
@@ -614,7 +613,7 @@ export default function QCSimulationWorkspace() {
   const scenarioDetail = !controls
     ? 'Loading settings…'
     : tab === 'future'
-      ? `${controls.surgeEnabled ? `Surge up to ${format(controls.surgeMultiplier)}× seasonal baseline` : 'No added surge'} · ${controls.weatherProfile ?? 'typical'} weather`
+      ? (controls.surgeEnabled ? `Surge up to ${format(controls.surgeMultiplier)}× baseline cases` : 'Baseline cases')
       : controls.mode === 'hypothetical_shock'
         ? `Stress overlay · +${format(controls.extraCasesPerWeek)} cases/week`
         : 'Data-based historical forecast replay';
@@ -1066,7 +1065,7 @@ export default function QCSimulationWorkspace() {
                     </fieldset>
 
                     <fieldset className="qc-fieldset">
-                      <legend><TrendingUp aria-hidden="true" size={16} /> Case forecast</legend>
+                      <legend><TrendingUp aria-hidden="true" size={16} /> {tab === 'future' ? 'Projected dengue cases' : 'Case forecast'}</legend>
                       {tab === 'historical' ? (
                         <>
                           <label>Case scenario
@@ -1082,22 +1081,13 @@ export default function QCSimulationWorkspace() {
                         </>
                       ) : (
                         <>
-                          <label>Weather assumption
-                            <WorkspaceSelect label="Weather assumption" disabled={!usesWeather}
-                              value={controls.weatherProfile ?? 'typical'} onChange={value => update({ weatherProfile: value as QCControls['weatherProfile'] })}
-                              options={[{ value: 'typical', label: 'Typical for this season' }, { value: 'wetter', label: 'Wetter than typical' },
-                                { value: 'drier', label: 'Drier than typical' }, { value: 'hotter', label: 'Hotter than typical' }]} />
-                            <small>{!usesWeather ? 'This model uses seasonal patterns only.' : 'Based on past weather for the selected dates.'}</small>
-                          </label>
-                          <div className="qs-surge-box">
-                            <label className="qc-surge-toggle"><input type="checkbox" checked={controls.surgeEnabled ?? true}
-                              onChange={e => update({ surgeEnabled: e.target.checked })} /> Add a hypothetical surge</label>
-                            {controls.surgeEnabled && <div className="qs-field-pair">
-                              {numeric('surgeMultiplier', 'Peak case multiplier', 1, 10, '× baseline', 0.1)}
-                              {numeric('surgeOnsetDay', 'Days before surge starts', 0, Math.max(0, selectedDays - 1), 'days')}
-                              {numeric('growthDays', 'Time to peak', 1, 28, 'days')}
-                            </div>}
-                          </div>
+                          <label className="qc-surge-toggle"><input type="checkbox" checked={controls.surgeEnabled ?? true}
+                            onChange={e => update({ surgeEnabled: e.target.checked })} /> Add a hypothetical surge</label>
+                          {controls.surgeEnabled && <div className="qs-field-pair">
+                            {numeric('surgeMultiplier', 'Peak case multiplier', 1, 10, '× baseline', 0.1)}
+                            {numeric('surgeOnsetDay', 'Days before surge starts', 0, Math.max(0, selectedDays - 1), 'days')}
+                            {numeric('growthDays', 'Time to peak', 1, 28, 'days')}
+                          </div>}
                         </>
                       )}
                     </fieldset>
@@ -1440,7 +1430,7 @@ export default function QCSimulationWorkspace() {
                 <ul>
                   <li>
                     {tab === 'future'
-                      ? 'Future seasonal surge planning: new seasonal curves and historical weather analogs; current surveillance and real hospital census are unavailable.'
+                      ? 'Projected dengue cases drive admissions and bed demand under the selected hospital assumptions.'
                       : 'Historical replay: source-based case/environment forecasts for retrospective periods.'}{' '}
                     No place selection is required. QC calculations; Philippines
                     geography is context only.
@@ -2005,7 +1995,7 @@ export default function QCSimulationWorkspace() {
                 {data?.futureForecast ? (
                   <>
                     <p>{data.futureForecast.stalenessCaveat}</p>
-                    <p>{data.futureForecast.weatherCaveat}</p>
+                    {data.futureForecast.usesWeather && <p>The current case model still uses historical weather inputs. Future simulations use its default seasonal profile.</p>}
                     {timing && <details className="qc-environment">
                       <summary>Forecast period and surge timing</summary>
                       <p>{timing.horizonDays} elapsed days from {formatScenarioDate(timing.startDate)} to the final snapshot on {formatScenarioDate(timing.endDateExclusive)}.</p>
@@ -2015,7 +2005,7 @@ export default function QCSimulationWorkspace() {
                       <p>Extra staffed beds are scheduled for {formatScenarioDate(timing.staffedSurgeActivationSnapshotDate)}{timing.staffedSurgeActivationWithinWindow ? '.' : ', outside this period.'} The assumed admission delay is {timing.admissionDelayDays} days and the stay is {timing.lengthOfStayDays} days.</p>
                       <p>The seasonal pattern repeats from historical evidence. The largest gap from the source data is {timing.sourceYearGap} years. {timing.centralGapEvaluated
                         ? 'The seasonal baseline was evaluated at this gap.'
-                        : 'This weather profile and year gap have no matched evaluation.'} {!timing.rangeEvaluatedAtRequestedGap && 'Range coverage is unverified for this combination of weather, surge and year gap.'}</p>
+                        : 'The baseline has no matched evaluation for this gap.'} {!timing.rangeEvaluatedAtRequestedGap && 'Range coverage is unverified for this scenario and year gap.'}</p>
                     </details>}
                     <p>
                       Selection: {data.futureForecast.selection.criterion}.
@@ -2699,26 +2689,23 @@ export default function QCSimulationWorkspace() {
                         and bed-occupancy accuracy remain unverified.
                       </p>
                     )}
-                    {source.environmentalInputs.map((f) => (
-                      <div key={f.sourceColumn}>
-                        <span>
-                          {factorName[f.sourceColumn] || f.sourceColumn}
-                        </span>
-                        <strong>
-                          {format(f.valueAtOrigin)} <small>{f.unit}</small>
-                        </strong>
-                      </div>
-                    ))}
-                    <p>
-                      {tab === 'future'
-                        ? 'Values above are assumed historical weather analogs for the selected season. No current-case lags or measured future weather are fabricated.'
-                        : 'Observed inputs at origin; lagged 1, 2 and 4 source blocks in the city model.'}{' '}
-                      No measured barangay microclimate.
-                    </p>
+                    {tab === 'historical' && <>
+                      {source.environmentalInputs.map((f) => (
+                        <div key={f.sourceColumn}>
+                          <span>
+                            {factorName[f.sourceColumn] || f.sourceColumn}
+                          </span>
+                          <strong>
+                            {format(f.valueAtOrigin)} <small>{f.unit}</small>
+                          </strong>
+                        </div>
+                      ))}
+                      <p>Observed inputs at origin, lagged 1, 2 and 4 source blocks in the city model. No measured barangay microclimate.</p>
+                    </>}
                   </>
                 ) : (
                   <p>
-                    Environmental evidence loads with the approved forecast.
+                    {tab === 'future' ? 'Model details load with the case forecast.' : 'Environmental evidence loads with the approved forecast.'}
                   </p>
                 )}
               </details>}

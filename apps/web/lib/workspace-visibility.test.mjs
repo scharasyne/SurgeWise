@@ -200,6 +200,23 @@ test('the initial view reserves the map, with one hidden contextual panel and an
   assert.equal(findElements(tree, node => node.type === 'aside').length, 1);
 });
 
+test('future setup offers a case surge and hospital planning without a weather scenario', () => {
+  for (const surgeEnabled of [true, false]) {
+    const controls = { ...controlFixture, surgeEnabled, surgeMultiplier: 2, growthDays: 7, surgeOnsetDay: 0, weatherProfile: 'wetter' };
+    const tree = renderWorkspace(0, { 0: 'future', 3: controls, 23: 'scenario' });
+    const form = findElements(tree, node => node.props?.id === 'qc-settings-form')[0].node;
+    const html = renderToStaticMarkup(form);
+    assert.match(html, /Projected dengue cases/);
+    assert.match(html, /Add a hypothetical surge/);
+    assert.match(html, /Hospital planning/);
+    assert.doesNotMatch(html, /weather|wetter|drier|hotter/i);
+    for (const label of ['Peak case multiplier', 'Days before surge starts', 'Time to peak']) {
+      assert.equal(findElements(form, node => node.props?.['aria-label'] === label).length, Number(surgeEnabled));
+    }
+    assert.doesNotMatch(renderToStaticMarkup(tree), /wetter weather/i);
+  }
+});
+
 test('imported allotments replace the default split only for the hospitals they list', () => {
   // Constructed planning assumptions, not source records.
   const hospitals = [{ id: 'HOSP-614', name: 'Alpha Hospital', accreditedBeds: 40 }, { id: 'HOSP-615', name: 'Beta Hospital', accreditedBeds: 20 }];
@@ -423,7 +440,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
     startDate: '2026-11-16',
     endDate: '2026-11-30',
     horizonDays: 14,
-    weatherProfile: 'typical',
+    weatherProfile: 'wetter', // A legacy profile echoed by the engine must not carry into the next request.
   };
   const states = new Map([
     [2, fixture],
@@ -573,6 +590,7 @@ test('each mode restores its edited dates and input edits invalidate playback re
   assert.equal(states.get(3).startDate, '2025-08-01');
   await switchMode('future');
   assert.equal(states.get(3).startDate, '2026-12-01');
+  assert.equal(Object.hasOwn(requests.at(-1).controls, 'weatherProfile'), false);
   assert.deepEqual(scrolls, [{ top: 0 }, { top: 0 }, { top: 0 }]);
   assert.deepEqual(
     requests.map((request) => request.url),
