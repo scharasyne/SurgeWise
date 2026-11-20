@@ -73,7 +73,10 @@ def simulate_flow(weekly, facilities, admission_rate, los, occupancy, delay=0, a
             staffed_capacity = [max(0, s["config"]["normalCapacity"] * (1 - non_dengue_share(s["config"], occupancy))
                 + (s["config"]["surgeCapacity"] if day >= activation_day else 0) - sum(c for _, c in s["cohorts"])) for s in states]
             holding_capacity = [max(0, s["config"]["holdingCapacity"] - s["holding"]) for s in states]
-            local, actual_origins = ranked_choice.place_day([first_arrivals.get(h, 0.0) for h in ranked_choice.ids],
+            choice = ranked_choice
+            if isinstance(ranked_choice, list):
+                choice = ranked_choice[groups[0].get("weekIndex", 0) if groups else 0]
+            local, actual_origins = choice.place_day([first_arrivals.get(h, 0.0) for h in choice.ids],
                                                           staffed_capacity, holding_capacity)
             for h, counts in local.items():
                 if counts["supportedPlacementsToday"]:

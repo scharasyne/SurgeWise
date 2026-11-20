@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
-const allowed = /^(forecast-runs(?:\/[A-Za-z0-9_-]{1,120})?|research-evidence|qc-simulation|future-simulation|outbreak-demo|spatial-allocations\/[A-Za-z0-9_-]{1,120}|outbreak-context\/[A-Za-z0-9_-]{1,120}|(?:outbreak-scenarios|scenarios)(?:\/[a-f0-9]{64})?)$/;
+const allowed = /^(predict|forecast-runs(?:\/[A-Za-z0-9_-]{1,120})?|research-evidence|qc-simulation|future-simulation|outbreak-demo|spatial-allocations\/[A-Za-z0-9_-]{1,120}|outbreak-context\/[A-Za-z0-9_-]{1,120}|(?:outbreak-scenarios|scenarios)(?:\/[a-f0-9]{64})?)$/;
 const reportPath = /^outbreak-scenarios\/[a-f0-9]{64}\/report\.(json|pdf|csv)$/;
 async function proxy(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join('/');
   const reportFormat = reportPath.exec(path)?.[1];
-  if ((!allowed.test(path) && !reportFormat) || (request.method === 'POST' && !['scenarios', 'outbreak-scenarios', 'qc-simulation', 'future-simulation'].includes(path)))
+  if ((!allowed.test(path) && !reportFormat) || (request.method === 'POST' && !['predict', 'scenarios', 'outbreak-scenarios', 'qc-simulation', 'future-simulation'].includes(path)))
     return NextResponse.json({ error: 'Unsupported research endpoint' }, { status: 404 });
+  if (path === 'predict' && request.method !== 'POST')
+    return NextResponse.json({ error: 'Use POST to run a forecast.' }, { status: 405, headers: { Allow: 'POST' } });
   const base = process.env.ENGINE_BASE_URL;
   if (!base) return NextResponse.json({ error: 'Set server-only ENGINE_BASE_URL to connect the audited research engine.' }, { status: 503 });
   let body: string | undefined;
@@ -15,14 +17,15 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     const reader = request.body?.getReader();
     if (!reader) return NextResponse.json({ error: 'Missing JSON body' }, { status: 422 });
     const chunks: Uint8Array[] = [];
+    const maximum = path === 'predict' ? 2 * 1024 * 1024 : 32768;
     let size = 0;
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 32768) {
+      if (size > maximum) {
         await reader.cancel();
-        return NextResponse.json({ error: 'Request exceeds 32 KB' }, { status: 413 });
+        return NextResponse.json({ error: `Request exceeds ${maximum / 1024} KB` }, { status: 413 });
       }
       chunks.push(value);
     }
@@ -30,11 +33,19 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     try { JSON.parse(body); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 422 }); }
   }
   const query = new URL(request.url).searchParams;
+  const params = new URLSearchParams();
+  const weekly = query.get('weeklyForecastId');
+  if (weekly !== null) {
+    if (path !== 'qc-simulation' || request.method !== 'GET' || !/^qc-weekly-[0-9a-f]{64}$/.test(weekly))
+      return NextResponse.json({ error: 'Invalid weekly forecast link.' }, { status: 422 });
+    params.set('weeklyForecastId', weekly);
+  }
   const area = query.get('area');
-  if (area && !['QUEZON_CITY', 'NCR'].includes(area))
+  if (area && (!['QUEZON_CITY', 'NCR'].includes(area) || (path === 'predict' && area !== 'QUEZON_CITY')))
     return NextResponse.json({ error: 'Unsupported area' }, { status: 422 });
+  if (area) params.set('area', area);
   try {
-    const response = await fetch(`${base.replace(/\/$/, '')}/v1/${path}${area ? `?area=${area}` : ''}`, {
+    const response = await fetch(`${base.replace(/\/$/, '')}/v1/${path}${params.size ? `?${params}` : ''}`, {
       method: request.method, headers: { 'content-type': 'application/json' }, body,
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(20000)]), cache: 'no-store',
     });

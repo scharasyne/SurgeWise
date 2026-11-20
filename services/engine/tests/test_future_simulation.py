@@ -125,13 +125,12 @@ def test_surge_onset_bed_bounds_mass_balance_and_saved_result(future):
     for day, beds in zip(future["days"], expected_beds):
         forecast = day["bedForecast"]
         assert forecast["expectedBeds"] == pytest.approx(beds)
-        assert forecast["lowerBeds"] <= beds <= forecast["upperBeds"]
+        assert forecast["lowerBeds"] is forecast["upperBeds"] is None
         assert sum(f["bedForecast"]["expectedBeds"] for f in day["facilities"]) == pytest.approx(beds)
         assert day["supportedCensus"] == 0  # No assumed residual staffed capacity.
         assert abs(day["balanceError"]) < 1e-7
         assert sum(b["cumulativeCases"] for b in day["barangays"]) == pytest.approx(day["cumulativeCases"])
-        for key in ["lowerCases", "upperCases"]:
-            assert sum(b["caseRange"][key] for b in day["barangays"]) == pytest.approx(day["caseRange"][key])
+        assert "caseRange" not in day
     assert future["bedProjection"]["peakAdditionalStaffedBedsNeeded"] > 0
     assert saved_movie(future["scenarioId"])["resultSha256"] == future["simulationResultSha256"]
 
@@ -158,23 +157,18 @@ def test_parameter_audit_zero_admissions_and_unreached_surge_peak():
     assert audit["fullMultiplierReached"] is False
     assert audit["maximumAppliedMultiplier"] == pytest.approx(1 + 9 / 28)
     assert audit["staffedSurgeActivationWithinWindow"] is False
-    assert audit["yearTrendModeled"] is False
-    assert audit["sourceYearGap"] == 3
-    assert audit["centralGapEvaluated"] is True
-    assert audit["rangeEvaluatedAtRequestedGap"] is False
+    assert result["forecastEvidence"]["issueBlock"] == {"YR": 2022, "WN": 52}
+    assert result["forecastEvidence"]["targetWeeks"] == [{"year": 2023, "week": 1}]
     assert all(d["bedForecast"]["expectedBeds"] == 0 and d["arrivals"] == 0 for d in result["days"])
     assert result["days"][-1]["shockCases"] > 0
-    assert result["futureForecast"]["accuracyAssessment"]["status"] == "EXPERIMENTAL_NOT_OPERATIONALLY_VALIDATED"
+    assert result["futureForecast"]["selectedModel"] == "RF_shallow"
 
 
-def test_year_crossing_and_weather_stress_do_not_overstate_matched_validation():
-    result = future_workspace(FutureInput(startDate="2026-12-30", horizonDays=3,
-        surgeEnabled=False, weatherProfile="wetter", hospitalizationRate=0))
-    audit = result["futureForecast"]["parameterAudit"]
-    assert audit["endDateExclusive"] == "2027-01-02"
-    assert audit["sourceYearGap"] == 2  # Includes the last case date, not only onset year.
-    assert audit["centralGapEvaluated"] is False
-    assert audit["rangeEvaluatedAtRequestedGap"] is False
+def test_planning_dates_reuse_actual_forecast_origin_across_year_boundary():
+    result = future_workspace(FutureInput(startDate="2026-12-30", horizonDays=3, surgeEnabled=False))
+    assert result["futureForecast"]["parameterAudit"]["endDateExclusive"] == "2027-01-02"
+    assert result["futureForecast"]["sourcePeriodStart"] == "2023-01-01"
+    assert result["forecastEvidence"]["targetWeeks"] == [{"year": 2023, "week": 1}]
 
 
 @pytest.mark.parametrize("horizon", [1, 2, 12, 14, 28])
@@ -186,7 +180,7 @@ def test_flexible_horizon_contract(horizon):
 def test_future_api_rejects_invalid_dates_inputs_and_untrusted_arrays():
     client = TestClient(app)
     for patch in [{"horizonDays": 0}, {"horizonDays": 29}, {"horizonDays": True},
-                  {"startDate": "2025-01-01"}, {"weatherProfile": "actual_future_weather"},
+                  {"startDate": "2025-01-01"}, {"weatherProfile": "actual_future_weather"}, {"weatherProfile": "wetter"},
                   {"surgeMultiplier": 11}, {"surgeOnsetDay": 12},
                   {"endDate": "2027-01-02"}, {"area": "NCR"}, {"weeklyCases": [100]},
                   {"facilities": []}, {"extraCasesPerWeek": 7}, {"mode": "live"}]:
@@ -196,3 +190,13 @@ def test_future_api_rejects_invalid_dates_inputs_and_untrusted_arrays():
     response = client.post("/v1/future-simulation", json={"startDate": "2027-01-01", "horizonDays": 2})
     assert response.status_code == 200, response.text
     assert len(response.json()["days"]) == 3
+
+
+def test_future_baseline_matches_released_barangay_predictions_across_weeks(future):
+    from production.surgewise.predictor import predict
+    direct = predict(weeks_ahead=2)
+    for index, day in enumerate(future["days"][1:]):
+        horizon = index // 7 + 1
+        expected = {b["barangay_code"]: b["expected_cases"] / 7 for b in direct["barangays"] if b["horizon"] == horizon}
+        assert {b["barangayId"]: b["baselineCases"] for b in day["barangays"]} == pytest.approx(expected)
+        assert day["baselineCases"] == pytest.approx(direct["city"][horizon - 1]["expected_cases"] / 7)

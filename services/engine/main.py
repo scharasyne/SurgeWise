@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from services.engine.repositories.production_runs import production_run, ProductionForecastUnavailable
 from pydantic import BaseModel, Field, ConfigDict
 try:
     from .repositories.facility import load_facilities, FacilityDatasetError, DATASET_ID
@@ -10,16 +12,23 @@ from services.engine.api.limits import BodySizeLimit
 from services.engine.api.outbreak import router as outbreak_router
 from services.engine.api.qc_simulation import router as qc_simulation_router
 from services.engine.api.future_simulation import router as future_simulation_router
+from services.engine.api.weekly_forecast import router as weekly_forecast_router
 
 from services.engine.api.lgu_reports import router as report_router
 
 app = FastAPI(title="SurgeWise Forecast and Simulation API", version="0.1.0")
+app.include_router(weekly_forecast_router)
 app.include_router(research_router)
 app.include_router(outbreak_router)
 app.include_router(report_router)
 app.include_router(qc_simulation_router)
 app.include_router(future_simulation_router)
-app.add_middleware(BodySizeLimit)
+app.add_middleware(BodySizeLimit, route_limits={"/v1/predict": 2 * 1024 * 1024})
+
+@app.exception_handler(ProductionForecastUnavailable)
+async def production_unavailable(request, error):
+    return JSONResponse(status_code=503, content={"detail": {"code": "PRODUCTION_FORECAST_UNAVAILABLE", "message": str(error)}})
+
 
 class SimulationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -73,11 +82,23 @@ def readiness():
         approved_ranking(today_qc().year)
     except BarangayRankingUnavailable as error:
         ranking = {"ready": False, "code": "BARANGAY_RANKING_UNAVAILABLE", "message": str(error)}
-    return {"schemaVersion": "1.0", "ready": False, "historicalSourceBlockReplayReady": forecast_ready and facility_ready,
+    try:
+        production = {"ready": True, "model": production_run(today_qc(), 1, planning=True)["model"]}
+    except ProductionForecastUnavailable:
+        production = {"ready": False, "code": "PRODUCTION_FORECAST_UNAVAILABLE"}
+    from services.engine.repositories import gp_runs
+    try:
+        gp_runs.reconstruction_run(gp_runs.FIRST_DAY, 1)
+        gp_runs.holdout_run(gp_runs.RF_START, 1)
+        archive = {"ready": True, "firstYear": 2012, "lastYear": 2022}
+    except (OSError, ValueError, KeyError, IndexError):
+        archive = {"ready": False, "code": "ARCHIVE_REPLAY_UNAVAILABLE"}
+    return {"schemaVersion": "1.0", "ready": False, "archiveReplay": archive, "historicalSourceBlockReplayReady": forecast_ready and facility_ready,
         "seasonalForecast": seasonal,
         "barangayRanking": ranking,
-        "qcWorkspaceReady": forecast_ready and facility_ready and ranking["ready"],
-        "futureWorkspaceReady": facility_ready and ranking["ready"] and seasonal["ready"],
+        "productionForecast": production,
+        "qcWorkspaceReady": archive["ready"] and facility_ready,
+        "futureWorkspaceReady": facility_ready and production["ready"],
         "facilities": {"ready": facility_ready, "datasetId": DATASET_ID},
         "blockers": ["Exact source week/calendar alignment and historical publication delays unresolved; live and calendar-dated forecasting unavailable.",
         "Dengue eligibility and staffed capacity unknown; /v1/scenarios requires explicit hypothetical assumptions.",

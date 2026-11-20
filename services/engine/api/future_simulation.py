@@ -1,4 +1,4 @@
-"""Future-date seasonal and hypothetical surge planning with case-to-bed projections."""
+"""Production dengue forecasts and hypothetical surge planning with case-to-bed projections."""
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
@@ -10,8 +10,7 @@ from pydantic import Field, model_validator
 from .qc_simulation import QCInput, LIMITS, compare_first_admissions, facility_assumptions, placement_assumption
 from .research import unavailable
 from .outbreak import OutbreakInput, inputs, create_movie
-from ..repositories.seasonal_runs import create_seasonal_run, approved_model, FOLDER, SeasonalArtifactError
-from ..domain.seasonal_forecast import XGBOOST_CANDIDATES
+from ..repositories.production_runs import production_run, evidence, INTERVAL_NOTE
 
 router = APIRouter(prefix="/v1")
 
@@ -25,7 +24,7 @@ class FutureInput(QCInput):
     endDate: date = Field(default_factory=lambda: today_qc() + timedelta(days=28))
     mode: Literal["hypothetical_shock"] = "hypothetical_shock"
     horizonDays: int = Field(default=28, strict=True, ge=1, le=28)
-    weatherProfile: Literal["typical", "wetter", "drier", "hotter"] = "typical"
+    weatherProfile: Literal["typical"] = "typical"
     surgeEnabled: bool = True
     surgeOnsetDay: int = Field(default=0, strict=True, ge=0, le=27)
     surgeMultiplier: float = Field(default=2, ge=1, le=10)
@@ -53,6 +52,8 @@ class FutureInput(QCInput):
 
     @model_validator(mode="after")
     def validate_future(self):
+        if self.weeklyForecastId:
+            raise ValueError("Open the saved weekly forecast in the linked hospital workspace.")
         if self.startDate < today_qc():
             raise ValueError("Use the historical tab for past dates; future planning starts today or later.")
         if self.extraCasesPerWeek != 0:
@@ -71,7 +72,7 @@ def default_future():
 def future_workspace(params: FutureInput):
     try:
         as_of = today_qc()
-        run = create_seasonal_run(params.startDate, params.weatherProfile, as_of)
+        run = production_run(params.startDate, params.horizonDays, planning=True)
         _, geo, _ = inputs(run["id"], params.startDate.year, True)
         model = OutbreakInput(forecastRunId=run["id"], scenarioKind="hypothetical_shock", autoHotspots=True,
             acknowledgeHypotheticalHospitalNetwork=True, acknowledgeHypotheticalDates=True,
@@ -85,26 +86,17 @@ def future_workspace(params: FutureInput):
             admissionDelayDays=params.admissionDelayDays, surgeActivationDay=params.surgeActivationDay,
             facilities=facility_assumptions(params, geo["hospitals"]))
         movie = create_movie(model)
-        validation = json.loads((FOLDER / "qc-seasonal-validation.json").read_text())
-        engine, manifest = approved_model()
         final = movie["days"][-1]
         has_added_surge = params.surgeEnabled and params.surgeMultiplier > 1
-        maximum_year_gap = (params.endDate - timedelta(days=1)).year - manifest["sourceLastBlock"]["YR"]
         result = {**movie, "workspaceTab": "future", "controlValues": params.model_dump(mode="json"),
-            "inputLimits": {**LIMITS, "surgeMultiplier": {"min": 1, "max": 10, "units": "times the seasonal baseline"},
+            "inputLimits": {**LIMITS, "surgeMultiplier": {"min": 1, "max": 10, "units": "times the production baseline"},
                 "surgeOnsetDay": {"min": 0, "max": params.horizonDays - 1, "units": "day index"}},
             "scope": "QUEZON_CITY", "mapContext": "PHILIPPINES_GEOMETRY_ONLY",
-            "forecastEvidence": {key: run[key] for key in ["id", "issueBlock", "model", "environmentalInputs", "observedCasesAtOrigin", "observedSourceYearToDateCases", "intervalCoverageTarget", "intervalCaveat", "spatialCaveat", "availabilityAssumption"]},
-            "futureForecast": {"asOfDate": as_of.isoformat(), "trainingCutoffBlock": manifest["sourceLastBlock"],
-                "xgboostVariant": engine["xgboostVariant"], "usesWeather": XGBOOST_CANDIDATES[engine["xgboostVariant"]]["weather"],
-                "accuracyAssessment": validation["accuracyAssessment"], "calendarDiagnostics": validation["calendarDiagnostics"],
-                "rangeEvidencePolicy": validation["rangeEvidencePolicy"],
-                "leadYearGapValidation": validation["leadYearGapValidation"],
+            "forecastEvidence": evidence(run),
+            "futureForecast": {"asOfDate": as_of.isoformat(), "selectedModel": run["model"],
+                "trainingCutoffBlock": {"YR": run["trainedThrough"], "WN": 52}, "modelSha256": run["modelSha256"],
                 "parameterAudit": {"startDate": params.startDate.isoformat(), "endDateExclusive": params.endDate.isoformat(),
-                    "horizonDays": params.horizonDays, "yearTrendModeled": False,
-                    "sourceYearGap": maximum_year_gap,
-                    "centralGapEvaluated": maximum_year_gap in {1, 2, 3} and params.weatherProfile == "typical",
-                    "rangeEvaluatedAtRequestedGap": maximum_year_gap == 1 and params.weatherProfile == "typical" and not has_added_surge,
+                    "horizonDays": params.horizonDays,
                     "surgeOnsetDate": (params.startDate + timedelta(days=params.surgeOnsetDay)).isoformat() if has_added_surge else None,
                     "fullMultiplierDate": (params.startDate + timedelta(days=params.surgeOnsetDay + params.growthDays - 1)).isoformat() if has_added_surge else None,
                     "fullMultiplierReached": has_added_surge and params.surgeOnsetDay + params.growthDays <= params.horizonDays,
@@ -112,21 +104,15 @@ def future_workspace(params: FutureInput):
                     "staffedSurgeActivationSnapshotDate": (params.startDate + timedelta(days=params.surgeActivationDay)).isoformat(),
                     "staffedSurgeActivationWithinWindow": params.surgeActivationDay <= params.horizonDays,
                     "admissionDelayDays": params.admissionDelayDays, "lengthOfStayDays": params.lengthOfStayDays},
-                "weatherProfile": params.weatherProfile, "selectedModel": manifest["selectedModel"],
-                "selection": validation["selection"], "validation": validation["backtest"],
-                "modelSha256": manifest["modelSha256"], "methodVersion": manifest["methodVersion"],
-                "stalenessCaveat": "Source observations end in 2025. No current 2026/2027 cases, measured future weather, hospital census or verified staffed capacity are available. This is conditional seasonal surge planning.",
-                "weatherCaveat": "Historical within-season weather analogs are assumptions, not operational weather forecasts. The model has no unavailable current-case lags."},
+                "sourcePeriodStart": run["dailyPredictions"][0]["sourceDate"],
+                "sourcePeriodEnd": run["dailyPredictions"][-1]["sourceDate"]},
             "forecastBacktest": [],
-            "referenceSelectionAssumption": "A new date-specific seasonal curve is generated for the requested month/week using trained seasonal features and past-only weather analogs. Jan-1 52-block calendar mapping remains assumed, not reconciled source metadata.",
-            "rangeInterpretation": "Experimental season-matched historical case error ranges. Bed ranges are low/high case-demand sensitivity conditional on fixed admission fraction, LOS, delay, catchments and capacity; observed bed forecast accuracy is unknown.",
-            "periodSummary": {"expectedCases": final["cumulativeCases"], "caseRange": final["caseRange"],
+            "referenceSelectionAssumption": "Scenario day one uses the first forecast week after the final week of the 2012–2022 archive. Changing the planning start moves the hospital timeline. It does not advance the model's observation history.",
+            "rangeInterpretation": INTERVAL_NOTE,
+            "periodSummary": {"expectedCases": final["cumulativeCases"], "caseRange": None,
                 "barangays": sorted(final["barangays"], key=lambda b: (-b["cumulativeCases"], b["barangayId"]))},
-            "assumptions": "New seasonal baseline for the requested future dates; historical weather analogs and a configured surge onset/ramp/multiplier. Fixed prior annual spatial weights, zero initial dengue census, fixed assumed q/LOS/delay and non-dengue occupancy. All 46 hospitals are assumed eligible. Their PhilHealth accredited counts set the scenario bed totals. Reservations and temporary holding spaces are planning assumptions. Required beds are unconstrained case-to-cohort demand; modeled placement/overflow uses finite assumed normal/surge/holding resources. No current vacancies are inferred.",
+            "assumptions": movie["assumptions"] + " " + placement_assumption(params),
             "simulationResultSha256": movie["resultSha256"]}
-        result["assumptions"] = result["assumptions"].replace("Fixed prior annual spatial weights", "Fixed XGBoost annual barangay burden forecast shares")
-        result["assumptions"] += " " + placement_assumption(params)
-        result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is not validated weekly hotspot detection; spatial uncertainty is not included in city case ranges."
         if params.compareAllocation:
             result["firstAdmissionComparison"] = compare_first_admissions(model, movie)
         result.pop("resultSha256", None)
@@ -134,7 +120,5 @@ def future_workspace(params: FutureInput):
         return result
     except HTTPException:
         raise
-    except SeasonalArtifactError as error:
-        raise HTTPException(503, detail={"code": "SEASONAL_ARTIFACTS_UNAVAILABLE", "message": str(error)}) from None
     except (OSError, ValueError, KeyError, TypeError):
         raise unavailable() from None

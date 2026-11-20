@@ -56,6 +56,20 @@ def load_run(ident):
     return runs[0]
 
 
+def load_workspace_run(ident):
+    """Resolve a dated forecast or reconstruction without exposing it to four-week-only consumers."""
+    if ident.startswith(("qc-gp-replay-", "qc-holdout-replay-")):
+        from .gp_runs import load_archive_run
+        return load_archive_run(ident)
+    if ident.startswith("qc-weekly-"):
+        from .weekly_handoff import load_weekly_run
+        return load_weekly_run(ident)
+    if ident.startswith("qc-rf-"):
+        from .production_runs import load_production_run
+        return load_production_run(ident)
+    return load_run(ident)
+
+
 def load_environmental_runs():
     manifest = json.loads((FOLDER / "qc-environmental-manifest.json").read_text())
     path = FOLDER / "qc-environmental-forecasts.json"

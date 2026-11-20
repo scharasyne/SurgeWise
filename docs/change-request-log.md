@@ -1,5 +1,34 @@
 # User-requested extensions
 
+## 2026-11-21 05:25 +08:00 — Bring main and Tammy’s shading into the weekly simulation
+
+Merged current main into `forecast/integration` and applied the barangay shading from `tammy-barangay-shading`. Weekly playback uses all 142 saved barangay values for the chosen measure. [Map behavior](simulation-workspace-design.md#map-semantics)
+
+## 2026-11-21 04:56 +08:00 — Shade all barangays, remove numbered markers
+
+Only the ten ranked barangays used to be shaded, so the other 132 looked empty even when they had as many cases. Now every barangay is shaded by its modeled cases on a square-root scale across all barangays. The numbered 1–10 circles are removed; small dots remain only where connection lines start. The top-ten ranking stays in Results and overview connections. [Map semantics](simulation-workspace-design.md#map-semantics)
+
+## 2026-11-21 04:51 +08:00 — Weekly archive scope and QC bed demand
+
+Show historical years 2012–2022, weekly increments, changes in expected bed demand, QC-wide staffing and shortfall, and hospital and barangay details. [Simulation workspace](simulation-workspace-design.md#layout-and-interaction)
+
+
+## 2026-11-21 04:29 +08:00 — Forecast within Simulation
+
+Remove the Forecast navigation tab. Use the existing Simulation scenario controls to run forecasts and display case estimates in the existing results workspace. [Workspace controls and results](simulation-workspace-design.md#layout-and-interaction)
+
+## 2026-11-21 04:15 +08:00 — Connect archive-trained weekly forecasts to hospital simulation
+
+Use the training archive as evidence for forecast accuracy. Connect the exact weekly outputs to the existing hospital Markov chain and expose historical simulation for every year from 2012 through 2022. [Historical inputs, test periods and handoff contract](../production/README.md#hospital-simulation-and-historical-replay)
+
+## 2026-11-21 02:58 +08:00 — Use the production model inside Simulation
+
+Historical replay and Future forecast use the released weekly barangay predictions to calculate dengue cases and hospital demand. [Forecast source and dates](future-seasonal-simulation.md)
+
+## 2026-11-21 02:25 +08:00 — Connect the weekly production forecast
+
+Run the bundled Quezon City model from the web app for the next one to six morbidity weeks after the latest observation. [Production forecast contract](../production/README.md)
+
 ## 2026-11-21 02:54 +08:00 — Local government simulation briefing
 
 Add a full-run report below Results overview with a PDF briefing and daily hospital CSV. Flag hospitals at 10 or fewer remaining staffed dengue beds and identify those reaching zero. [Report contents and thresholds](simulation-workspace-design.md#lgu-simulation-report)

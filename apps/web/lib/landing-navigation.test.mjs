@@ -17,17 +17,17 @@ function load(relative) {
   loaded.filename = filename;
   loaded.paths = require.resolve.paths('react');
   loaded.require = name => {
-    if (name === 'next/link') return { default: ({ children, prefetch, ...props }) => {
+    if (name === 'next/link') return { __esModule: true, default: ({ children, prefetch, ...props }) => {
       void prefetch;
       return React.createElement('a', props, children);
     } };
-    if (name === 'next/navigation') return { usePathname: () => activePath, useRouter: () => ({ push() {}, prefetch() {} }) };
+    if (name === 'next/navigation') return { redirect(href) { throw new Error('Redirect to ' + href); }, usePathname: () => activePath, useRouter: () => ({ push() {}, prefetch() {} }) };
     if (name.endsWith('.css')) return {};
     if (name.startsWith('@/')) return load(`../${name.slice(2)}${name.startsWith('@/lib/') ? '.ts' : '.tsx'}`);
-    return require(name);
+    return createRequire(filename)(name);
   };
   loaded._compile(ts.transpileModule(readFileSync(filename, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: { esModuleInterop: true, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, filename);
   cache.set(filename, loaded.exports);
   return loaded.exports;
@@ -72,6 +72,7 @@ test('persistent navigation identifies each current route including the simulati
     assert.equal((nav.match(/aria-current="page"/g) ?? []).length, 1);
     assert.match(nav, new RegExp(`aria-label="${label}" aria-current="page"`));
     assert.equal((nav.match(/role="tooltip"/g) ?? []).length, 4);
+    assert.ok(!nav.includes('href="/forecast"'));
     assert.ok(!nav.includes('title='), 'navigation uses custom descriptions, not browser title tooltips');
     assert.ok(!nav.includes('sw-nav-label'), 'rail is icons-only');
     assert.ok(!nav.includes('QC / PH'));
@@ -84,4 +85,9 @@ test('Home uses the shared light appearance without an isolated theme control', 
   assert.ok(!html.includes('Pause model animation'));
   assert.ok(!html.includes('home-model-index'));
   assert.ok(!html.includes('Conceptual model · Not a real facility'));
+});
+
+test('former Forecast bookmarks open future scenario settings in Simulation', () => {
+  const ForecastRedirect = load('../app/forecast/page.tsx').default;
+  assert.throws(ForecastRedirect, { message: 'Redirect to /outbreak-response?mode=future' });
 });

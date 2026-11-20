@@ -1,4 +1,4 @@
-"""Automatic QC-only environmental forecast workspace. No user-selected outbreak place."""
+"""Historical QC simulation driven by production barangay forecasts."""
 from datetime import date, timedelta
 import json
 import hashlib
@@ -10,7 +10,10 @@ from pydantic import Field, model_validator
 
 from .research import StrictModel, FacilityAssumption, unavailable
 from .outbreak import OutbreakInput, inputs, create_movie
-from ..repositories.forecast_runs import load_environmental_runs, FOLDER
+from ..repositories import gp_runs
+from ..repositories.weekly_handoff import ARCHIVE_ONLY_NOTE, ID_PATTERN, load_weekly_run
+from ..repositories.forecast_runs import ForecastRunNotFound
+from ..repositories.production_runs import evidence
 from ..domain.source_calendar import historical_window
 from ..repositories.facility import load_facilities
 from ..domain.bed_allotments import AllotmentFileError, MAX_FILE_BYTES, capacity_mismatch, parse_allotments, read_table
@@ -64,8 +67,10 @@ class StaffedBedTotal(HospitalCapacity):
 
 
 class QCInput(StrictModel):
-    startDate: date = date(2025, 1, 29)
-    endDate: date = date(2025, 2, 26)
+    reconstructHistory: bool = True
+    weeklyForecastId: str | None = Field(default=None, pattern="^" + ID_PATTERN + "$")
+    startDate: date = gp_runs.FIRST_DAY
+    endDate: date = gp_runs.FIRST_DAY + timedelta(days=28)
     mode: Literal["forecast", "hypothetical_shock"] = "forecast"
     extraCasesPerWeek: float = Field(default=0, ge=0, le=100000)
     growthDays: int = Field(default=14, strict=True, ge=1, le=28)
@@ -88,10 +93,10 @@ class QCInput(StrictModel):
             raise ValueError("Each hospital may appear only once in bed allotments.")
         if not 1 <= (self.endDate - self.startDate).days <= 28:
             raise ValueError("Select a 1–28 elapsed-day date range.")
-        if not 2024 <= self.startDate.year <= 2035:
-            raise ValueError("Source-based reference windows begin in 2024; hypothetical date labels may extend through 2035.")
-        if self.mode == "forecast" and (self.startDate.year > 2025 or self.extraCasesPerWeek != 0):
-            raise ValueError("Forecast-reference mode uses historical data through 2025 and no added shock. Choose hypothetical mode for future/off-season stress tests.")
+        if not 2012 <= self.startDate.year <= 2035:
+            raise ValueError("Historical replay begins in 2012; hypothetical date labels may extend through 2035.")
+        if self.mode == "forecast" and ((self.startDate.year > 2025 and not self.weeklyForecastId) or self.extraCasesPerWeek != 0):
+            raise ValueError("Use an archive date in 2012–2022 for historical replay and hypothetical mode for added cases.")
         return self
 
 
@@ -158,16 +163,49 @@ def select_reference(runs, start, end=None):
     return max(eligible, key=lambda r: (r["issueBlock"]["YR"], r["issueBlock"]["WN"]))
 
 
+def linked_run(ident):
+    try:
+        run = load_weekly_run(ident)
+        if run["issueBlock"] != {"YR": 2022, "WN": 52} or run["observationSource"].startswith("User-supplied"):
+            raise HTTPException(422, detail={"code": "ARCHIVE_CASE_HISTORY_REQUIRED", "message": ARCHIVE_ONLY_NOTE})
+        return run
+    except ForecastRunNotFound:
+        raise HTTPException(404, detail={"code": "FORECAST_NOT_FOUND", "message": "This saved weekly forecast is unavailable."}) from None
+    except (OSError, ValueError):
+        raise unavailable() from None
+
+
 @router.get("/qc-simulation")
-def default_workspace():
-    return workspace(QCInput())
+def default_workspace(weeklyForecastId: str | None = None):
+    if weeklyForecastId is None:
+        return workspace(QCInput())
+    run = linked_run(weeklyForecastId)
+    start = date.fromisoformat(run["scenarioStart"])
+    return workspace(QCInput(weeklyForecastId=weeklyForecastId, startDate=start,
+                             endDate=start + timedelta(days=len(run["dailyPredictions"])), mode="hypothetical_shock"))
 
 
 @router.post("/qc-simulation")
 def workspace(params: QCInput):
     try:
-        historical_runs = load_environmental_runs()
-        run = select_reference(historical_runs, params.startDate, params.endDate)
+        duration = (params.endDate - params.startDate).days
+        if params.weeklyForecastId:
+            run = linked_run(params.weeklyForecastId)
+            if (params.startDate.isoformat() != run["scenarioStart"] or duration != len(run["dailyPredictions"])
+                    or params.mode != "hypothetical_shock" or params.extraCasesPerWeek):
+                raise HTTPException(422, detail={"code": "FORECAST_WINDOW_MISMATCH",
+                    "message": "Use the linked weekly forecast's dates and case scenario."})
+        elif gp_runs.FIRST_DAY <= params.startDate and params.endDate <= gp_runs.END_EXCLUSIVE:
+            use_forest = params.startDate >= gp_runs.RF_START and not params.reconstructHistory
+            loader = gp_runs.holdout_run if use_forest else gp_runs.reconstruction_run
+            try:
+                run = loader(params.startDate, duration)
+            except (OSError, ValueError, KeyError, IndexError):
+                raise HTTPException(503, detail={"code": "ARCHIVE_REPLAY_UNAVAILABLE",
+                    "message": "The selected historical input failed verification. Restore the archive GP data or rebuild the historical RF replay."}) from None
+        else:
+            raise HTTPException(422, detail={"code": "HISTORICAL_WINDOW_UNAVAILABLE",
+                "message": "Choose historical replay dates within 2012–2022."})
         geo = inputs(run["id"], params.startDate.year, True)[1]
         # No place is requested from the browser; all QC weights determine rankings.
         automatic_origin = max(geo["barangays"], key=lambda b: b["weight"])["id"]
@@ -185,18 +223,15 @@ def workspace(params: QCInput):
         core_hash = result["resultSha256"]
         # These are presentation/evidence fields from approved artifacts, never browser facts.
         result = {**result, "controlValues": params.model_dump(mode="json"), "inputLimits": LIMITS,
-            "historicalWindows": [{"startDate": historical_window(r)[0].isoformat(), "endDate": historical_window(r)[1].isoformat()} for r in historical_runs],
-            "forecastEvidence": {key: run[key] for key in ["id", "issueBlock", "model", "environmentalInputs", "observedCasesAtOrigin", "observedSourceYearToDateCases", "intervalCoverageTarget", "intervalCaveat", "spatialCaveat", "availabilityAssumption"]},
-            "scope": "QUEZON_CITY", "mapContext": "PHILIPPINES_GEOMETRY_ONLY",
-            "referenceSelectionAssumption": "Use only saved forecast target blocks covering the entire selected window, under the explicit Jan-1 52-block assumption. Partial windows preserve their actual source-block offset. Other months are rejected. Original WN dating remains unresolved.",
-            "rangeInterpretation": "80% target empirical city forecast residual ranges, conditional on fixed annual barangay shares. Spatial allocation uncertainty and hospital admission/capacity uncertainty are not calibrated.",
-            "forecastBacktest": json.loads((FOLDER / "qc-environmental-forecasts.json").read_text())["backtest"]["scores"]}
+            "historicalWindows": [{"startDate": gp_runs.FIRST_DAY.isoformat(), "endDate": gp_runs.END_EXCLUSIVE.isoformat(),
+                "kind": "training_archive", "forecastAvailableFrom": gp_runs.RF_START.isoformat()}],
+            "forecastEvidence": evidence(run), "scope": "QUEZON_CITY", "mapContext": "PHILIPPINES_GEOMETRY_ONLY",
+            "referenceSelectionAssumption": run["availabilityAssumption"],
+            "rangeInterpretation": run["intervalCaveat"], "forecastBacktest": []}
         final = result["days"][-1]
-        result["periodSummary"] = {"expectedCases": final["cumulativeCases"], "caseRange": final["caseRange"],
+        result["periodSummary"] = {"expectedCases": final["cumulativeCases"], "caseRange": None,
             "barangays": sorted(final["barangays"], key=lambda b: (-b["cumulativeCases"], b["barangayId"]))}
-        result["assumptions"] = "QC-wide historical case + lagged rainfall/temperature/humidity model; fixed prior annual barangay weights. Daily counts are uniformly disaggregated source-block forecasts. Zero initial dengue census, constant assumed non-dengue occupancy, configured admission fraction/delay and fixed LOS; observed source case totals are not observed hospital admissions. No user-selected infection origin or calibrated transmission model. All 46 hospitals are assumed eligible. Each site uses its PhilHealth accredited bed count as the scenario bed total, with an assumed reservation split and separate temporary holding spaces. " + placement_assumption(params)
-        result["assumptions"] = result["assumptions"].replace("fixed prior annual barangay weights", "fixed XGBoost annual barangay burden forecast shares")
-        result["forecastEvidence"]["spatialCaveat"] = "XGBoost annual barangay burden supplies modeled shares and ten high-burden candidates. Annual ranking is evaluated separately; weekly hotspot and spatial-allocation uncertainty are not validated."
+        result["assumptions"] += " " + placement_assumption(params)
         if params.compareAllocation:
             result["firstAdmissionComparison"] = compare_first_admissions(model, result)
         result["simulationResultSha256"] = core_hash

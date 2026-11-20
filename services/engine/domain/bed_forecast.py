@@ -11,6 +11,10 @@ def surge_staffing(mean, baseline):
     return max(0, needed(mean) - needed(baseline))
 
 
+def change_percent(current, previous):
+    return 100 * (current - previous) / previous if previous > 0 else None
+
+
 def rolling_bed_demand(arrivals, los):
     if type(los) is not int or not 1 <= los <= 30 or any(not math.isfinite(v) or v < 0 for v in arrivals):
         raise ValueError("Invalid LOS or admission trajectory")
@@ -30,7 +34,7 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
     high_by_hospital = {f["facilityId"]: [0.0] for f in config["facilities"]}
     baseline_by_hospital = {f["facilityId"]: [0.0] for f in config["facilities"]}
     for i, d in enumerate(case_days[:n - 1]):
-        if run.get("dailyPredictions"):
+        if bounds_available and run.get("dailyPredictions"):
             baseline = run["dailyPredictions"][i]
             lo, hi = baseline["lowerCases"], baseline["upperCases"]
         elif bounds_available:
@@ -78,18 +82,31 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
     # Per-hospital non-dengue share when imported allotments supply one, else the scenario-wide share.
     non_dengue_shares = {f["facilityId"]: config["baselineOccupancy"] if f.get("baselineOccupancy") is None else f["baselineOccupancy"]
                          for f in config["facilities"]}
+    origin_demand = {}
+    if "weeklyOriginShares" in context and config.get("allocationPolicy") == "first_hospital":
+        origin_cases = {b: [0.0] for b in by_id}
+        for case_day in case_days[:n - 1]:
+            for row in case_day["barangays"]:
+                origin_cases[row["barangayId"]].append(row["expectedCases"])
+        origin_demand = {b: demand(values) for b, values in origin_cases.items()}
+        probabilities = {b: dict(options) for b, options in shares.items()}
     for day in flow:
         i = day["dayIndex"]
         capacity = sum(f["normalCapacity"] * (1 - non_dengue_shares[f["facilityId"]]) + f["activatedSurgeCapacity"] for f in day["facilities"])
         day["bedForecast"] = prediction(central[i], lo_curve[i], hi_curve[i], capacity)
-        day["bedForecast"].update({"baselineExpectedBeds": baseline_network[i],
+        # Day zero is an assumed empty start, never a measured comparison week.
+        day["weeklyCasesChangePct"] = (change_percent(sum(cases[i-6:i+1]), sum(cases[i-13:i-6]))
+                                       if i >= 14 else None)
+        day["bedForecast"].update({"weeklyDemandChangePct": change_percent(central[i], central[i-7]) if i > 7 else None,
+            "baselineExpectedBeds": baseline_network[i],
             "baselineStaffedBedsRequired": needed(baseline_network[i]),
             "additionalStaffedBedsDueToSurge": surge_staffing(central[i], baseline_network[i])})
         for facility in day["facilities"]:
             central_hospital, low_hospital, high_hospital = hospital_curves[facility["facilityId"]]
             supported = facility["normalCapacity"] * (1 - non_dengue_shares[facility["facilityId"]]) + facility["activatedSurgeCapacity"]
             facility["bedForecast"] = prediction(central_hospital[i], low_hospital[i], high_hospital[i], supported)
-            facility["bedForecast"].update({"baselineExpectedBeds": baseline_curves[facility["facilityId"]][i],
+            facility["bedForecast"].update({"weeklyDemandChangePct": change_percent(central_hospital[i], central_hospital[i-7]) if i > 7 else None,
+                "baselineExpectedBeds": baseline_curves[facility["facilityId"]][i],
                 "baselineStaffedBedsRequired": needed(baseline_curves[facility["facilityId"]][i]),
                 "additionalStaffedBedsDueToSurge": surge_staffing(central_hospital[i], baseline_curves[facility["facilityId"]][i]),
                 "catchmentMethod": config.get("arrivalSplitPolicy", "nearest") + " (assumed first-destination shares)"})
@@ -109,8 +126,12 @@ def add_bed_forecasts(flow, case_days, run, context, config, shares):
                 h, forecast = f["facilityId"], f["bedForecast"]
                 gap = max(0, forecast["expectedBeds"] - forecast["assumedSupportedDengueCapacity"])
                 if gap:
-                    for origin, fraction in context["firstAdmissionOriginShares"][h].items():
-                        by_origin[origin] += gap * fraction
+                    if origin_demand:
+                        for origin, curve in origin_demand.items():
+                            by_origin[origin] += gap * curve[i] * probabilities[origin][h] / forecast["expectedBeds"]
+                    else:
+                        for origin, fraction in context["firstAdmissionOriginShares"][h].items():
+                            by_origin[origin] += gap * fraction
             for b in day["barangays"]:
                 b["expectedBedsShort"] = by_origin[b["barangayId"]]
     shortage_peak = max(flow, key=lambda d: d["bedForecast"]["hospitalBedsShort"])

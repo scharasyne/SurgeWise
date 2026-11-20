@@ -54,20 +54,36 @@ def test_local_shortage_survives_spare_beds_elsewhere(two_site_inputs):
 
 
 @pytest.mark.parametrize("policy,folder", [(k, v[0]) for k, v in first_admission.MATRICES.items()])
-def test_live_historical_run_matches_every_exported_hospital_day(policy, folder):
+def test_imputed_history_reaches_every_hospital_day(policy, folder):
     movie = workspace(QCInput(arrivalSplitPolicy=policy))
     assert movie["parameters"]["allocationPolicy"] == "first_hospital"
     assert movie["firstAdmissionMatrixSha256"] == first_admission.MATRICES[policy][1]
     assert len([b for b in movie["context"]["barangays"] if b["mappedFavoriteHospitalId"]]) == 14
-    with (ROOT / "data/processed" / folder / "daily_hospital_beds.csv").open() as stream:
-        reference = list(csv.DictReader(stream))
-    assert len(reference) == 28 * 46
-    # The export labels interval starts. The movie labels the end snapshot.
-    observations = {(d["intervalStart"][:10], f["facilityId"]): f for d in movie["days"][1:] for f in d["facilities"]}
-    for row in reference:
-        f = observations[(row["scenarioDate"], row["hospitalId"])]
-        assert f["firstAdmissionsToday"] == pytest.approx(float(row["expectedFirstAdmissions"]), abs=1e-12)
-        assert f["bedForecast"]["expectedBeds"] == pytest.approx(float(row["expectedOccupiedDengueBedsIfAdmitted"]), abs=1e-12)
+    # Use the archive records as the case oracle and apply the reviewed
+    # hospital-choice table independently of the simulation's daily groups.
+    from production.surgewise import history
+    from datetime import datetime
+    from bisect import bisect_right
+    city = [row for row in history.city_history() if row["year"] == 2012]
+    starts = [datetime.strptime(row["source_date_corrected"], "%m/%d/%Y").date() for row in city]
+    source_weeks = {}
+    with (ROOT / "data/processed" / folder / "first_hospital_probabilities.csv").open() as stream:
+        probabilities = {r["barangayId"]: r for r in csv.DictReader(stream)}
+    hospital_history = {}
+    for i, day in enumerate(movie["days"][1:]):
+        block = bisect_right(starts, datetime.fromisoformat(day["intervalStart"]).date()) - 1
+        if block not in source_weeks:
+            period = history.gp_history(year=2012, week=block + 1)
+            length = (starts[block + 1] - starts[block]).days
+            source_weeks[block] = {r["barangay_code"]: r["gp_expected_cases"] / length for r in period["barangays"]}
+        local = source_weeks[block]
+        assert {b["barangayId"]: b["baselineCases"] for b in day["barangays"]} == pytest.approx(local)
+        for site in day["facilities"]:
+            ident = site["facilityId"]
+            expected = .15 * sum(cases * float(probabilities[b][ident]) for b, cases in local.items())
+            hospital_history.setdefault(ident, []).append(expected)
+            assert site["firstAdmissionsToday"] == pytest.approx(expected)
+            assert site["bedForecast"]["expectedBeds"] == pytest.approx(sum(hospital_history[ident][-4:]))
     places = movie["bedProjection"]["placePeaks"]
     origins = {b["id"]: b for b in movie["context"]["barangays"]}
     sites = {h["id"]: h["coordinates"] for h in movie["context"]["hospitals"]}
@@ -113,7 +129,7 @@ def test_future_first_hospital_stress_and_paired_comparison():
 
 def test_corrupt_matrix_blocks_new_and_saved_results(monkeypatch):
     client = TestClient(app)
-    movie = workspace(QCInput(endDate=date(2025, 2, 1)))
+    movie = workspace(QCInput(endDate=date(2012, 1, 4)))
     monkeypatch.setitem(first_admission.MATRICES, "markov_preference", ("qc_first_admission_preference_v1", "0"*64))
     for url in ("/v1/qc-simulation", "/v1/outbreak-scenarios/" + movie["scenarioId"]):
         response = client.get(url)
@@ -161,7 +177,7 @@ def test_optimized_overflow_accounts_for_competing_destinations():
 def test_ranked_workspace_preserves_choice(endpoint, policy):
     from services.engine.api.future_simulation import today_qc
 
-    dates = {"endDate": "2025-02-01"} if endpoint == "qc-simulation" else {
+    dates = {"endDate": "2012-01-04"} if endpoint == "qc-simulation" else {
         "startDate": (today_qc() + timedelta(days=1)).isoformat(), "horizonDays": 3}
     response = TestClient(app).post("/v1/" + endpoint, json={**dates, "allocationPolicy": "next_probability",
         "arrivalSplitPolicy": policy, "compareAllocation": True})

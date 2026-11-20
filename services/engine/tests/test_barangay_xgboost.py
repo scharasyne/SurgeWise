@@ -57,21 +57,21 @@ def test_missing_past_count_is_not_observed_zero_and_invalid_counts_fail():
 def test_workspace_uses_model_shares_preserves_nulls_and_ten_candidates():
     data = default_workspace()
     context = data["context"]
-    assert context["hotspotRanking"]["forecastYear"] == 2025
-    assert context["weightYear"] == 2023
+    assert context["hotspotRanking"]["model"] == data["forecastEvidence"]["model"]
+    assert context["weightYear"] == 2012
     assert any(b["observedAnnualCases"] is None for b in context["barangays"])
     assert {b["id"] for b in context["barangays"] if b["isHighBurdenCandidate"]} == set(context["hotspotRanking"]["candidateIds"])
     assert data["days"][-1]["hotspotIds"] == context["hotspotRanking"]["candidateIds"]
     assert sum(b["weight"] for b in context["barangays"]) == pytest.approx(1)
 
 
-def test_failed_ranking_is_blocked_without_reverting_to_historical_shares(monkeypatch):
+def test_production_workspace_runs_without_retired_annual_ranking(monkeypatch):
     def unavailable(*args):
         raise barangay_runs.BarangayRankingUnavailable("Rebuild annual XGBoost ranking; no fallback")
     monkeypatch.setattr(barangay_runs, "approved_ranking", unavailable)
     response = TestClient(app).get("/v1/qc-simulation")
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "BARANGAY_RANKING_UNAVAILABLE"
+    assert response.status_code == 200
+    assert response.json()["forecastEvidence"]["caseSourceKind"] == "gp_reconstruction"
     readiness = TestClient(app).get("/readiness").json()
     assert readiness["barangayRanking"]["ready"] is False
-    assert readiness["qcWorkspaceReady"] is False
+    assert readiness["qcWorkspaceReady"] is True

@@ -12,32 +12,26 @@ hospital network, source observations and API contracts are unchanged.
   panel hosts Scenario, Results, barangay/hospital inspection or Layers. On phones
   this panel sits below the map. Results can be widened for tables and charts.
 - In **Set up scenario**, choose Historical replay or Future forecast. Pick a start
-  date and enter a duration from 1 to 28 days, or choose a duration preset.
-  The final snapshot date updates as you edit. **Run simulation** applies the changes
-  and opens **Results → Overview** immediately. Invalid settings keep the setup panel open.
+  date and choose 7, 14, 21 or 28 days.
+  The final snapshot date updates as you edit. **Run simulation** applies the changes and opens Results overview. Invalid settings keep the setup panel open.
   A teal fill and checkmark identify the selected mode and duration.
-- Historical replay offers saved forecast periods. Future forecast uses the month
-  and day in the start date for seasonal planning. Both modes retain their own
+- Historical replay lists the years 2012 through 2022. Future planning
+  applies the forecast after the most recent QC observation to the selected dates. Both modes retain their own
   settings. Hospital planning groups capacity, admissions and length of stay
   separately from the choice of hospital.
-- In **Future forecast**, **Projected dengue cases** offers a hypothetical surge with a multiplier, start delay and time to peak. The workspace leaves weather out of scenario setup and submits no weather override. Until the replacement case model is trained, the engine uses its existing default seasonal profile. Methods and the exported run retain the forecast provenance.
+- **Future forecast → Projected dengue cases** offers a planning window or the next 1–6 forecast weeks. Both use week 52 of 2022 as the observation cutoff. [Forecast inputs and dates](../production/README.md#hospital-simulation-and-historical-replay)
 - In **Hospital planning**, Historical replay and Future forecast offer **Distance and preferred hospital** and **Distance only** with every overflow setting. Choose **Record the shortage at that hospital** or **Try the next most likely hospital with space**. The latter ranks available sites using the originating barangay’s selected probabilities. [First-admission and overflow methods](first-admission-matrix.md#using-the-chain-in-the-simulation)
 - Under **Bed capacity**, both simulation modes use each hospital’s accredited bed count in the 30 September 2026 PhilHealth register as its fixed simulation total. Actual staffed capacity, occupancy and vacancies remain unknown. The default dengue reservation is 40% rounded to the nearest whole bed at each hospital. Other care receives the remainder. Across 46 hospitals this gives 3,756 dengue and 5,633 other-care beds.
 - The starting assumption adds five temporary holding spaces at each hospital, two for dengue overflow and three for other care. Holding spaces are separate from the accredited bed stock and activated surge beds. The common holding total and the hospital-specific holding counts are editable.
 - Choose a hospital to edit the division of beds or holding spaces. The total beside **Accredited beds** is read-only. Changing one side of the bed split assigns the balance to the other. **Use defaults** restores that hospital’s scenario settings.
 - The repository contains the [46 initial allocations](../apps/web/public/data/qc-initial-bed-reservations.csv). **Download template** exports the current settings. CSV and XLSX imports use a facility ID or exact hospital name. If supplied, `accredited_beds` (legacy alias `staffed_beds`) and the sum of the split must match the registered total. An explicit split takes priority over the scenario percentage. Rows with only a matching total follow the percentage. Importing a valid file replaces hospital-specific values. Row errors prevent the entire import from applying.
-- Playback retains play/pause, restart, previous/next day, speed, final-day jump
-  and scrubbing. A peak-demand shortcut uses the backend's saved peak day; it is
-  shown after playback starts. It never derives a competing peak in the browser.
+- Playback, scrubbing and previous/next controls move in seven-day increments. The peak shortcut selects the week containing the daily demand peak. Hospital admissions and stays still use daily intervals.
   Since 2026-11-19 a small tab on the timeline's top edge hides the whole
   timeline (playback, readouts and Help) to give the map more room; a "Show
   timeline · Day N / total" tab stays at the bottom of the map to bring it back.
   Playback keeps running while it is hidden. Below 1100px the map credit and
   map tools sit slightly higher so the tab never covers them.
-- Three compact readouts show accumulated projected cases with experimental
-  range, current staffed beds required, and cumulative unplaced demand. Full day
-  totals, observed source-year counts, holding, window totals, uncertainty and
-  validation remain in Results. Historical observations are not current counts.
+- The QC summary shows cumulative cases, expected dengue inpatients, whole staffed beds and the first-hospital shortfall (or unplaced patients when diversion is enabled). Weekly changes compare new cases over the last seven days with the preceding seven days, and unrounded bed demand with the same day one week earlier. A missing or zero comparison denominator yields an unavailable percentage. Bed details opens city-wide demand, hospital search and barangay results.
 - Results retain the daily case chart, ranked annual candidates, local and city
   bed-demand curves, all-barangay table, same-input allocation comparison and
   methods/source details. Export has one entry point and still exports the same
@@ -61,19 +55,22 @@ they are not conflated with hospital-wide utilization or real vacancies.
 
 ## Map semantics
 
-The existing numeric case bands and fixed-window scale remain unchanged, with a
-monotonically darker yellow-green/olive/ochre/orange/burnt-orange ramp. These are
-case counts, not official risk thresholds. Neutral polygons may still have cases.
-The numbered markers identify the annual predicted-burden ranking, not cases or
-confirmed weekly outbreaks. Optional connections preserve proximity versus
-modeled placement meanings. In the initial preview, selecting a place frames
-its location and opens its details. Selected and overview connections become
-available when the user runs the scenario or explores its playback.
+User revision 2026-11-21: **all 142 barangays are shaded** by their modeled cases
+(daily or accumulated), and the numbered top-ten markers are removed. The fixed
+window scale now spans every barangay and is square-root spaced, so places with few
+cases stay distinguishable from the busiest; the legend shows the case count at
+each reference colour. The monotonically darker yellow-green/olive/ochre/orange/
+burnt-orange ramp is kept. These are case counts, not official risk thresholds.
+Each barangay uses the weekly case estimates from the selected run. Only the preview (before a run) is neutral.
+The top-ten ranking for the selected window remains in Results and drives overview connections;
+small dots mark where connection lines start (the inspected barangay, barangays
+linked to an inspected hospital and, with overview connections on, the top ten).
+Selecting a barangay in the initial preview frames it and opens its details. Selected and overview connections become available when the user runs the scenario or explores its playback.
 
 Dashboard and Simulation now call the same hospital-marker factory and use one
 shared style and SVG. The H pin is a provisional inventory point on both
 pages; Simulation adds assumed demand and capacity in its inspector. The pin's
-outer white border is removed. Both pins and numbered markers breathe subtly;
+outer white border is removed. Pins and barangay dots breathe subtly;
 motion is purely cosmetic and has no live-status or disease-spread meaning.
 Hover/focus pauses the pulse; OS reduced motion and the simulation's manual
 reduced-motion setting disable it.
@@ -116,8 +113,8 @@ endpoints follow the displayed markers. Since 2026-11-21 no marker is offset or
 shrunk for overlap: hospital pins put their tip on the hospital's location and
 barangay markers are centred on the barangay's point, at fixed sizes, so zooming
 never moves them off their locations. Close markers may overlap until the user
-zooms in; numbered barangay markers are drawn above hospital pins (a hovered pin
-comes to the front to show its label) and higher ranks above lower ones.
+zooms in; barangay dots are drawn above hospital pins (a hovered pin comes to the
+front to show its label) and the inspected barangay's dot above other dots.
 Map layers has a **City boundaries** switch (off by default; 2026-11-21): the NCR city
 outlines from `/api/boundaries` in the Dashboard's style, with Quezon City highlighted
 (bright teal over satellite imagery). If the file cannot load, the switch is disabled

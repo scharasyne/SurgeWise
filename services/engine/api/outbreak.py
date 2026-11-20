@@ -12,9 +12,10 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, model_validator
 
-from .research import StrictModel, FacilityAssumption, forecast, annual_data, unavailable
+from .research import StrictModel, FacilityAssumption, forecast_details, annual_data, unavailable
 from ..domain import outbreak, patient_flow, spatial, optimizer, ranked_placement, bed_forecast, hospital_demand, barangay_forecast, source_calendar, seasonal_forecast
-from ..repositories import seasonal_runs, first_admission
+from production.surgewise import predictor, features
+from ..repositories import seasonal_runs, first_admission, production_runs, gp_runs, weekly_handoff
 from ..repositories.first_admission import AllocationPolicy, ArrivalPolicy, MATRICES
 from ..domain.outbreak import make_context, build_movie, VERSION
 from ..repositories.facility import load_facilities, DATASET_ID, HOSPITAL_SHA256
@@ -26,7 +27,8 @@ router = APIRouter(prefix="/v1")
 _CODE_MODULES = [("first_admission", first_admission), ("outbreak", outbreak), ("patient_flow", patient_flow), ("spatial", spatial),
     ("ranked_placement", ranked_placement), ("optimizer", optimizer), ("bed_forecast", bed_forecast), ("hospital_demand", hospital_demand),
     ("barangay_forecast", barangay_forecast), ("source_calendar", source_calendar),
-    ("seasonal_forecast", seasonal_forecast), ("seasonal_runs", seasonal_runs)]
+    ("seasonal_forecast", seasonal_forecast), ("seasonal_runs", seasonal_runs), ("production_runs", production_runs),
+    ("gp_runs", gp_runs), ("weekly_handoff", weekly_handoff), ("production_predictor", predictor), ("production_features", features)]
 _LOADED_CODE_HASHES = {name: sha256(module.__file__) for name, module in _CODE_MODULES}
 
 
@@ -97,7 +99,7 @@ class OutbreakInput(StrictModel):
 
 
 def inputs(ident, cutoff_year=None, use_xgboost=False):
-    run = forecast(ident)
+    run = forecast_details(ident)
     if run["area"] != "QUEZON_CITY":
         raise HTTPException(422, detail={"code": "QC_DEMAND_REQUIRED", "message": "Spatial movies require QC demand, not NCR totals."})
     manifest = json.loads((FOLDER / "manifest.json").read_text())
@@ -141,11 +143,18 @@ def create_movie(params: OutbreakInput):
             raise HTTPException(503, detail={"code": "ENGINE_RESTART_REQUIRED",
                 "message": "Simulation code changed while this worker was running. Restart the engine and reload the forecast; no outdated result was substituted."})
         run, geo, manifest = inputs(params.forecastRunId, params.startDate.year, params.autoHotspots)
+        if "scenarioStart" in run and (not params.autoHotspots or params.startDate.isoformat() != run["scenarioStart"]
+                or (params.endDate - params.startDate).days != len(run["dailyPredictions"])
+                or params.allocationPolicy not in {"first_hospital", "next_probability"} or params.arrivalSplitPolicy not in MATRICES):
+            raise HTTPException(422, detail={"code": "FORECAST_WINDOW_MISMATCH",
+                "message": "Use this production run with its registered scenario dates and hospital-choice policy."})
         if params.autoHotspots and not run.get("dailyPredictions"):
             first, last = source_calendar.historical_window(run)
             if params.startDate < first or params.endDate > last:
                 raise HTTPException(422, detail={"code": "HISTORICAL_WINDOW_UNAVAILABLE",
                     "message": f"This saved forecast covers [{first}, {last}) under the declared calendar assumption. Select dates within its targets."})
+        if run["id"].startswith("qc-weekly-") and (params.scenarioKind != "hypothetical_shock" or params.surgeEnabled or params.extraCasesPerWeek):
+            raise HTTPException(422, detail={"code": "LINKED_FORECAST_REQUIRED", "message": "Use the saved weekly forecast and its configured scenario factors."})
         if params.surgeEnabled and not run.get("dailyPredictions"):
             raise HTTPException(422, detail={"code": "SEASONAL_FORECAST_REQUIRED", "message": "Multiplicative future surges require the seasonal future engine."})
         approved = {h["id"] for h in geo["hospitals"]}
@@ -158,7 +167,7 @@ def create_movie(params: OutbreakInput):
         parameters["facilities"] = sorted(parameters["facilities"], key=lambda f: f["facilityId"])
         identity = {"parameters": parameters, "methodVersion": VERSION, "facilityDatasetId": DATASET_ID,
             "softwareVersions": {"python": platform.python_version(), "shapely": shapely.__version__, "pyproj": pyproj.__version__, "scipy": scipy.__version__},
-            "facilitySourceSha256": HOSPITAL_SHA256, "forecastArtifactSha256": sha256(FOLDER / "forecast-runs.json"),
+            "facilitySourceSha256": HOSPITAL_SHA256, "forecastArtifactSha256": run.get("runSha256") if "scenarioStart" in run else sha256(FOLDER / "forecast-runs.json"),
             "environmentalForecastSha256": sha256(FOLDER / "qc-environmental-forecasts.json") if run["model"] == "cases_weather" else None,
             "seasonalModelSha256": run.get("seasonalModelSha256"), "forecastRunSha256": run.get("runSha256"),
             "spatialForecastSha256": geo["hotspotRanking"]["artifactSha256"] if geo.get("hotspotRanking") else None,
@@ -222,7 +231,7 @@ def saved_movie(ident: str):
         expected = result.pop("resultSha256")
         if hashlib.sha256(json.dumps(result, sort_keys=True, allow_nan=False).encode()).hexdigest() != expected:
             raise ValueError("Saved movie checksum mismatch")
-        if result["forecastArtifactSha256"] != sha256(FOLDER / "forecast-runs.json"):
+        if not result["parameters"]["forecastRunId"].startswith(("qc-rf-", "qc-gp-replay-", "qc-holdout-replay-", "qc-weekly-")) and result["forecastArtifactSha256"] != sha256(FOLDER / "forecast-runs.json"):
             raise ValueError("Forecast version changed")
         if result.get("environmentalForecastSha256") and result["environmentalForecastSha256"] != sha256(FOLDER / "qc-environmental-forecasts.json"):
             raise ValueError("Environmental forecast version changed")

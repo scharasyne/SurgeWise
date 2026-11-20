@@ -21,6 +21,21 @@ def simulation():
     return default_workspace()
 
 
+@pytest.mark.parametrize(("source", "mode"), [
+    ("qc-rf-archive-", "Future forecast"), ("qc-rf-planning-", "Future forecast"),
+    ("qc-rf-replay-", "Historical replay"), ("qc-holdout-replay-", "Historical replay"),
+    ("qc-gp-replay-", "Historical replay"), ("qc-weekly-", "Saved weekly forecast"),
+])
+def test_report_uses_saved_forecast_source_and_applied_weekly_factors(simulation, source, mode):
+    movie = {**simulation, "seasonalModelSha256": None,
+             "parameters": {**simulation["parameters"], "forecastRunId": source + "example"},
+             "days": [{**day, "surgeFactor": 1.5 if day["dayIndex"] <= 7 else 2} for day in simulation["days"]]}
+    summary = report_summary(movie, list(daily_records(movie)))
+    assert summary["mode"] == mode
+    if source == "qc-weekly-":
+        assert dict(summary["settings"])["Case scenario"] == "1.5× to 2× baseline across the saved forecast weeks"
+
+
 def test_register_and_watchlist_cover_full_run(simulation):
     rows = list(daily_records(simulation))
     assert len(rows) == 46 * simulation["durationDays"]

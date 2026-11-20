@@ -3,13 +3,15 @@ from starlette.responses import JSONResponse
 
 
 class BodySizeLimit:
-    def __init__(self, app, maximum=32768):
+    def __init__(self, app, maximum=32768, route_limits=None):
         self.app = app
         self.maximum = maximum
+        self.route_limits = route_limits or {}
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH"}:
             return await self.app(scope, receive, send)
+        maximum = self.route_limits.get(scope["path"], self.maximum)
         chunks, size = [], 0
         while True:
             message = await receive()
@@ -17,8 +19,8 @@ class BodySizeLimit:
                 return
             chunk = message.get("body", b"")
             size += len(chunk)
-            if size > self.maximum:
-                response = JSONResponse({"detail": {"code": "PAYLOAD_TOO_LARGE", "message": "Maximum request body is 32 KB."}}, status_code=413)
+            if size > maximum:
+                response = JSONResponse({"detail": {"code": "PAYLOAD_TOO_LARGE", "message": f"Maximum request body is {maximum // 1024} KB."}}, status_code=413)
                 return await response(scope, receive, send)
             chunks.append(chunk)
             if not message.get("more_body", False):

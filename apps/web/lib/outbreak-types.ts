@@ -15,10 +15,9 @@ export interface MovieBarangay {
   hospitalsWithinBarangay?: { facilityId: string; distanceKm: number }[];
 }
 export interface MovieContext {
+  weeklyOriginShares?: Record<string, Record<string, number>>[];
   firstAdmissionOriginShares?: Record<string, Record<string, number>>;
-  hotspotRanking?: { model: string; forecastYear: number; trainingCutoffYear: number; criterion: string;
-    artifactSha256: string; candidateIds: string[]; limitations: string;
-    validation: { targetYear: number; model: string; n: number; maeAnnualCases: number; top10Overlap: number; topCount: number }[] } | null;
+  hotspotRanking?: { model: string; criterion: string; artifactSha256: string; candidateIds: string[] } | null;
   referenceForecastRunId: string; weightYear: number; distanceMethod: string;
   barangays: MovieBarangay[]; hospitals: MovieHospital[];
 }
@@ -33,6 +32,8 @@ export interface MovieParameters {
   facilities: { facilityId: string; assumedDengueEligible: true; normalCapacity: number; surgeCapacity: number; holdingCapacity: number }[];
 }
 export interface MovieDay {
+  weeklyCasesChangePct?: number | null;
+  arrivalWeekIndex?: number;
   dayIndex: number; date: string; snapshotAt: string; intervalStart: string; intervalEnd: string;
   expectedCases: number; baselineCases: number; shockCases: number; cumulativeCases: number;
   cumulativeBaselineCases: number; cumulativeShockCases: number; assumedRadiusKm: number;
@@ -54,6 +55,7 @@ export interface MovieDay {
     normalDengueCensus: number; surgeDengueCensus: number; holdingCensus: number; normalOccupancyPct: number; supportedOccupancyPct: number }[];
 }
 export interface BedForecast {
+  weeklyDemandChangePct?: number | null;
   hospitalBedsRequired?: number; hospitalBedsShort?: number; hospitalsShort?: number;
   demandUtilizationPct?: number | null; utilizationDefinition?: string;
   baselineExpectedBeds?: number; baselineStaffedBedsRequired?: number; additionalStaffedBedsDueToSurge?: number;
@@ -78,6 +80,8 @@ export interface BedProjection extends BedForecast {
 }
 export interface CaseRange { lowerCases: number; upperCases: number; coverageTarget: number; calibrationSamples: number; method: string }
 export interface QCControls {
+  reconstructHistory?: boolean;
+  weeklyForecastId?: string | null;
   startDate: string; endDate: string; mode: 'forecast' | 'hypothetical_shock'; extraCasesPerWeek: number;
   growthDays: number; surgeCapacity: number; holdingCapacity: number;
   hospitalizationRate: number; baselineOccupancy: number; lengthOfStayDays: number;
@@ -103,36 +107,29 @@ export interface BedAllotmentImport {
 export interface QCWorkspaceResult extends OutbreakMovie {
   workspaceTab?: 'future' | 'historical';
   controlValues: QCControls; inputLimits: Record<string, { min: number; max: number; units: string }>;
-  historicalWindows?: { startDate: string; endDate: string }[];
-  forecastEvidence: { id: string; issueBlock: { YR: number; WN: number }; model: string;
+  historicalWindows?: { startDate: string; endDate: string; kind?: 'training_archive' | 'forecast'; forecastAvailableFrom?: string }[];
+  forecastEvidence: { id: string; issueBlock: { YR: number; WN: number } | null; model: string;
+    weeklyCases?: { year: number; week: number; cityCases: number; barangayCases: Record<string, number>;
+      scenarioCityCases?: number; scenarioBarangayCases?: Record<string, number> }[];
+    caseSourceKind?: 'gp_reconstruction' | 'forecast'; observedReferenceBlock?: { YR: number; WN: number };
+    unassignedWindowCases?: number; observationSource?: string;
     environmentalInputs: { sourceColumn: string; valueAtOrigin: number; unit: string; lagsSourceBlocks: number[] }[];
-    observedCasesAtOrigin: number; observedSourceYearToDateCases: number; intervalCoverageTarget: number;
+    observedCasesAtOrigin: number | null; observedSourceYearToDateCases: number | null; intervalCoverageTarget: number | null; trainedThrough: number | null; targetWeeks: { year: number; week: number }[];
     intervalCaveat: string; spatialCaveat: string; availabilityAssumption: string };
-  periodSummary: { expectedCases: number; caseRange: CaseRange; barangays: MovieDay['barangays'] };
+  periodSummary: { expectedCases: number; caseRange: CaseRange | null; barangays: MovieDay['barangays'] };
   forecastBacktest: { horizon: number; n: number; weatherMae: number; casesOnlyMae: number; persistenceMae: number; empiricalRangeCoverage: number }[];
   referenceSelectionAssumption: string; rangeInterpretation: string; simulationResultSha256: string;
-  futureForecast?: { asOfDate: string; trainingCutoffBlock: { YR: number; WN: number }; weatherProfile: string;
-    xgboostVariant?: string; usesWeather?: boolean;
-    rangeEvidencePolicy?: string;
-    leadYearGapValidation?: { year: number; sourceYearGap: number; lastTrainingYear: number; model: string; n: number; mae: number; wapePct: number | null; meanBias: number }[];
-    accuracyAssessment?: { status: string; message: string; comparison: { year: number; maeSkillVsSeasonalBaseline: number; rangeTargetAchieved: boolean }[] };
-    parameterAudit?: { startDate: string; endDateExclusive: string; horizonDays: number; yearTrendModeled: boolean;
-      sourceYearGap: number; centralGapEvaluated: boolean; rangeEvaluatedAtRequestedGap: boolean;
+  futureForecast?: { asOfDate: string; trainingCutoffBlock: { YR: number; WN: number }; selectedModel: string;
+    modelSha256: string; sourcePeriodStart: string; sourcePeriodEnd: string;
+    parameterAudit: { startDate: string; endDateExclusive: string; horizonDays: number;
       surgeOnsetDate: string | null; fullMultiplierDate: string | null; fullMultiplierReached: boolean;
       maximumAppliedMultiplier: number; staffedSurgeActivationSnapshotDate: string; staffedSurgeActivationWithinWindow: boolean;
       admissionDelayDays: number; lengthOfStayDays: number };
-    calendarDiagnostics?: { targetDefinition: string; evaluationDesign: string;
-      monthly: { year: number; month: number; model: string; expectedCases: number; sourceDerivedCases: number; absoluteError: number; calendarDays: number }[];
-      sourceQuarters: { year: number; sourceQuarter: number; model: string; n: number; mae: number; wapePct: number | null; meanBias: number }[];
-      windowLengths: { year: number; days: number; model: string; n: number; mae: number; wapePct: number | null; meanBias: number; empiricalRangeCoverage: number }[] };
-    selectedModel: string; modelSha256: string; methodVersion: string;
-    selection: { criterion: string; scores: Record<string, number> };
-    validation: { year: number; model: string; n: number; mae: number; rmse: number; meanBias?: number; wapePct?: number | null; empiricalRangeCoverage: number }[];
-    stalenessCaveat: string; weatherCaveat: string };
+  };
   firstAdmissionComparison?: { arrivalSplitPolicy: ArrivalPolicy; peakBedsShort: number; peakShortageDate: string | null; cumulativeUnresolved: number; peakExpectedBeds: number }[];
 }
 export interface OutbreakMovie {
-  progressionMethod?: 'dated_QC_forecast_allocated_by_xgboost_annual_burden_shares' | 'dated_QC_forecast_allocated_by_prior_annual_barangay_shares' | 'explicit_hypothetical_radial_shock';
+  progressionMethod?: 'gp_weekly_barangay_reconstruction' | 'production_weekly_barangay_forecast' | 'dated_QC_forecast_allocated_by_xgboost_annual_burden_shares' | 'dated_QC_forecast_allocated_by_prior_annual_barangay_shares' | 'explicit_hypothetical_radial_shock';
   schemaVersion: string; scenarioId: string; resultSha256: string; runTimestamp: string;
   parameters: MovieParameters; context: MovieContext; days: MovieDay[]; durationDays: number;
   mapScaleMaxDailyCases: number; assumptions: string; disclaimer: string;

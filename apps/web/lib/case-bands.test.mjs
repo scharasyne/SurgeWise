@@ -1,6 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASE_BANDS, caseBand, caseColor, interpolateCaseValues, addDateDays } from './case-bands.ts';
+import { CASE_BANDS, caseBand, caseColor, caseScaleValue, interpolateCaseValues, addDateDays } from './case-bands.ts';
+
+test('square-root color scale keeps low-case places distinguishable and the legend values exact', () => {
+  // The legend value lands on its band's reference color (allowing floating-point rounding).
+  const channels = color => color.startsWith('#') ? [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16)) : color.match(/\d+/g).map(Number);
+  assert.deepEqual(channels(caseColor(0, 50)), channels(CASE_BANDS[0].color));
+  assert.deepEqual(channels(caseColor(caseScaleValue(25, 50), 50)), channels(CASE_BANDS[3].color));
+  for (const band of CASE_BANDS) {
+    const drawn = channels(caseColor(caseScaleValue(band.min, 48.7), 48.7)), reference = channels(band.color);
+    assert.ok(drawn.every((value, i) => Math.abs(value - reference[i]) <= 1), `legend value for band ${band.label}`);
+  }
+  CASE_BANDS.forEach((band, i) => assert.ok(Math.abs(caseScaleValue(band.min, 100) - [0, 1, 4, 25, 100][i]) < 1e-9));
+  // On a linear scale 1 and 2 of 50 cases would both sit in the palest band.
+  assert.notEqual(caseColor(1, 50), caseColor(2, 50));
+  assert.ok(channels(caseColor(2, 50))[1] < channels(CASE_BANDS[0].color)[1] - 40, '2 of 50 cases is visibly darker than zero');
+});
 
 test('specific case display bands preserve all boundaries without labeling official outbreak thresholds', () => {
   for (const [count, label] of [[0, '0–<5'], [4.99, '0–<5'], [5, '5–<10'], [10, '10–<25'], [25, '25–<50'], [50, '50+'], [2000, '50+']])

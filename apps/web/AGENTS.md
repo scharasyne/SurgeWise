@@ -13,7 +13,7 @@ Read the root `AGENTS.md` and docs under `docs/` first. These instructions gover
 
 ## Information architecture
 Keep `/dashboard` as overview and add routes as needed, preferably:
-- `/forecast`: issue-date-specific historical cases, 1–4-week forecast run, observed comparison, interval/skill evidence.
+- Forecast inputs and case outputs belong in the Simulation workspace. Keep `/forecast` as a redirect for existing bookmarks (user revision 2026-11-21).
 - `/hotspots`: separate layers for *annual observed barangay burden* and *modeled weekly allocated demand*; disable layer with explanation when barangay data or geometry are absent.
 - `/hospitals`: searchable paginated/filterable source-traceable inventory, ownership and capability filters, missing-coordinate and capacity flags; do not exclude non-geocoded records from the table.
 - `/simulate`: 28-day hospital scenario workspace with admitted, surge, holding, unresolved demand, and methods/provenance.

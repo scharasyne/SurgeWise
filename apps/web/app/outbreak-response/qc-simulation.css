@@ -63,6 +63,7 @@
 .qs-map-key { position:absolute;z-index:4;left:18px;bottom:44px;max-width:min(345px,calc(100% - 94px));background:var(--sw-card);border:1px solid var(--sw-border);border-radius:7px;box-shadow:0 3px 14px #19394d09; }
 .qs-map-key > summary { display:flex;align-items:center;gap:8px;min-height:37px;padding:0 11px;list-style:none;font-size:11px;color:var(--sw-muted);cursor:pointer; }
 .qs-map-key summary::-webkit-details-marker { display:none; }
+.qs-key-swatch { display:inline-block;width:17px;height:12px;border-radius:3px;background:linear-gradient(90deg,#edf1c7,#b9cd87,#deb65d,#cc873e,#9c522e); }
 .qs-rank-swatch { display:inline-grid;place-items:center;width:17px;height:17px;background:var(--qs-rank-color);color:#fff;border-radius:50%;font-size:11px; }
 .qs-map-key-content { padding:2px 14px 14px;max-height:260px;overflow:auto;overscroll-behavior:contain;font-size:11px; }
 .qs-map-key-content > strong { display:block;font-weight:500;font-size:11px;line-height:1.7;margin-bottom:9px; }
@@ -411,7 +412,7 @@
   .qs-live-totals { gap:12px; }
   .qs-live-totals > div { display:flex;flex-direction:column;gap:3px; }
   .qs-live-totals strong { font-size:21px; }
-  .qs-live-totals .qs-more-results { display:none; }
+  .qs-live-totals .qs-more-results { flex-shrink:0; }
   .qs-workspace[data-wide='true'][data-panel='results'] .qs-context-panel { flex-basis:min(55%,650px);width:min(55%,650px); }
 }
 @media (max-width:700px) {
@@ -441,8 +442,9 @@
   .qs-workspace .qs-results-trigger { padding:0 10px;min-height:43px;font-size:11px; }
   .qs-timeline { padding:5px 12px 9px; }
   .qs-research-status { font-size:11px; }
-  .qs-live-totals { padding-top:8px;margin-top:6px; }
+  .qs-live-totals { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;padding-top:8px;margin-top:6px; }
   .qs-live-totals > div { flex:1; }
+  .qs-live-totals .qs-more-results { grid-column:1/-1;justify-self:end; }
   .qs-live-totals > div > span { font-size:11px; }
   .qs-live-totals strong { font-size:20px; }
   .qs-live-totals small { font-size:11px;line-height:1.5; }
