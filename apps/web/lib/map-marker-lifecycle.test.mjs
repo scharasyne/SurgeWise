@@ -95,11 +95,11 @@ test('hover, focus and explicit inspection never draw extra marker guide lines',
     setAttribute(){},addEventListener(name,callback){(this.listeners[name]??=[]).push(callback);},dispatch(name){for(const callback of this.listeners[name]??[])callback();}})};
   globalThis.ResizeObserver=class{observe(){}disconnect(){}};
   try{
-    const h=harness();h.render(props);let cleanup=h.markerEffect().callback();
+    const h=harness();h.render({...props,showLinks:true,connectionFocus:'barangay',connectionsEnabled:false});let cleanup=h.markerEffect().callback();
     // Ranked barangays get no numbered markers: shading carries their burden.
     assert.equal(h.markers.filter(m=>m.element.dataset.barangayId).length,0,'no permanent barangay markers');
     cleanup();h.markers.length=0;
-    h.render({...props,connectionFocus:'barangay'});cleanup=h.markerEffect().callback();
+    h.render({...props,connectionFocus:'barangay',connectionsEnabled:true});cleanup=h.markerEffect().callback();
     const hospital=h.markers.find(m=>m.element.dataset.facilityId==='H2');
     // The constructed barangay and both hospitals share one point; every marker still stays on it
     // (no overlap offset, no shrinking), so zooming never moves markers off their locations.

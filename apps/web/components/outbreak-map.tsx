@@ -278,7 +278,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
   // Barangays have no permanent markers (their shading carries the case burden). Small
   // dots mark only where connection lines start: overview-link origins, barangays linked
   // to an inspected hospital and the inspected barangay.
-  const overviewKey = showLinks && showHospitals ? (rankedHotspotIds ?? hotspotIds)?.join('|') ?? '' : '';
+  const overviewKey = showLinks && showConnections ? (rankedHotspotIds ?? hotspotIds)?.join('|') ?? '' : '';
   const rankKey = rankedHotspotIds?.join('|') ?? '';
   const relatedBarangayKey = context && connectionFocus === 'hospital' && showConnections
     ? [...new Set(simulationConnections(context, snapshot, { selected, selectedHospital, focus: 'hospital', hotspotIds: rankedHotspotIds ?? hotspotIds, hospitalHotspot, showOverview: false }).map(c => c.barangayId))].join('|') : '';
@@ -287,7 +287,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
     const instance = map.current;
     const barangayMap = new Map(context.barangays.map(b => [b.id, b]));
     const markerStore = visualMarkers.current;
-    const ids = [...new Set([...overviewKey.split('|').filter(Boolean), ...relatedBarangayKey.split('|').filter(Boolean), ...(connectionFocus === 'barangay' && selected ? [selected] : [])])].filter(id => barangayMap.has(id));
+    const ids = [...new Set([...overviewKey.split('|').filter(Boolean), ...relatedBarangayKey.split('|').filter(Boolean), ...(showConnections && connectionFocus === 'barangay' && selected ? [selected] : [])])].filter(id => barangayMap.has(id));
     const ranks = rankKey.split('|').filter(Boolean);
     const entries: { id: string; coordinates: [number, number]; size: number; marker: maplibregl.Marker }[] = [];
     const introduce = !introducedMarkers.current;
@@ -358,7 +358,7 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       markerStore.clear();
       labels.current = [];
     };
-  }, [ready, context, overviewKey, rankKey, relatedBarangayKey, selected, selectedHospital, connectionFocus, view, showHospitals, reducedMotion]);
+  }, [ready, context, overviewKey, rankKey, relatedBarangayKey, selected, selectedHospital, connectionFocus, view, showHospitals, showConnections, reducedMotion]);
   // First-destination probabilities stay fixed throughout a saved run.
   const flowSnapshot = probabilityPlace ? null : snapshot;
   const flowHotspots = probabilityPlace ? undefined : rankedHotspotIds ?? hotspotIds;

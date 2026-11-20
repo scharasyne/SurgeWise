@@ -85,9 +85,18 @@ def report_summary(movie, records):
         value = highest["bedForecast"][field]
         return [label, display_number(value), short_date(highest["date"]) if value else "Across the full run"]
 
-    future = bool(movie.get("seasonalModelSha256"))
+    forecast_id = params["forecastRunId"]
+    weekly = forecast_id.startswith("qc-weekly-")
+    future = bool(movie.get("seasonalModelSha256")) or forecast_id.startswith(("qc-rf-archive-", "qc-rf-planning-"))
+    mode = "Saved weekly forecast" if weekly else "Future forecast" if future else "Historical replay"
     shock = "Baseline cases"
-    if future and params["surgeEnabled"]:
+    if weekly:
+        factors = [d["surgeFactor"] for d in days]
+        if min(factors) != 1 or max(factors) != 1:
+            low, high = min(factors), max(factors)
+            applied = f"{high:g}×" if low == high else f"{low:g}× to {high:g}×"
+            shock = f"{applied} baseline across the saved forecast weeks"
+    elif future and params["surgeEnabled"]:
         shock = (f'{params["surgeMultiplier"]:g}× baseline at peak, starting on day {params["surgeOnsetDay"]}, '
                  f'{params["growthDays"]} days to peak')
     elif params["extraCasesPerWeek"]:
@@ -102,8 +111,8 @@ def report_summary(movie, records):
     policies = {"first_hospital": "Record shortage at the first hospital", "next_probability": "Try the next highest-probability hospital with space",
                 "nearest": "Nearest available hospital", "optimized": "Optimized placement"}
     return {
-        "scenarioId": movie["scenarioId"], "runTimestamp": movie["runTimestamp"], "forecastRunId": params["forecastRunId"],
-        "mode": "Future forecast" if future else "Historical replay",
+        "scenarioId": movie["scenarioId"], "runTimestamp": movie["runTimestamp"], "forecastRunId": forecast_id,
+        "mode": mode,
         "window": f'{short_date(params["startDate"])} – {short_date(params["endDate"])}',
         "days": len(days), "hospitalCount": len(sites), "recordCount": len(records),
         "metrics": [
