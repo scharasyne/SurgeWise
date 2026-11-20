@@ -66,19 +66,36 @@ test('reveal and moving chevrons travel from the origin to destination; reduced 
   assert.deepEqual(connectionFrame(from, to, 0, true).end, to);
 });
 
-test('actual SVG renderer uses displayed endpoints, preserves direction, cancels frames and suppresses duplicate pair decorations', () => {
+function svgNode() {
+  return {
+    dataset: {}, attributes: {}, children: [],
+    setAttribute(key, value) { this.attributes[key] = value; },
+    append(...children) {
+      for (const child of children) child.parentElement = this;
+      this.children.push(...children);
+    },
+    remove() {
+      this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+      this.parentElement = null;
+    },
+  };
+}
+
+test('actual SVG renderer uses displayed endpoints, preserves direction, cancels frames and suppresses duplicate pair decorations', async t => {
   const previous = { document: globalThis.document, raf: globalThis.requestAnimationFrame, cancel: globalThis.cancelAnimationFrame };
   const frames = [], cancelled = [];
-  const node = () => ({ dataset: {}, attributes: {}, children: [], setAttribute(key, value) { this.attributes[key] = value; }, append(...children) { this.children.push(...children); }, replaceChildren() { this.children = []; } });
-  globalThis.document = { createElementNS: () => node() };
+  globalThis.document = { createElementNS: svgNode };
   globalThis.requestAnimationFrame = callback => { frames.push(callback); return frames.length; };
   globalThis.cancelAnimationFrame = id => cancelled.push(id);
   try {
-    const svg = node();
+    const canvasContainer = svgNode();
+    const map = { getCanvasContainer: () => canvasContainer };
     const connections = simulationConnections(context, snapshot, { ...options, focus: 'barangay' });
     const project = id => id.startsWith('b-') ? { x: 50, y: 150 } : { x: 350, y: 50 };
     const started = performance.now();
-    const flow = drawSimulationFlow(svg, connections, project, false, started);
+    const flow = drawSimulationFlow(map, connections, project, false, started);
+    const { svg } = flow;
+    assert.equal(svg.attributes['aria-hidden'], 'true');
     assert.equal(svg.children.length, 4, 'one visible relationship per endpoint pair');
     const placement = svg.children.find(group => group.dataset.kind === 'placement');
     assert.equal(placement.dataset.from, 'B1');
@@ -91,20 +108,32 @@ test('actual SVG renderer uses displayed endpoints, preserves direction, cancels
     assert.match(placement.children[2].attributes.transform, /rotate\(-18\.43/);
     assert.equal(placement.children[1].attributes['stroke-dasharray'], undefined);
     flow.destroy();
-    assert.equal(svg.children.length, 0);
+    assert.equal(canvasContainer.children.length, 0);
     assert.ok(cancelled.length);
     frames.length = 0;
-    const still = drawSimulationFlow(svg, connections, project, true, started);
+    const still = drawSimulationFlow(map, connections, project, true, started);
     assert.equal(frames.length, 0, 'reduced motion must never schedule animation frames');
-    assert.equal(svg.children[0].children[1].attributes.x2, '350');
-    assert.equal(svg.children[0].children[1].attributes['stroke-dasharray'], '4 5');
+    assert.equal(still.svg.children[0].children[1].attributes.x2, '350');
+    assert.equal(still.svg.children[0].children[1].attributes['stroke-dasharray'], '4 5');
     still.destroy();
     const incoming=simulationConnections(context,snapshot,{...options,focus:'hospital',selectedHospital:'H2'});
-    const holding=drawSimulationFlow(svg,incoming,project,true,started);
-    const held=svg.children.find(group=>group.dataset.from==='B2' && group.dataset.kind==='placement');
+    const holding=drawSimulationFlow(map,incoming,project,true,started);
+    const held=holding.svg.children.find(group=>group.dataset.from==='B2' && group.dataset.kind==='placement');
     assert.equal(held.children[1].attributes.stroke,SIMULATION_LINES.holding.color);
     assert.equal(held.children[2].attributes.stroke,SIMULATION_LINES.holding.color);
     holding.destroy();
+
+    await t.test('probability hit targets belong to the map gesture container until cleanup', () => {
+      const choices = [{ facilityId: 'H1', share: 1 }];
+      const interactive = drawSimulationFlow(map, probabilityConnections(context, 'B1', choices), project, true, started);
+      assert.deepEqual(canvasContainer.children, [interactive.svg]);
+      assert.equal(interactive.svg.attributes.role, 'group');
+      const line = interactive.svg.children[0].children.find(child => child.attributes.class === 'qs-choice-hit');
+      assert.equal(line.attributes.tabindex, '0');
+      assert.equal(line.attributes.role, 'button');
+      interactive.destroy();
+      assert.equal(canvasContainer.children.length, 0);
+    });
   } finally {
     if (previous.document === undefined) delete globalThis.document; else globalThis.document = previous.document;
     if (previous.raf === undefined) delete globalThis.requestAnimationFrame; else globalThis.requestAnimationFrame = previous.raf;

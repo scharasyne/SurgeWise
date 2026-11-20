@@ -1,5 +1,13 @@
 # User-requested extensions
 
+## 2026-11-21 01:22 +08:00 — Inspect weighted hospital choices before playback
+
+Rank the selected barangay’s three hospital cards by modeled first-admission probability. Show all 46 probability arrows by default on day zero and allow searches by hospital name. [Barangay hospital choices](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)
+
+## 2026-11-21 01:16 +08:00 — Zoom the simulation map over hospital connections
+
+Keep the surrounding interface at its current scale when a user zooms over a barangay-to-hospital arrow. Preserve access to each arrow’s probability breakdown. [Simulation map interaction](simulation-workspace-design.md#layout-and-interaction)
+
 ## 2026-11-21 00:57 +08:00 — Remove weather scenarios from Future forecast setup
 
 Use projected dengue cases and the optional surge to explore bed demand. The future workspace omits the weather profile on submission. The current case engine applies its default seasonal profile until the planned model retraining. [Simulation workspace](simulation-workspace-design.md#layout-and-interaction)

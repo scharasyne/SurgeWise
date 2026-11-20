@@ -1,7 +1,11 @@
 # Simulation session handoff
 
-Updated 2026-11-21 00:57 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
+Updated 2026-11-21 01:22 +08:00 (Asia/Manila). Read root/scoped AGENTS.md first.
 Preserve existing working-tree edits; do not restart the application or replace data.
+
+## Simulation map gestures
+
+The connection overlay now mounts inside MapLibre’s canvas container. Wheel and trackpad zoom over a probability arrow reach the same map handler as zoom over the basemap. The renderer removes the overlay when the layer closes. [Interaction details](simulation-workspace-design.md#layout-and-interaction)
 
 ## Future forecast setup
 
@@ -27,7 +31,7 @@ Verification covered 101 Python tests, including every probability cell against 
 
 ## First-hospital probability arrows
 
-The barangay inspector can show all 46 first-hospital probabilities after playback starts. Hover, tap and keyboard focus reveal the saved probability breakdown. Historical and future Markov runs now include the reviewed distance-only share, preference weight and straight-line distance alongside the final destination share. [Example and controls](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)
+Selecting a barangay in Historical replay or Future forecast shows its 46 first-hospital probabilities by default, starting on day zero. The three hospital cards follow the engine’s probability ranking. Search by hospital name to read the breakdown even with the arrows hidden. Projected admissions and bed demand still appear when the timeline advances. [Example and controls](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)
 
 ## Scenario panel
 

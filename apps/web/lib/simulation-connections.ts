@@ -1,3 +1,4 @@
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { MovieContext, MovieDay } from './outbreak-types';
 
 /** One visual contract for the SVG, map layers and legend. */
@@ -104,9 +105,19 @@ export function connectionFrame(from: FlowPoint, to: FlowPoint, elapsedMs: numbe
 
 /** SVG over the canvas lets connections end at the displayed pin, including its
  * overlap offset. Source coordinates remain unchanged. All arrows point b -> h. */
-export function drawSimulationFlow(svg: SVGSVGElement, connections: SimulationConnection[], project: (id: string, coordinates: [number, number]) => FlowPoint,
+export function drawSimulationFlow(map: Pick<MapLibreMap, 'getCanvasContainer'>, connections: SimulationConnection[], project: (id: string, coordinates: [number, number]) => FlowPoint,
   reducedMotion: boolean, startedAt: number) {
   const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'qs-flow-overlay');
+  if (connections.some(connection => connection.kind === 'probability')) {
+    svg.setAttribute('role', 'group');
+    svg.setAttribute('aria-label', 'First-hospital probability arrows');
+  } else {
+    svg.setAttribute('aria-hidden', 'true');
+  }
+  // MapLibre listens for wheel and touch gestures on the canvas container.
+  map.getCanvasContainer().append(svg);
   const placements = new Set(connections.filter(c => c.kind === 'placement').map(c => `${c.barangayId}:${c.facilityId}`));
   // A saved placement supersedes the proximity decoration on the same pair.
   const shown = connections.filter(c => c.kind === 'placement' || !placements.has(`${c.barangayId}:${c.facilityId}`));
@@ -158,5 +169,5 @@ export function drawSimulationFlow(svg: SVGSVGElement, connections: SimulationCo
   const animate = (now: number) => { render(now); frame = requestAnimationFrame(animate); };
   render(performance.now());
   if (!reducedMotion && entries.length) frame = requestAnimationFrame(animate);
-  return { update: () => render(performance.now()), destroy: () => { cancelAnimationFrame(frame); svg.replaceChildren(); } };
+  return { svg, update: () => render(performance.now()), destroy: () => { cancelAnimationFrame(frame); svg.remove(); } };
 }

@@ -305,6 +305,37 @@ test('hospital inspection keeps actions outside explanatory paragraphs and retai
   assert.match(html,/120% of modeled dengue slots/);
 });
 
+test('day-zero barangay inspection shows the saved choice ranking and enables all probabilities by default', () => {
+  const hospitals = ['Farther preferred', 'Closest', 'Third', 'Fourth'].map((name, i) => ({ id: 'H' + i, name }));
+  const origin = { id: 'fixture-hotspot', name: 'Constructed barangay', nearestHospitals: [{ facilityId: 'H1', distanceKm: 1 }] };
+  const choices = hospitals.map((h, i) => ({ ...fixture.bedProjection.placePeaks[0].hospitals[0],
+    facilityId: h.id, share: [.4, .35, .15, .1][i], breakdown: { distanceKm: [2, 1, 3, 4][i] } }));
+  const place = { barangayId: origin.id, hospitals: choices };
+  const selected = { 4: { barangays: [origin], hospitals }, 10: true, 23: 'hospitals' };
+  for (const policy of ['markov_preference', 'markov_proximity']) {
+    const row = policy === 'markov_preference' ? place : { ...place, hospitals: [
+      { ...choices[1], share: .4 }, { ...choices[0], share: .35 }, ...choices.slice(2),
+    ] };
+    const loaded = { ...fixture, bedProjection: { ...fixture.bedProjection, arrivalSplitPolicy: policy, placePeaks: [row] } };
+    const tree = renderWorkspace(0, { ...selected, 2: loaded });
+    const map = findElements(tree, node => 'probabilityPlace' in (node.props ?? {}))[0].node;
+    assert.equal(map.props.probabilityPlace, row);
+    assert.equal(map.props.distanceOnly, policy === 'markov_proximity');
+    const control = findElements(tree, node => node.props?.className === 'qs-choice-control')[0].node;
+    const toggle = findElements(control, node => node.type === 'input')[0].node;
+    assert.equal(toggle.props.checked, true);
+    assert.equal(toggle.props.disabled, false);
+    const cards = findElements(tree, node => node.props?.className === 'qs-hospital-entry');
+    assert.deepEqual(cards.map(item => item.node.key), row.hospitals.slice(0, 3).map(h => h.facilityId));
+    assert.match(renderToStaticMarkup(cards[0].node), /#1 · 40.00% probability/);
+    assert.match(renderToStaticMarkup(control), /role="combobox"/);
+    assert.doesNotMatch(renderToStaticMarkup(tree), /543,210|765,432/);
+  }
+  const draft = renderWorkspace(0, { ...selected, 2: null });
+  assert.equal(findElements(draft, n => n.props?.className === 'qs-hospital-entry').length, 0);
+  assert.match(renderToStaticMarkup(draft), /Hospital-choice probabilities are unavailable/);
+});
+
 test('loaded day zero hides projection counts, bed forecasts and historic totals; advancing reveals them', () => {
   const before = renderDay(0);
   assert.match(before, /Simulation not started/);

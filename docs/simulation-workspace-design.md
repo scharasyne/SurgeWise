@@ -51,7 +51,8 @@ hospital network, source observations and API contracts are unchanged.
 Barangay cases, annual ranking, nearest hospital and local hospital matches are
 separate sections. Plain names are separated from explicit Inspect actions.
 Aligned definition lists replace mixed inline buttons and oversized bold text.
-Nearby hospital details expand independently. Registered inventory is distinct
+The three hospitals with the highest modeled first-admission probabilities each have
+an expandable card showing their share and straight-line distance. Registered inventory is distinct
 from scenario capacity, both occupancy denominators, holding, daily demand and
 window peaks. Source links and the complete hospital selector remain available.
 The selected barangay's arrival split and attributed demand stay in a disclosure;
@@ -116,6 +117,12 @@ view uses this same renderer; there is no second set of source-to-source lines. 
 reveal. Playback updates saved-day placements without restarting the common
 motion clock. Reduced motion uses full static lines and directional chevrons,
 without scheduling animation frames. Cleanup removes frames and map listeners.
+
+Selecting a barangay shows all 46 first-admission arrows by default, including
+at day zero. The inspector’s hospital name search works with the arrows shown
+or hidden. With the arrows enabled, wheel and pinch gestures over
+a barangay-to-hospital arrow zoom the map. Hover, tap or keyboard focus on the
+arrow opens its probability breakdown. Escape dismisses the breakdown.
 
 Each explicit inspection starts an 850ms map transition to the selected network.
 Bounds include every displayed connected endpoint and, for barangay inspection,
