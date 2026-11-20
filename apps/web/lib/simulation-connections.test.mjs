@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { probabilityConnections, probabilityPercent, probabilityFacts, probabilityNote } from './hospital-probabilities.ts';
 import { simulationConnections, connectionFrame, drawSimulationFlow, SIMULATION_LINES } from './simulation-connections.ts';
 
 const hospitals = ['H1', 'H2', 'H3', 'H4'].map((id, index) => ({ id, coordinates: [121 + index / 100, 14.6] }));
@@ -124,4 +125,32 @@ test('first-hospital map shows largest actual placements and excludes unplaced d
   const hospital = simulationConnections(local, day, { ...options, focus: 'hospital', selectedHospital: 'H4' })
     .filter(c => c.kind === 'placement');
   assert.equal(hospital.reduce((sum, c) => sum + c.patients, 0), 4);
+});
+
+test('choice arrows cover the entire selected origin row independently of daily placements', () => {
+  const source = { ...context, hospitals: Array.from({length:46}, (_,i) => ({
+    id: `H${i}`, name: `Hospital ${i}`, coordinates: [121 + i/100, 14.6],
+  })) };
+  const choices = source.hospitals.map((h,i) => ({facilityId:h.id, share:i ? 0.5/45 : 0.5}));
+  const arrows = probabilityConnections(source, 'B2', choices);
+  assert.equal(arrows.length, 46);
+  assert.deepEqual(arrows.map(a => a.facilityId), choices.map(h => h.facilityId));
+  assert.ok(arrows.every(a => a.barangayId === 'B2' && a.kind === 'probability'));
+  assert.deepEqual(arrows.at(-1).from, context.barangays[1].coordinates);
+  assert.deepEqual(arrows.at(-1).to, source.hospitals.at(-1).coordinates);
+  assert.match(arrows.at(-1).label, /1.11%/);
+  assert.deepEqual(probabilityConnections(source, 'missing', choices), []);
+  assert.equal(probabilityPercent(0.000001), '<0.01%');
+});
+
+test('probability details distinguish an unknown preference, distance-only mode and archived rows', () => {
+  const choice = { facilityId:'H1', share:.0517, breakdown:{distanceKm:2.3346, proximityShare:.03504, preferenceMultiplier:1.5} };
+  assert.deepEqual(probabilityFacts(choice), [['Straight-line distance','2.33 km'], ['Distance-only probability','3.50%'],
+    ['Preference weight','1.5×'], ['Modeled probability','5.17%']]);
+  assert.match(probabilityNote(choice,{mappedFavoriteHospitalId:'H1'},false), /Mapped preferred hospital/);
+  assert.match(probabilityNote(choice,{mappedFavoriteHospitalId:null},false), /Preference unknown/);
+  assert.match(probabilityNote(choice,{mappedFavoriteHospitalId:'H1'},true), /uses distance alone/);
+  const old = { facilityId:'H1', share:.04 };
+  assert.deepEqual(probabilityFacts(old), [['Modeled probability','4.00%']]);
+  assert.match(probabilityNote(old,{},false), /Only the final probability/);
 });
