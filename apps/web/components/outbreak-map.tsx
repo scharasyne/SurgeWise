@@ -2,11 +2,12 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { FeatureCollection, Polygon } from 'geojson';
-import type { MovieContext, MovieDay } from '@/lib/outbreak-types';
+import type { BedProjection, MovieContext, MovieDay } from '@/lib/outbreak-types';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { caseColor, interpolateCaseValues } from '@/lib/case-bands';
 import { mapSelection } from '@/lib/map-selection';
 import { simulationConnections, drawSimulationFlow, SIMULATION_LINES, type ConnectionFocus } from '@/lib/simulation-connections';
+import { bindProbabilityPopup, probabilityConnections } from '@/lib/hospital-probabilities';
 import { layoutMapMarkers } from '@/lib/marker-layout';
 import { dashboardLayerPaint, hiddenOverImagery, imageryLayerPaint, SATELLITE_IMAGERY } from '@/lib/dashboard-map-style';
 import { areaBounds } from '@/lib/dashboard-map';
@@ -20,6 +21,7 @@ type Props = { context: MovieContext | null; snapshot: MovieDay | null; maximum:
   caseMetric?: 'daily' | 'cumulative';
   caseColorMaximum?: number; animationDurationMs?: number;
   connectionFocus?: ConnectionFocus; inspectionVersion?: number;
+  probabilityPlace?: NonNullable<BedProjection['placePeaks']>[number]; distanceOnly?: boolean;
   buildings3d?: boolean; showHospitals?: boolean; satellite?: boolean;
   onReady?: (controller: SimulationMapController | null) => void;
   onStatus?: (status: SimulationMapStatus) => void;
@@ -53,7 +55,7 @@ const overlayRects = (mapRoot: HTMLElement | null) => {
     .map(rect => ({ left: rect.left - origin.left - 4, top: rect.top - origin.top - 4, width: rect.width + 8, height: rect.height + 8 }));
 };
 
-export default function OutbreakMap({ context, snapshot, selected, selectedHospital = '', hotspotIds, rankedHotspotIds, hospitalHotspot, onSelect, onHospital, reducedMotion, showLinks, connectionFocus = null, inspectionVersion = 0, view = 'qc', caseMetric = 'cumulative', caseColorMaximum = 50, animationDurationMs = 500, buildings3d = false, showHospitals = true, satellite = false, onReady, onStatus }: Props) {
+export default function OutbreakMap({ context, snapshot, selected, selectedHospital = '', hotspotIds, rankedHotspotIds, hospitalHotspot, onSelect, onHospital, reducedMotion, showLinks, connectionFocus = null, inspectionVersion = 0, probabilityPlace, distanceOnly = false, view = 'qc', caseMetric = 'cumulative', caseColorMaximum = 50, animationDurationMs = 500, buildings3d = false, showHospitals = true, satellite = false, onReady, onStatus }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const onSelectRef = useRef(onSelect), onHospitalRef = useRef(onHospital);
@@ -341,13 +343,19 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       labels.current = [];
     };
   }, [ready, context, markerKey, rankKey, relatedBarangayKey, selected, selectedHospital, connectionFocus, view, showHospitals, reducedMotion]);
+  // First-destination probabilities stay fixed throughout a saved run.
+  const flowSnapshot = probabilityPlace ? null : snapshot;
+  const flowHotspots = probabilityPlace ? undefined : rankedHotspotIds ?? hotspotIds;
+  const flowHospitalHotspot = probabilityPlace ? null : hospitalHotspot;
   useEffect(() => {
     const instance = map.current, svg = flowRoot.current;
     if (!ready || !instance || !svg || !context || (!connectionFocus && !showLinks) || !showHospitals) return;
-    const connectionOptions = { selected, selectedHospital, hotspotIds: rankedHotspotIds ?? hotspotIds, hospitalHotspot };
-    const connections = [...new Map([
-      ...simulationConnections(context, snapshot, { ...connectionOptions, focus: null, showOverview: showLinks }),
-      ...(connectionFocus ? simulationConnections(context, snapshot, { ...connectionOptions, focus: connectionFocus, showOverview: false }) : []),
+    const connectionOptions = { selected, selectedHospital, hotspotIds: flowHotspots, hospitalHotspot: flowHospitalHotspot };
+    const connections = probabilityPlace
+      ? probabilityConnections(context, selected, probabilityPlace.hospitals)
+      : [...new Map([
+      ...simulationConnections(context, flowSnapshot, { ...connectionOptions, focus: null, showOverview: showLinks }),
+      ...(connectionFocus ? simulationConnections(context, flowSnapshot, { ...connectionOptions, focus: connectionFocus, showOverview: false }) : []),
     ].map(connection => [connection.id, connection])).values()];
     const key = `${connectionFocus}:${selected}:${selectedHospital}:${inspectionVersion}:${showLinks}`;
     if (flowClock.current.key !== key) flowClock.current = { key, start: performance.now() };
@@ -355,11 +363,16 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       const point = instance.project(coordinates), offset = visualMarkers.current.get(id)?.getOffset();
       return { x: point.x + (offset?.x ?? 0), y: point.y + (offset?.y ?? 0) };
     };
-    const flow = drawSimulationFlow(svg, connections, project, reducedMotion, flowClock.current.start);
+    const flow = drawSimulationFlow(svg, connections, project, reducedMotion || !!probabilityPlace, flowClock.current.start);
+    const origin = probabilityPlace && context.barangays.find(b => b.id === selected);
+    const removePopup = origin && probabilityPlace
+      ? bindProbabilityPopup(svg, instance, new maplibregl.Popup({ closeButton: false, closeOnClick: false,
+        focusAfterOpen: false, offset: 8, maxWidth: '240px', className: 'qs-choice-popup' }),
+        origin, context.hospitals, probabilityPlace.hospitals, distanceOnly) : undefined;
     updateFlow.current = flow.update;
     instance.on('move', flow.update); instance.on('moveend', flow.update); instance.on('resize', flow.update);
-    return () => { instance.off('move', flow.update); instance.off('moveend', flow.update); instance.off('resize', flow.update); updateFlow.current = null; flow.destroy(); };
-  }, [ready, context, snapshot, selected, selectedHospital, connectionFocus, inspectionVersion, rankedHotspotIds, hotspotIds, hospitalHotspot, showHospitals, reducedMotion, view, showLinks]);
+    return () => { instance.off('move', flow.update); instance.off('moveend', flow.update); instance.off('resize', flow.update); updateFlow.current = null; removePopup?.(); flow.destroy(); };
+  }, [ready, context, flowSnapshot, selected, selectedHospital, connectionFocus, inspectionVersion, flowHotspots, flowHospitalHotspot, showHospitals, reducedMotion, view, showLinks, probabilityPlace, distanceOnly]);
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
@@ -392,7 +405,8 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
       const connections = options.current.showHospitals ? simulationConnections(input.context, input.snapshot, {
         selected, selectedHospital, focus: connectionFocus, hotspotIds: input.rankedHotspotIds ?? input.hotspotIds,
         hospitalHotspot: input.hospitalHotspot, showOverview: false }) : [];
-      const bounds = selectionMapBounds([primary.coordinates, ...connections.flatMap(c => [c.from, c.to])], connectionFocus === 'barangay' ? barangayBounds.current.get(selected) : undefined);
+      const endpoints = probabilityPlace ? input.context.hospitals.map(h => h.coordinates) : connections.flatMap(c => [c.from, c.to]);
+      const bounds = selectionMapBounds([primary.coordinates, ...endpoints], connectionFocus === 'barangay' ? barangayBounds.current.get(selected) : undefined);
       if (!bounds) return;
       instance.stop(); instance.resize();
       const padding = simulationMapPadding(root.current?.clientWidth ?? 320, root.current?.clientHeight ?? 640, overlayRects(root.current));
@@ -400,10 +414,11 @@ export default function OutbreakMap({ context, snapshot, selected, selectedHospi
         essential: false, pitch: options.current.view === 'philippines' ? 0 : options.current.buildings3d ? 50 : 0 });
     });
     return () => cancelAnimationFrame(frame);
-  }, [ready, connectionFocus, selected, selectedHospital, inspectionVersion]);
+  }, [ready, connectionFocus, selected, selectedHospital, inspectionVersion, probabilityPlace]);
   return <div className="outbreak-map" ref={root} data-presented={presented || Boolean(error)} aria-busy={!presented && !error} aria-label="QC dated place-forecast allocations and hospital demand map">
     <WorkspaceLoader active={!presented && !error} label="Preparing simulation map" />
-    <svg className="qs-flow-overlay" ref={flowRoot} aria-hidden="true" focusable="false" />
+    <svg className="qs-flow-overlay" ref={flowRoot} aria-hidden={probabilityPlace ? undefined : true}
+      role={probabilityPlace ? 'group' : undefined} aria-label={probabilityPlace ? 'First-hospital probability arrows' : undefined} />
     {error && <div className="movie-map-error" role="status">{error}</div>}
   </div>;
 }

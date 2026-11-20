@@ -12,7 +12,19 @@ For each day, the engine applies the admission fraction and delay to each barang
 
 The barangay view attributes each hospital’s *unrounded* deficit in proportion to the expected arrivals from each origin. For example, a barangay contributing 75% of A’s arrivals accounts for 3 of its 4 missing beds. This is a modeled attribution of shared hospital capacity. Rounding it separately in each barangay would count some beds twice.
 
-The live engine reads the versioned probability tables. Every scenario recalculates arrivals and lengths of stay for its own dates and settings. The recorded matrix and preference checksums identify the input version. First-hospital movies use schema 1.1 and `assignmentEncoding=hospital_totals_with_origin_shares`. For each hospital, the saved context lists the fraction of its arrivals from each origin. Multiply that fraction by its daily `supportedPlacementsToday` or `holdingPlacementsToday` to read a route. Unplaced arrivals remain attributed to their first hospital in the demand report. The map shows up to three largest placement flows per selection and the barangay table lists all 46 destinations. Explicit nearest-capacity and optimized scenarios keep their existing route format and diversion rules.
+The live engine reads the versioned probability tables. Every scenario recalculates arrivals and lengths of stay for its own dates and settings. The recorded matrix and preference checksums identify the input version. First-hospital movies use schema 1.1 and `assignmentEncoding=hospital_totals_with_origin_shares`. For each hospital, the saved context lists the fraction of its arrivals from each origin. Multiply that fraction by its daily `supportedPlacementsToday` or `holdingPlacementsToday` to read a route. Unplaced arrivals remain attributed to their first hospital in the demand report. The default map shows up to three of the largest daily placement flows per selection. The barangay table lists all 46 destinations. Explicit nearest-capacity and optimized scenarios keep their existing route format and diversion rules.
+
+### Research page
+
+Open `/research#rs-allocation` for a side-by-side comparison for any of the 142 origins. U.P. Campus illustrates a matched preference for East Avenue Medical Center. Batasan Hills illustrates an unknown preference. Each table covers the full 46-hospital network and reports probabilities conditional on in-network admission. The three-day stay example uses illustrative arrivals and capacity.
+
+To refresh the page’s bundled evidence after a reviewed source update, run `python -m scripts.export_research_admissions` from the repository root using the engine environment. This reads the same checksum-validated probability tables and the same geographic points as the simulator. The export preserves full probability precision, stores display distances to two decimals, and omits duplicate preference rows only after checking equality. The first-admission preference tests compare every published cell with its saved CSV.
+
+### Inspecting hospital probabilities on the map
+
+Advance the timeline and select a barangay. In its inspector, turn on **Show all 46 hospital probabilities**. Each purple arrow gives the modeled chance of choosing its destination **given an admission from that barangay within the QC network**. All 46 probabilities sum to 100% before display rounding. A hospital can have a positive probability on a day when it has zero placements.
+
+Hover, tap or keyboard-focus an arrow to see the straight-line distance, the distance-only probability, the relative preference weight and the final normalized probability from the active matrix. For U.P. Campus → East Avenue Medical Center, 2.33 km gives a baseline of 3.50%. The illustrative 1.5× weight brings its share to 5.17% after normalization. The more distant Bernardino General Hospital still receives 0.57%. Use **Inspect by hospital name** to read the same details when arrows overlap. Turn the option off to return to daily placements and nearby hospitals.
 
 ## Reading the export
 

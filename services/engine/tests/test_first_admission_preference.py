@@ -7,6 +7,23 @@ import pytest
 from scripts.build_first_admission_preference import (
     BASELINE, PREFERENCES, apply_preference, build, load_preferences, read_csv,
 )
+from scripts import export_research_admissions
+
+
+def test_research_explorer_matches_reviewed_matrices():
+    published = json.loads(export_research_admissions.DESTINATION.read_text())
+    assert published == export_research_admissions.build()
+    hospital_ids = [h["id"] for h in published["hospitals"]]
+    for policy, column in [("markov_proximity", "distanceOnly"), ("markov_preference", "withPreference")]:
+        folder, _ = export_research_admissions.MATRICES[policy]
+        reference = read_csv(BASELINE.parent / folder / "first_hospital_probabilities.csv")
+        rows = {r["id"]: r for r in published["barangays"]}
+        assert {r["barangayId"] for r in reference} == rows.keys()
+        for r in reference:
+            origin = rows[r["barangayId"]]
+            probabilities = origin[column] if origin[column] is not None else origin["distanceOnly"]
+            assert probabilities == [float(r[h]) for h in hospital_ids]
+            assert len(origin["km"]) == len(probabilities) == 46
 
 
 def test_preference_is_relative_weight_before_normalization():

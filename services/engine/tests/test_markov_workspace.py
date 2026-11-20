@@ -1,11 +1,12 @@
 from datetime import date, timedelta
 import csv
+import math
 
 from fastapi.testclient import TestClient
 import pytest
 
 from services.engine.api.qc_simulation import QCInput, workspace
-from services.engine.domain.outbreak import build_movie
+from services.engine.domain.outbreak import build_movie, distance_km
 from services.engine.main import app
 from services.engine.repositories import first_admission
 from services.engine.upri_data import ROOT
@@ -60,7 +61,27 @@ def test_live_historical_run_matches_every_exported_hospital_day(policy, folder)
         f = observations[(row["scenarioDate"], row["hospitalId"])]
         assert f["firstAdmissionsToday"] == pytest.approx(float(row["expectedFirstAdmissions"]), abs=1e-12)
         assert f["bedForecast"]["expectedBeds"] == pytest.approx(float(row["expectedOccupiedDengueBedsIfAdmitted"]), abs=1e-12)
-    assert all(len(b["hospitals"]) == 46 for b in movie["bedProjection"]["placePeaks"])
+    places = movie["bedProjection"]["placePeaks"]
+    origins = {b["id"]: b for b in movie["context"]["barangays"]}
+    sites = {h["id"]: h["coordinates"] for h in movie["context"]["hospitals"]}
+    with (ROOT / "data/processed/qc_first_admission_v1/first_hospital_probabilities.csv").open() as stream:
+        base = {row["barangayId"]: row for row in csv.DictReader(stream)}
+    assert len(places) == 142
+    for place in places:
+        origin = origins[place["barangayId"]]
+        choices = place["hospitals"]
+        assert {row["facilityId"] for row in choices} == sites.keys() and len(choices) == 46
+        weights = []
+        for row in choices:
+            h = row["facilityId"]
+            info = row["breakdown"]
+            assert info["proximityShare"] == float(base[origin["id"]][h])
+            assert info["distanceKm"] == pytest.approx(distance_km(origin["coordinates"], sites[h]))
+            boost = policy == "markov_preference" and h == origin["mappedFavoriteHospitalId"]
+            assert info["preferenceMultiplier"] == (1.5 if boost else 1)
+            weights.append(info["proximityShare"] * info["preferenceMultiplier"])
+        total = math.fsum(weights)
+        assert [r["share"] for r in choices] == pytest.approx([w / total for w in weights], abs=1e-14)
 
 
 def test_future_first_hospital_stress_and_paired_comparison():
@@ -71,6 +92,7 @@ def test_future_first_hospital_stress_and_paired_comparison():
         "compareAllocation": True, "baselineOccupancy": 1, "surgeCapacity": 0, "holdingCapacity": 0})
     assert resp.status_code == 200
     result = resp.json()
+    assert result["bedProjection"]["placePeaks"][0]["hospitals"][-1]["breakdown"]["proximityShare"] > 0
     comparisons = {r["arrivalSplitPolicy"]: r for r in result["firstAdmissionComparison"]}
     assert set(comparisons) == {"markov_proximity", "markov_preference"}
     assert comparisons["markov_proximity"]["peakExpectedBeds"] == pytest.approx(comparisons["markov_preference"]["peakExpectedBeds"])

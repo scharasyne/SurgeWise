@@ -164,9 +164,12 @@ def create_movie(params: OutbreakInput):
             "spatialForecastSha256": geo["hotspotRanking"]["artifactSha256"] if geo.get("hotspotRanking") else None,
             "referenceSourceSha256": run["sourceSha256"], "sourceHashes": manifest["outputs"],
             "codeHashes": dict(_LOADED_CODE_HASHES)}
-        shares = None
+        shares = proximity_shares = None
         if params.arrivalSplitPolicy in MATRICES:
             shares, favorites = approved_matrix(params.arrivalSplitPolicy, geo, ids, manifest)
+            proximity_shares = shares if params.arrivalSplitPolicy == "markov_proximity" else approved_matrix(
+                "markov_proximity", geo, ids, manifest)[0]
+            identity["firstAdmissionProximitySha256"] = MATRICES["markov_proximity"][1]
             geo["barangays"] = [{**b, "mappedFavoriteHospitalId": favorites[b["id"]]} for b in geo["barangays"]]
             identity["firstAdmissionPreferenceSha256"] = first_admission.PREFERENCE_HASH
             identity["firstAdmissionMatrixSha256"] = MATRICES[params.arrivalSplitPolicy][1]
@@ -181,6 +184,8 @@ def create_movie(params: OutbreakInput):
             "runTimestamp": datetime.now(timezone.utc).isoformat(), "seed": None,
             "randomness": "Deterministic expected values; no stochastic draws", "geography": "QUEZON_CITY",
             "units": {"cases": "expected reported cases per daily interval", "patients": "expected patients", "distance": "km straight line"}}
+        if proximity_shares is not None:
+            first_admission.add_choice_breakdowns(result["bedProjection"]["placePeaks"], geo, proximity_shares, params.arrivalSplitPolicy)
         result["resultSha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, allow_nan=False).encode()).hexdigest()
         folder.mkdir(parents=True, exist_ok=True)
         temp = folder / (uuid4().hex + ".tmp")
@@ -225,6 +230,11 @@ def saved_movie(ident: str):
         policy = result["parameters"].get("arrivalSplitPolicy")
         if policy in MATRICES:
             approved_matrix(policy, current_context, [h["id"] for h in current_context["hospitals"]], manifest)
+            if "firstAdmissionProximitySha256" in result:
+                if policy != "markov_proximity":
+                    approved_matrix("markov_proximity", current_context, [h["id"] for h in current_context["hospitals"]], manifest)
+                if result["firstAdmissionProximitySha256"] != MATRICES["markov_proximity"][1]:
+                    raise ValueError("Saved distance-only matrix version mismatch")
             if (result.get("firstAdmissionMatrixSha256") != MATRICES[policy][1]
                     or result.get("firstAdmissionPreferenceSha256") != first_admission.PREFERENCE_HASH):
                 raise ValueError("Saved first-admission matrix version mismatch")
