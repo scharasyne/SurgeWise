@@ -1,5 +1,17 @@
 # User-requested extensions
 
+## 2026-11-21 02:54 +08:00 — Local government simulation briefing
+
+Add a full-run report below Results overview with a PDF briefing and daily hospital CSV. Flag hospitals at 10 or fewer remaining staffed dengue beds and identify those reaching zero. [Report contents and thresholds](simulation-workspace-design.md#lgu-simulation-report)
+
+## 2026-11-21 02:20 +08:00 — Show connection arrows during or after a simulation
+
+The initial barangay preview provides the weighted hospital cards and name search. The map draws arrows for a submitted run or during playback and review. [Simulation map behavior](first-admission-matrix.md#inspecting-hospital-probabilities-on-the-map)
+
+## 2026-11-21 02:16 +08:00 — Open the panel when running a simulation
+
+Submitting a valid Historical replay or Future forecast opens the Results overview. [Simulation workspace](simulation-workspace-design.md#layout-and-interaction)
+
 ## 2026-11-21 +08:00 — City boundaries on Simulation, satellite imagery on Dashboard
 
 - Simulation → Map layers → **City boundaries** (off by default): NCR city outlines

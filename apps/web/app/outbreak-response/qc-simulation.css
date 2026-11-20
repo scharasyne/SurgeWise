@@ -555,3 +555,7 @@
 .qc-controls .qc-hospital-editor .qs-field-pair > label {
   display:grid; grid-template-rows:subgrid; grid-row:span 3; align-self:stretch; margin:10px 0 0;
 }
+
+.qs-workspace .qs-report-link { display:flex; align-items:center; gap:9px; padding:10px 14px; border-radius:6px; background:#315d60; color:#fff; font-weight:600; text-decoration:none; }
+.qs-report-link svg:last-of-type { margin-left:auto; }
+.qs-workspace .qs-report-link:hover { background:#254b4e; }

@@ -11,9 +11,12 @@ from services.engine.api.outbreak import router as outbreak_router
 from services.engine.api.qc_simulation import router as qc_simulation_router
 from services.engine.api.future_simulation import router as future_simulation_router
 
+from services.engine.api.lgu_reports import router as report_router
+
 app = FastAPI(title="SurgeWise Forecast and Simulation API", version="0.1.0")
 app.include_router(research_router)
 app.include_router(outbreak_router)
+app.include_router(report_router)
 app.include_router(qc_simulation_router)
 app.include_router(future_simulation_router)
 app.add_middleware(BodySizeLimit)
