@@ -129,37 +129,3 @@ and 2013–2020 for supervised fitting. The release does not provide a held-out 
 for those earlier targets. Daily historical replay treats each corrected archive date
 as the start of its morbidity interval and divides each weekly value evenly across its
 actual length. The last interval ends January 1, 2023.
-
-### Archive accuracy and reproduction
-
-The source is the top-level training code, datasets and evaluation outputs in
-`SurgeWise_80_10_10.zip` (SHA-256 `0848d84bdc4f1da46a91ef3b3aca8ef3e5824ec6e275d68c01857bbb956b1c1b`).
-The archive selects the forest on validation six-week cumulative city error among the
-ML candidates. The following errors use reported QC weekly totals for the selected
-variant and the archive’s city-persistence comparator. Each test covers 52 weeks.
-
-| Retrospective test | RF weekly MAE, cases | Persistence weekly MAE, cases | RF weighted absolute percentage error |
-| --- | ---: | ---: | ---: |
-| 2022 chronological test | 22.30 | 25.10 | 24.55% |
-| Held-out 2021–2022 blocks | 25.51 | 20.69 | 32.62% |
-
-The two protocols reuse historical weeks. In the blocked protocol some validation
-blocks used for model selection came after some test blocks. Barangay training labels
-were reconstructed and hospital admissions depend on scenario assumptions. The city
-scores establish neither weekly local case accuracy nor hospital admission accuracy.
-
-To rebuild the historical predictions, use a separate training environment with
-`numpy`, `pandas`, `joblib`, `threadpoolctl` and **scikit-learn 1.8.0**.
-Run the following from the repository root.
-
-```sh
-python scripts/build_archive_replay.py
-python -m pytest -q services/engine/tests/test_archive_handoff.py
-```
-
-The builder fits the archive’s evaluation forest through 2020 and generates six
-direct horizons from each of 104 weekly origins. It checks the summed barangay
-forecasts against every archived evaluation target. Runtime uses the generated
-hash-checked array. The regression tests also compare the released web predictor to
-all 1,704 published barangay-week rows for the two 2023 example forecasts.
-[Machine-readable scores by horizon](../apps/web/public/data/qc-archive-forecast-validation.json)
