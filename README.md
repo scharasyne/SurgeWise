@@ -8,8 +8,6 @@ The question behind the project is simple: **When dengue cases rise, where might
 
 > **Research prototype — not a live clinical system.** SurgeWise does not report real-time dengue cases, actual hospital vacancies, confirmed weekly barangay infections, or clinically validated admission predictions. Outputs are retrospective forecasts or **hypothetical planning scenarios**, not medical, referral, or operational directives.
 
-![SurgeWise dashboard](artifacts/frontend/t03-dashboard.png)
-
 ## Contents
 
 - [What SurgeWise does](#what-surgewise-does)
